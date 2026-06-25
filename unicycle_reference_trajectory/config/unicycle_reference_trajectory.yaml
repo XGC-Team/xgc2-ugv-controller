@@ -1,0 +1,38 @@
+main_frequency: 100.0
+queue_size: 10
+
+analytic_topic: alg/unicycle_reference_trajectory/request/analytic
+waypoint_topic: alg/unicycle_reference_trajectory/request/waypoint
+sampled_topic: alg/unicycle_reference_trajectory/request/sampled
+reset_topic: alg/unicycle_reference_trajectory/reset
+status_topic: alg/unicycle_reference_trajectory/status
+active_analytic_topic: alg/unicycle_reference_trajectory/active/analytic
+active_polynomial_topic: alg/unicycle_reference_trajectory/active/polynomial
+active_sampled_topic: alg/unicycle_reference_trajectory/active/sampled
+
+status_rate: 10.0
+active_publish_rate: 10.0
+validation_sample_dt: 0.02
+trajectory_timeout: 0.5
+min_lead_time: 0.2
+
+max_velocity: 0.0
+max_acceleration: 0.0
+max_yaw_rate: 0.0
+
+default_analytic:
+  enabled: false
+  request_id: 1
+  trajectory_id: 1
+  revision: 1
+  analytic_type: 1
+  start_delay: 0.5
+  duration: 120.0
+  origin_x: 0.0
+  origin_y: 0.0
+  origin_yaw: 0.0
+  radius: 3.0
+  line_speed: 1.0
+  entry_duration: 2.0
+  center_x: 0.0
+  center_y: 0.0

@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>unicycle_ugv_controller</name>
+  <version>1.1.0</version>
+  <description>XGC2 unicycle-model UGV NMPC controller publishing geometry_msgs/Twist.</description>
+
+  <maintainer email="lxk@example.com">lxk</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>geometry_msgs</build_depend>
+  <build_depend>message_generation</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>eigen</build_depend>
+  <build_depend>ros1_utils</build_depend>
+  <build_depend>unicycle_reference_trajectory</build_depend>
+  <build_depend>estimator_vrpn_ugv_state</build_depend>
+  <build_depend version_gte="0.1.2-1~focal">libxgc2-state-machine-dev</build_depend>
+  <build_depend version_gte="0.5.0-1~focal">libxgc2-math-dev</build_depend>
+  <build_depend>xgc2-acados</build_depend>
+
+  <build_export_depend>geometry_msgs</build_export_depend>
+  <build_export_depend>message_runtime</build_export_depend>
+  <build_export_depend>roscpp</build_export_depend>
+  <build_export_depend>std_msgs</build_export_depend>
+  <build_export_depend>eigen</build_export_depend>
+  <build_export_depend>ros1_utils</build_export_depend>
+  <build_export_depend>unicycle_reference_trajectory</build_export_depend>
+  <build_export_depend>estimator_vrpn_ugv_state</build_export_depend>
+  <build_export_depend version_gte="0.1.2-1~focal">libxgc2-state-machine-dev</build_export_depend>
+  <build_export_depend version_gte="0.5.0-1~focal">libxgc2-math-dev</build_export_depend>
+  <build_export_depend>xgc2-acados</build_export_depend>
+
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>message_runtime</exec_depend>
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>eigen</exec_depend>
+  <exec_depend>ros1_utils</exec_depend>
+  <exec_depend>unicycle_reference_trajectory</exec_depend>
+  <exec_depend>estimator_vrpn_ugv_state</exec_depend>
+  <exec_depend version_gte="0.1.2-1~focal">libxgc2-state-machine-dev</exec_depend>
+  <exec_depend version_gte="0.5.0-1~focal">libxgc2-math-dev</exec_depend>
+  <exec_depend>xgc2-acados</exec_depend>
+
+  <test_depend>gtest</test_depend>
+
+  <export>
+    <build_type>catkin</build_type>
+  </export>
+</package>

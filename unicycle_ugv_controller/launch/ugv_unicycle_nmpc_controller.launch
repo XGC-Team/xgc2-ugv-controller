@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="ns" default="ugv1"/>
+    <arg name="config_file" default="$(find unicycle_ugv_controller)/config/unicycle_ugv_controller.yaml"/>
+
+    <arg name="control_rate_hz" default="100.0"/>
+    <arg name="queue_size" default="10"/>
+
+    <arg name="state_estimate_topic" default="alg/state_estimator/state"/>
+    <arg name="active_analytic_topic" default="alg/unicycle_reference_trajectory/active/analytic"/>
+    <arg name="active_polynomial_topic" default="alg/unicycle_reference_trajectory/active/polynomial"/>
+    <arg name="active_sampled_topic" default="alg/unicycle_reference_trajectory/active/sampled"/>
+    <arg name="cmd_vel_topic" default="cmd_vel"/>
+
+    <arg name="state_timeout" default="0.2"/>
+    <arg name="reference_timeout" default="0.5"/>
+    <arg name="command_publish_rate_hz" default="50.0"/>
+
+    <arg name="nmpc_control_period" default="0.05"/>
+    <arg name="nmpc_prediction_horizon" default="1.0"/>
+    <arg name="nmpc_request_rate_hz" default="20.0"/>
+    <arg name="nmpc_solve_timeout" default="0.05"/>
+
+    <arg name="min_linear_speed" default="-0.5"/>
+    <arg name="max_linear_speed" default="3.0"/>
+    <arg name="max_angular_speed" default="2.5"/>
+    <arg name="max_linear_acceleration" default="2.0"/>
+
+    <group ns="$(arg ns)">
+        <node pkg="unicycle_ugv_controller"
+              type="unicycle_ugv_controller_node"
+              name="unicycle_ugv_controller"
+              output="screen">
+            <rosparam command="load" file="$(arg config_file)"/>
+
+            <param name="control_rate_hz" value="$(arg control_rate_hz)"/>
+            <param name="queue_size" value="$(arg queue_size)"/>
+            <param name="state_estimate_topic" value="$(arg state_estimate_topic)"/>
+            <param name="active_analytic_topic" value="$(arg active_analytic_topic)"/>
+            <param name="active_polynomial_topic" value="$(arg active_polynomial_topic)"/>
+            <param name="active_sampled_topic" value="$(arg active_sampled_topic)"/>
+            <param name="cmd_vel_topic" value="$(arg cmd_vel_topic)"/>
+            <param name="state_timeout" value="$(arg state_timeout)"/>
+            <param name="reference_timeout" value="$(arg reference_timeout)"/>
+            <param name="command_publish_rate_hz" value="$(arg command_publish_rate_hz)"/>
+            <param name="nmpc/control_period" value="$(arg nmpc_control_period)"/>
+            <param name="nmpc/prediction_horizon" value="$(arg nmpc_prediction_horizon)"/>
+            <param name="nmpc/request_rate_hz" value="$(arg nmpc_request_rate_hz)"/>
+            <param name="nmpc/solve_timeout" value="$(arg nmpc_solve_timeout)"/>
+            <param name="limits/min_linear_speed" value="$(arg min_linear_speed)"/>
+            <param name="limits/max_linear_speed" value="$(arg max_linear_speed)"/>
+            <param name="limits/max_angular_speed" value="$(arg max_angular_speed)"/>
+            <param name="limits/max_linear_acceleration" value="$(arg max_linear_acceleration)"/>
+        </node>
+    </group>
+</launch>
+

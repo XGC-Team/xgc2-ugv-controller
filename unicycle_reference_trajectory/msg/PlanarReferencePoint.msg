@@ -1,0 +1,15 @@
+float64 t_from_start
+float64 x
+float64 y
+float64 yaw
+float64 speed
+float64 linear_acceleration
+float64 yaw_rate
+float64 yaw_acceleration
+float64 curvature
+float64 vx
+float64 vy
+float64 ax
+float64 ay
+float64 jx
+float64 jy

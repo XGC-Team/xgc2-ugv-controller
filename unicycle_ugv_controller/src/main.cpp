@@ -1,0 +1,22 @@
+#include <ros/ros.h>
+
+#include <cmath>
+
+#include "unicycle_ugv_controller/unicycle_ugv_ros_node.h"
+
+int main(int argc, char** argv) {
+    ros::init(argc, argv, "unicycle_ugv_controller_node");
+    ros::NodeHandle nh;
+    ros::NodeHandle private_nh("~");
+
+    double control_rate_hz = 100.0;
+    private_nh.param("control_rate_hz", control_rate_hz, control_rate_hz);
+    if (!std::isfinite(control_rate_hz) || control_rate_hz <= 0.0) {
+        ROS_WARN("[UnicycleUgvController] Invalid control_rate_hz; using 100 Hz");
+        control_rate_hz = 100.0;
+    }
+
+    unicycle_ugv_controller::UnicycleUgvRosNode node(nh);
+    node.run(control_rate_hz);
+    return 0;
+}

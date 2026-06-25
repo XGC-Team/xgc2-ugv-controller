@@ -1,0 +1,25 @@
+control_rate_hz: 100.0
+queue_size: 10
+
+state_estimate_topic: "alg/state_estimator/state"
+active_analytic_topic: "alg/unicycle_reference_trajectory/active/analytic"
+active_polynomial_topic: "alg/unicycle_reference_trajectory/active/polynomial"
+active_sampled_topic: "alg/unicycle_reference_trajectory/active/sampled"
+cmd_vel_topic: "cmd_vel"
+
+state_timeout: 0.2
+reference_timeout: 0.5
+command_publish_rate_hz: 50.0
+
+nmpc:
+  control_period: 0.05
+  prediction_horizon: 1.0
+  request_rate_hz: 20.0
+  solve_timeout: 0.05
+
+limits:
+  min_linear_speed: -0.5
+  max_linear_speed: 3.0
+  max_angular_speed: 2.5
+  max_linear_acceleration: 2.0
+

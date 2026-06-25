@@ -1,0 +1,81 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="ns" default="ugv1"/>
+    <arg name="config_file" default="$(find unicycle_reference_trajectory)/config/unicycle_reference_trajectory.yaml"/>
+    <arg name="main_frequency" default="100.0"/>
+    <arg name="queue_size" default="10"/>
+    <arg name="analytic_topic" default="alg/unicycle_reference_trajectory/request/analytic"/>
+    <arg name="waypoint_topic" default="alg/unicycle_reference_trajectory/request/waypoint"/>
+    <arg name="sampled_topic" default="alg/unicycle_reference_trajectory/request/sampled"/>
+    <arg name="reset_topic" default="alg/unicycle_reference_trajectory/reset"/>
+    <arg name="status_topic" default="alg/unicycle_reference_trajectory/status"/>
+    <arg name="active_analytic_topic" default="alg/unicycle_reference_trajectory/active/analytic"/>
+    <arg name="active_polynomial_topic" default="alg/unicycle_reference_trajectory/active/polynomial"/>
+    <arg name="active_sampled_topic" default="alg/unicycle_reference_trajectory/active/sampled"/>
+    <arg name="status_rate" default="10.0"/>
+    <arg name="active_publish_rate" default="10.0"/>
+    <arg name="validation_sample_dt" default="0.02"/>
+    <arg name="trajectory_timeout" default="0.5"/>
+    <arg name="min_lead_time" default="0.2"/>
+    <arg name="max_velocity" default="0.0"/>
+    <arg name="max_acceleration" default="0.0"/>
+    <arg name="max_yaw_rate" default="0.0"/>
+    <arg name="default_analytic_enabled" default="false"/>
+    <arg name="default_analytic_request_id" default="1"/>
+    <arg name="default_analytic_trajectory_id" default="1"/>
+    <arg name="default_analytic_revision" default="1"/>
+    <arg name="default_analytic_type" default="1"/>
+    <arg name="default_analytic_start_delay" default="0.5"/>
+    <arg name="default_analytic_duration" default="120.0"/>
+    <arg name="default_analytic_origin_x" default="0.0"/>
+    <arg name="default_analytic_origin_y" default="0.0"/>
+    <arg name="default_analytic_origin_yaw" default="0.0"/>
+    <arg name="default_analytic_radius" default="3.0"/>
+    <arg name="default_analytic_line_speed" default="1.0"/>
+    <arg name="default_analytic_entry_duration" default="2.0"/>
+    <arg name="default_analytic_center_x" default="0.0"/>
+    <arg name="default_analytic_center_y" default="0.0"/>
+
+    <group ns="$(arg ns)">
+        <node pkg="unicycle_reference_trajectory"
+              type="unicycle_reference_trajectory_node"
+              name="unicycle_reference_trajectory"
+              output="screen"
+              clear_params="true">
+            <rosparam command="load" file="$(arg config_file)"/>
+            <param name="main_frequency" value="$(arg main_frequency)"/>
+            <param name="queue_size" value="$(arg queue_size)"/>
+            <param name="analytic_topic" value="$(arg analytic_topic)"/>
+            <param name="waypoint_topic" value="$(arg waypoint_topic)"/>
+            <param name="sampled_topic" value="$(arg sampled_topic)"/>
+            <param name="reset_topic" value="$(arg reset_topic)"/>
+            <param name="status_topic" value="$(arg status_topic)"/>
+            <param name="active_analytic_topic" value="$(arg active_analytic_topic)"/>
+            <param name="active_polynomial_topic" value="$(arg active_polynomial_topic)"/>
+            <param name="active_sampled_topic" value="$(arg active_sampled_topic)"/>
+            <param name="status_rate" value="$(arg status_rate)"/>
+            <param name="active_publish_rate" value="$(arg active_publish_rate)"/>
+            <param name="validation_sample_dt" value="$(arg validation_sample_dt)"/>
+            <param name="trajectory_timeout" value="$(arg trajectory_timeout)"/>
+            <param name="min_lead_time" value="$(arg min_lead_time)"/>
+            <param name="max_velocity" value="$(arg max_velocity)"/>
+            <param name="max_acceleration" value="$(arg max_acceleration)"/>
+            <param name="max_yaw_rate" value="$(arg max_yaw_rate)"/>
+            <param name="default_analytic/enabled" value="$(arg default_analytic_enabled)"/>
+            <param name="default_analytic/request_id" value="$(arg default_analytic_request_id)"/>
+            <param name="default_analytic/trajectory_id" value="$(arg default_analytic_trajectory_id)"/>
+            <param name="default_analytic/revision" value="$(arg default_analytic_revision)"/>
+            <param name="default_analytic/analytic_type" value="$(arg default_analytic_type)"/>
+            <param name="default_analytic/start_delay" value="$(arg default_analytic_start_delay)"/>
+            <param name="default_analytic/duration" value="$(arg default_analytic_duration)"/>
+            <param name="default_analytic/origin_x" value="$(arg default_analytic_origin_x)"/>
+            <param name="default_analytic/origin_y" value="$(arg default_analytic_origin_y)"/>
+            <param name="default_analytic/origin_yaw" value="$(arg default_analytic_origin_yaw)"/>
+            <param name="default_analytic/radius" value="$(arg default_analytic_radius)"/>
+            <param name="default_analytic/line_speed" value="$(arg default_analytic_line_speed)"/>
+            <param name="default_analytic/entry_duration" value="$(arg default_analytic_entry_duration)"/>
+            <param name="default_analytic/center_x" value="$(arg default_analytic_center_x)"/>
+            <param name="default_analytic/center_y" value="$(arg default_analytic_center_y)"/>
+        </node>
+    </group>
+</launch>
