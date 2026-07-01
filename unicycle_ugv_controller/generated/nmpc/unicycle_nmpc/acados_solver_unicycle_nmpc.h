@@ -64,7 +64,7 @@
 #define UNICYCLE_NMPC_NY0    6
 #define UNICYCLE_NMPC_NY     6
 #define UNICYCLE_NMPC_NYN    4
-#define UNICYCLE_NMPC_N      20
+#define UNICYCLE_NMPC_N      10
 #define UNICYCLE_NMPC_NH     0
 #define UNICYCLE_NMPC_NHN    0
 #define UNICYCLE_NMPC_NH0    0

@@ -12,6 +12,9 @@
     <arg name="active_analytic_topic" default="alg/unicycle_reference_trajectory/active/analytic"/>
     <arg name="active_polynomial_topic" default="alg/unicycle_reference_trajectory/active/polynomial"/>
     <arg name="active_sampled_topic" default="alg/unicycle_reference_trajectory/active/sampled"/>
+    <arg name="reference_path_topic" default="alg/unicycle_reference_trajectory/visualization/reference_path"/>
+    <arg name="reference_path_sample_dt" default="0.5"/>
+    <arg name="reference_path_preview_duration" default="60.0"/>
     <arg name="status_rate" default="10.0"/>
     <arg name="active_publish_rate" default="10.0"/>
     <arg name="validation_sample_dt" default="0.02"/>
@@ -53,6 +56,9 @@
             <param name="active_analytic_topic" value="$(arg active_analytic_topic)"/>
             <param name="active_polynomial_topic" value="$(arg active_polynomial_topic)"/>
             <param name="active_sampled_topic" value="$(arg active_sampled_topic)"/>
+            <param name="reference_path_topic" value="$(arg reference_path_topic)"/>
+            <param name="reference_path_sample_dt" value="$(arg reference_path_sample_dt)"/>
+            <param name="reference_path_preview_duration" value="$(arg reference_path_preview_duration)"/>
             <param name="status_rate" value="$(arg status_rate)"/>
             <param name="active_publish_rate" value="$(arg active_publish_rate)"/>
             <param name="validation_sample_dt" value="$(arg validation_sample_dt)"/>

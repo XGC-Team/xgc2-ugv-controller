@@ -34,7 +34,7 @@ class CostWeights:
 @dataclass(frozen=True)
 class MPCConfig:
     horizon: float = 1.0
-    steps: int = 20
+    steps: int = 10
     max_iter: int = 20
     ftol: float = 1.0e-4
     model_name: str = "unicycle_nmpc"

@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--horizon", type=float, default=1.0)
-    parser.add_argument("--steps", type=int, default=20)
+    parser.add_argument("--steps", type=int, default=10)
     args = parser.parse_args(argv)
     export_solver(args.output_dir, horizon=args.horizon, steps=args.steps)
     print(f"exported UGV unicycle acados solver to {args.output_dir}")

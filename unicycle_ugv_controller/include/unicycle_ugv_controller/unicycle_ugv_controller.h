@@ -32,7 +32,6 @@ class UnicycleUgvController {
     ::state_machine::StateMachine& stateMachine() {
         return *machine_;
     }
-
     bool healthReady() const;
     bool referenceReady() const;
     void setCommand(ControlCommand command);
@@ -41,6 +40,7 @@ class UnicycleUgvController {
 
    private:
     void setupMachine();
+    void maybeAutoStartTracking();
 
     const UgvState& state_;
     mutable std::mutex config_mutex_;

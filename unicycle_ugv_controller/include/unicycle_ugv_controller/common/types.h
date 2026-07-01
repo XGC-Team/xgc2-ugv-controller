@@ -11,13 +11,15 @@ namespace unicycle_ugv_controller {
 
 struct ControllerConfig {
     double control_rate_hz{100.0};
-    double control_period{0.05};
+    double control_period{0.1};
     double prediction_horizon{1.0};
     double state_timeout{0.2};
     double reference_timeout{0.5};
     double solve_timeout{0.05};
-    double command_publish_rate_hz{50.0};
-    double nmpc_request_rate_hz{20.0};
+    double result_timeout{0.1};
+    double command_publish_rate_hz{100.0};
+    double nmpc_request_rate_hz{100.0};
+    bool auto_start_tracking{false};
     double max_linear_speed{3.0};
     double min_linear_speed{-0.5};
     double max_angular_speed{2.5};

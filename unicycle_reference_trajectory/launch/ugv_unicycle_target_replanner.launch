@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="ns" default="ugv1"/>
+    <arg name="config_file" default="$(find unicycle_reference_trajectory)/config/unicycle_target_replanner.yaml"/>
+    <arg name="state_topic" default="alg/state_estimator/state"/>
+    <arg name="target_topic" default="alg/unicycle_reference_trajectory/target_pose"/>
+    <arg name="sampled_topic" default="alg/unicycle_reference_trajectory/request/sampled"/>
+    <arg name="replan_period" default="5.0"/>
+    <arg name="desired_speed" default="1.0"/>
+    <arg name="max_velocity" default="3.0"/>
+    <arg name="max_acceleration" default="2.0"/>
+    <arg name="max_yaw_rate" default="2.5"/>
+    <arg name="random_targets" default="true"/>
+    <arg name="random_min_x" default="-5.0"/>
+    <arg name="random_max_x" default="5.0"/>
+    <arg name="random_min_y" default="-5.0"/>
+    <arg name="random_max_y" default="5.0"/>
+    <arg name="random_yaw_mode" default="heading"/>
+    <arg name="random_seed" default="0"/>
+
+    <group ns="$(arg ns)">
+        <node pkg="unicycle_reference_trajectory"
+              type="unicycle_target_replanner_node"
+              name="unicycle_target_replanner"
+              output="screen"
+              clear_params="true">
+            <rosparam command="load" file="$(arg config_file)"/>
+            <param name="state_topic" value="$(arg state_topic)"/>
+            <param name="target_topic" value="$(arg target_topic)"/>
+            <param name="sampled_topic" value="$(arg sampled_topic)"/>
+            <param name="replan_period" value="$(arg replan_period)"/>
+            <param name="desired_speed" value="$(arg desired_speed)"/>
+            <param name="max_velocity" value="$(arg max_velocity)"/>
+            <param name="max_acceleration" value="$(arg max_acceleration)"/>
+            <param name="max_yaw_rate" value="$(arg max_yaw_rate)"/>
+            <param name="random_targets" value="$(arg random_targets)"/>
+            <param name="random_min_x" value="$(arg random_min_x)"/>
+            <param name="random_max_x" value="$(arg random_max_x)"/>
+            <param name="random_min_y" value="$(arg random_min_y)"/>
+            <param name="random_max_y" value="$(arg random_max_y)"/>
+            <param name="random_yaw_mode" value="$(arg random_yaw_mode)"/>
+            <param name="random_seed" value="$(arg random_seed)"/>
+        </node>
+    </group>
+</launch>

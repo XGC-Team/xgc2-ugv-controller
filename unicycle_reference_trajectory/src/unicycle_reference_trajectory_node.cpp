@@ -11,17 +11,18 @@ ReferenceTrajectoryNode::ReferenceTrajectoryNode(ros::NodeHandle& nh)
     runtime_.setConfig(config_);
     output_dispatcher_.addConsumer(std::make_unique<ReferenceOutputConsumer>(
         nh_, output_executor_, runtime_, status_topic_, active_analytic_topic_,
-        active_polynomial_topic_, active_sampled_topic_, queue_size_));
+        active_polynomial_topic_, active_sampled_topic_, reference_path_topic_,
+        reference_path_sample_dt_, reference_path_preview_duration_, queue_size_));
     input_producer_ = std::make_unique<ReferenceInputProducer>(
         nh_, runtime_, analytic_topic_, waypoint_topic_, sampled_topic_, reset_topic_, queue_size_,
         default_analytic_);
     output_executor_.start();
     ROS_INFO(
         "[ReferenceTrajectoryNode] Initialized: analytic=%s waypoint=%s sampled=%s "
-        "status=%s active_analytic=%s active_polynomial=%s active_sampled=%s",
+        "status=%s active_analytic=%s active_polynomial=%s active_sampled=%s reference_path=%s",
         analytic_topic_.c_str(), waypoint_topic_.c_str(), sampled_topic_.c_str(),
         status_topic_.c_str(), active_analytic_topic_.c_str(), active_polynomial_topic_.c_str(),
-        active_sampled_topic_.c_str());
+        active_sampled_topic_.c_str(), reference_path_topic_.c_str());
 }
 
 ReferenceTrajectoryNode::~ReferenceTrajectoryNode() {
@@ -56,6 +57,18 @@ void ReferenceTrajectoryNode::loadParams() {
     private_nh_.param("active_polynomial_topic", active_polynomial_topic_,
                       active_polynomial_topic_);
     private_nh_.param("active_sampled_topic", active_sampled_topic_, active_sampled_topic_);
+    private_nh_.param("reference_path_topic", reference_path_topic_, reference_path_topic_);
+    private_nh_.param("reference_path_sample_dt", reference_path_sample_dt_,
+                      reference_path_sample_dt_);
+    if (!std::isfinite(reference_path_sample_dt_) || reference_path_sample_dt_ <= 0.0) {
+        reference_path_sample_dt_ = 0.5;
+    }
+    private_nh_.param("reference_path_preview_duration", reference_path_preview_duration_,
+                      reference_path_preview_duration_);
+    if (!std::isfinite(reference_path_preview_duration_) ||
+        reference_path_preview_duration_ <= 0.0) {
+        reference_path_preview_duration_ = 60.0;
+    }
 
     private_nh_.param("status_rate", config_.status_rate_hz, config_.status_rate_hz);
     private_nh_.param("active_publish_rate", config_.active_publish_rate_hz,

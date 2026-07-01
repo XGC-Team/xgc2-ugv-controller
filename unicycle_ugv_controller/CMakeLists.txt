@@ -9,6 +9,7 @@ find_package(catkin REQUIRED COMPONENTS
   estimator_vrpn_ugv_state
   geometry_msgs
   message_generation
+  nav_msgs
   roscpp
   ros1_utils
   std_msgs
@@ -66,7 +67,7 @@ set(UGV_NMPC_TOOL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tools")
 set(UGV_NMPC_SOLVER_C "${UGV_NMPC_GENERATED_DIR}/acados_solver_unicycle_nmpc.c")
 set(UGV_NMPC_SOLVER_H "${UGV_NMPC_GENERATED_DIR}/acados_solver_unicycle_nmpc.h")
 set(UGV_NMPC_HORIZON "1.0")
-set(UGV_NMPC_STEPS "20")
+set(UGV_NMPC_STEPS "10")
 set(UGV_NMPC_GENERATOR_INPUTS
   "${UGV_NMPC_TOOL_PATH}/unicycle_nmpc/controller.py"
   "${UGV_NMPC_TOOL_PATH}/unicycle_nmpc/export_ros_generated_code.py")
@@ -118,7 +119,7 @@ endif()
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES unicycle_ugv_controller_nmpc_runtime
-  CATKIN_DEPENDS estimator_vrpn_ugv_state geometry_msgs message_runtime roscpp ros1_utils std_msgs unicycle_reference_trajectory
+  CATKIN_DEPENDS estimator_vrpn_ugv_state geometry_msgs message_runtime nav_msgs roscpp ros1_utils std_msgs unicycle_reference_trajectory
   DEPENDS EIGEN3
 )
 

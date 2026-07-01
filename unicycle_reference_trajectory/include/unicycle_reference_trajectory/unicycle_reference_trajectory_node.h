@@ -41,6 +41,10 @@ class ReferenceTrajectoryNode {
     std::string active_analytic_topic_{"alg/unicycle_reference_trajectory/active/analytic"};
     std::string active_polynomial_topic_{"alg/unicycle_reference_trajectory/active/polynomial"};
     std::string active_sampled_topic_{"alg/unicycle_reference_trajectory/active/sampled"};
+    std::string reference_path_topic_{
+        "alg/unicycle_reference_trajectory/visualization/reference_path"};
+    double reference_path_sample_dt_{0.5};
+    double reference_path_preview_duration_{60.0};
     ReferenceTrajectoryConfig config_{};
     DefaultAnalyticReferenceConfig default_analytic_{};
 };

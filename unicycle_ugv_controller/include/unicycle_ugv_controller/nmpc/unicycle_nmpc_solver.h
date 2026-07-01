@@ -41,6 +41,12 @@ class UnicycleNmpcSolver {
     double solveTimeMs() const {
         return solve_time_ms_;
     }
+    const std::array<Se2StateVector, UNICYCLE_NMPC_N + 1>& predictedStates() const {
+        return x_solution_;
+    }
+    size_t predictedStateCount() const {
+        return static_cast<size_t>(UNICYCLE_NMPC_N + 1);
+    }
     static constexpr int horizonSteps() {
         return UNICYCLE_NMPC_N;
     }

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <ros/ros.h>
+#include <state_machine/state_machine.hpp>
+#include <std_msgs/UInt32.h>
 
 #include <memory>
 #include <state_machine/runtime/async_task_executor.hpp>
@@ -26,6 +28,9 @@ class UnicycleUgvRosNode {
     void loadParams();
     void updateOnce();
     void dispatchOutputEvents(const std::vector<::state_machine::Event>& events);
+    void publishStatusIfDue(const ros::Time& now);
+    void logStateChanges(::state_machine::StateId control_state,
+                         ::state_machine::StateId health_state);
 
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
@@ -44,6 +49,14 @@ class UnicycleUgvRosNode {
     std::string active_polynomial_topic_{"alg/unicycle_reference_trajectory/active/polynomial"};
     std::string active_sampled_topic_{"alg/unicycle_reference_trajectory/active/sampled"};
     std::string cmd_vel_topic_{"cmd_vel"};
+    std::string control_state_topic_{"alg/unicycle_ugv_controller/status/control_state"};
+    std::string health_state_topic_{"alg/unicycle_ugv_controller/status/health_state"};
+    double status_publish_rate_hz_{10.0};
+    ros::Publisher control_state_pub_;
+    ros::Publisher health_state_pub_;
+    ros::Time last_status_stamp_;
+    ::state_machine::StateId last_logged_control_state_{0U};
+    ::state_machine::StateId last_logged_health_state_{0U};
 };
 
 }  // namespace unicycle_ugv_controller

@@ -1,6 +1,7 @@
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
 
 #include <estimator_vrpn_ugv_state/PlanarStateEstimate.h>
+#include <ros/console.h>
 
 #include <stdexcept>
 #include <utility>
@@ -31,9 +32,9 @@ UnicycleUgvController::UnicycleUgvController(const UgvState& state) : state_(sta
 
 void UnicycleUgvController::update(double now_sec) {
     current_time_sec_ = now_sec;
-    const auto transition_result = machine_->update({64, 64, false});
-    if (transition_result.status.ok()) {
-        (void)machine_->update({64, 64, true});
+    if (machine_) {
+        maybeAutoStartTracking();
+        (void)machine_->update();
     }
 }
 
@@ -156,11 +157,6 @@ void UnicycleUgvController::setupMachine() {
         .on(event_type::INPUT_REFERENCE_LOST)
         .priority(transition_priority::AUTOMATIC);
     builder.transition()
-        .from(state_type::Tracking)
-        .to(state_type::Hold)
-        .on(event_type::INPUT_NMPC_SOLVE_FAILED)
-        .priority(transition_priority::AUTOMATIC);
-    builder.transition()
         .from(state_type::Hold)
         .to(state_type::SelfCheck)
         .on(event_type::CMD_RESET)
@@ -175,6 +171,26 @@ void UnicycleUgvController::setupMachine() {
     requireOk(result.status, "build UGV controller state machine");
     machine_ = std::move(result.value);
     requireOk(machine_->start(), "start UGV controller state machine");
+}
+
+void UnicycleUgvController::maybeAutoStartTracking() {
+    const auto cfg = config();
+    if (!cfg.auto_start_tracking || !healthReady() || !referenceReady()) {
+        return;
+    }
+    const auto control_state = machine_->currentState(region_type::CONTROL);
+    if (control_state != state_type::Ready && control_state != state_type::Hold) {
+        return;
+    }
+    ::state_machine::Event event(event_type::CMD_TRACK,
+                                 ::state_machine::EventTimestamp{current_time_sec_});
+    event.source = "auto_start_tracking";
+    event.category = ::state_machine::EventCategory::kInput;
+    const auto status = machine_->postEvent(std::move(event));
+    if (!status.ok()) {
+        ROS_WARN("[UnicycleUgvController] Failed to post auto tracking event: %s",
+                 status.message.c_str());
+    }
 }
 
 }  // namespace unicycle_ugv_controller

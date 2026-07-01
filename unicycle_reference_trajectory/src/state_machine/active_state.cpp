@@ -24,6 +24,14 @@ ActiveState::ActiveState(ReferenceTrajectoryRuntime& runtime) : runtime_(runtime
 }
 
 ::state_machine::ActionResult ActiveState::onTick(::state_machine::StateContext& ctx) {
+    if (!runtime_.activatePending()) {
+        ::state_machine::Event event(event_type::PLAN_FAILED,
+                                     ::state_machine::EventTimestamp{runtime_.currentTime()});
+        event.category = ::state_machine::EventCategory::kInternal;
+        event.source = "active_state";
+        ctx.postInternalEvent(std::move(event));
+        return {};
+    }
     if (runtime_.activeExpired(runtime_.currentTime())) {
         ::state_machine::Event event(event_type::TRAJECTORY_EXPIRED,
                                      ::state_machine::EventTimestamp{runtime_.currentTime()});

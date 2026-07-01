@@ -14,12 +14,14 @@
 
     <arg name="state_timeout" default="0.2"/>
     <arg name="reference_timeout" default="0.5"/>
-    <arg name="command_publish_rate_hz" default="50.0"/>
+    <arg name="command_publish_rate_hz" default="100.0"/>
+    <arg name="auto_start_tracking" default="false"/>
 
-    <arg name="nmpc_control_period" default="0.05"/>
+    <arg name="nmpc_control_period" default="0.1"/>
     <arg name="nmpc_prediction_horizon" default="1.0"/>
-    <arg name="nmpc_request_rate_hz" default="20.0"/>
+    <arg name="nmpc_request_rate_hz" default="100.0"/>
     <arg name="nmpc_solve_timeout" default="0.05"/>
+    <arg name="nmpc_result_timeout" default="0.1"/>
 
     <arg name="min_linear_speed" default="-0.5"/>
     <arg name="max_linear_speed" default="3.0"/>
@@ -43,10 +45,12 @@
             <param name="state_timeout" value="$(arg state_timeout)"/>
             <param name="reference_timeout" value="$(arg reference_timeout)"/>
             <param name="command_publish_rate_hz" value="$(arg command_publish_rate_hz)"/>
+            <param name="auto_start_tracking" value="$(arg auto_start_tracking)"/>
             <param name="nmpc/control_period" value="$(arg nmpc_control_period)"/>
             <param name="nmpc/prediction_horizon" value="$(arg nmpc_prediction_horizon)"/>
             <param name="nmpc/request_rate_hz" value="$(arg nmpc_request_rate_hz)"/>
             <param name="nmpc/solve_timeout" value="$(arg nmpc_solve_timeout)"/>
+            <param name="nmpc/result_timeout" value="$(arg nmpc_result_timeout)"/>
             <param name="limits/min_linear_speed" value="$(arg min_linear_speed)"/>
             <param name="limits/max_linear_speed" value="$(arg max_linear_speed)"/>
             <param name="limits/max_angular_speed" value="$(arg max_angular_speed)"/>
@@ -54,4 +58,3 @@
         </node>
     </group>
 </launch>
-

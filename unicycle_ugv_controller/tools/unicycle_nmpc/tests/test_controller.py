@@ -8,8 +8,8 @@ from unicycle_nmpc.controller import Bounds, CostWeights, MPCConfig
 class UnicycleNmpcConfigTests(unittest.TestCase):
     def test_dimensions_and_defaults(self) -> None:
         cfg = MPCConfig()
-        self.assertEqual(cfg.steps, 20)
-        self.assertTrue(np.isclose(cfg.dt, 0.05))
+        self.assertEqual(cfg.steps, 10)
+        self.assertTrue(np.isclose(cfg.dt, 0.1))
         self.assertGreater(Bounds().v_max, 0.0)
         self.assertEqual(CostWeights().control.shape, (2,))
 

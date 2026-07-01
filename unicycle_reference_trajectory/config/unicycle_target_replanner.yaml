@@ -1,0 +1,43 @@
+queue_size: 10
+state_topic: alg/state_estimator/state
+target_topic: alg/unicycle_reference_trajectory/target_pose
+sampled_topic: alg/unicycle_reference_trajectory/request/sampled
+frame_id: world
+
+replan_period: 5.0
+state_timeout: 0.5
+start_delay: 0.2
+enable_target_topic: true
+random_targets: true
+random_min_x: -5.0
+random_max_x: 5.0
+random_min_y: -5.0
+random_max_y: 5.0
+random_yaw_mode: heading
+random_fixed_yaw: 0.0
+random_seed: 0
+
+piece_count: 4
+sample_dt: 0.01
+desired_speed: 1.0
+min_boundary_speed: 0.15
+approach_speed: 0.4
+hold_duration: 0.5
+max_duration: 20.0
+min_segment_time: 0.1
+max_segment_time: 8.0
+time_weight: 1.0
+dynamic_penalty_weight: 1000.0
+max_iterations: 80
+rel_cost_tol: 1.0e-5
+validation_sample_dt: 0.02
+position_tolerance: 0.03
+max_velocity: 3.0
+max_acceleration: 2.0
+max_yaw_rate: 2.5
+
+target_sequence:
+  - {x: 2.0, y: 0.0, yaw: 0.0}
+  - {x: 2.0, y: 2.0, yaw: 1.57079632679}
+  - {x: 0.0, y: 2.0, yaw: 3.14159265359}
+  - {x: 0.0, y: 0.0, yaw: -1.57079632679}

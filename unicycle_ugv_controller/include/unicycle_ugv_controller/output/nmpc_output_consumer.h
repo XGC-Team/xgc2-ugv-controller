@@ -1,5 +1,9 @@
 #pragma once
 
+#include <geometry_msgs/PoseArray.h>
+#include <nav_msgs/Path.h>
+#include <ros/ros.h>
+
 #include <condition_variable>
 #include <functional>
 #include <mutex>
@@ -16,7 +20,8 @@ class NmpcOutputConsumer final : public ::state_machine::runtime::EventConsumer 
    public:
     using EventSink = std::function<::state_machine::Status(::state_machine::Event)>;
 
-    NmpcOutputConsumer(UnicycleUgvController& controller, EventSink event_sink);
+    NmpcOutputConsumer(ros::NodeHandle& nh, UnicycleUgvController& controller, EventSink event_sink,
+                       uint32_t queue_size);
     ~NmpcOutputConsumer() override;
 
     std::string name() const override {
@@ -34,12 +39,15 @@ class NmpcOutputConsumer final : public ::state_machine::runtime::EventConsumer 
     };
 
     void workerLoop();
-    void reject(uint64_t sequence, int solver_status);
+    void reject(uint64_t sequence);
     void postResultEvent(uint64_t sequence, bool success);
+    void publishPrediction(const ros::Time& stamp);
 
     UnicycleUgvController& controller_;
     EventSink event_sink_;
     NmpcTrackingBackend backend_;
+    ros::Publisher predicted_path_pub_;
+    ros::Publisher predicted_poses_pub_;
     std::mutex mutex_;
     std::condition_variable condition_;
     std::thread worker_;

@@ -25,7 +25,7 @@ bool UnicycleNmpcSolver::initialize() {
         return true;
     }
     if (UNICYCLE_NMPC_NX != 4 || UNICYCLE_NMPC_NU != 2 || UNICYCLE_NMPC_NP != 6 ||
-        UNICYCLE_NMPC_N != 20) {
+        UNICYCLE_NMPC_N != 10) {
         ROS_ERROR("[UnicycleNmpcSolver] Unexpected generated solver dimensions");
         return false;
     }

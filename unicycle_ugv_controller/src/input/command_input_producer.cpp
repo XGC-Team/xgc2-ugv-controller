@@ -32,10 +32,13 @@ void CommandInputProducer::commandCallback(const std_msgs::String::ConstPtr& msg
     }
     const std::string command = normalize(msg->data);
     if (command == "track" || command == "tracking" || command == "custom1" || command == "start") {
+        ROS_INFO("[UgvCommandInputProducer] Accepted tracking command: %s", msg->data.c_str());
         post(event_type::CMD_TRACK, "command");
     } else if (command == "hold" || command == "stop") {
+        ROS_INFO("[UgvCommandInputProducer] Accepted hold command: %s", msg->data.c_str());
         post(event_type::CMD_HOLD, "command");
     } else if (command == "reset") {
+        ROS_INFO("[UgvCommandInputProducer] Accepted reset command");
         post(event_type::CMD_RESET, "command");
     } else {
         ROS_WARN("[UgvCommandInputProducer] Unknown command: %s", msg->data.c_str());

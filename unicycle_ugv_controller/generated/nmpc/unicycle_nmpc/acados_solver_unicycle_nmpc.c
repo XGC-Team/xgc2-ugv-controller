@@ -439,34 +439,24 @@ void unicycle_nmpc_acados_setup_nlp_in(unicycle_nmpc_solver_capsule* capsule, co
     else
     {
         // set time_steps
-    double time_step = 0.05;
+    double time_step = 0.1;
         for (int i = 0; i < N; i++)
         {
             ocp_nlp_in_set(nlp_config, nlp_dims, nlp_in, i, "Ts", &time_step);
         }
         // set cost scaling
         double* cost_scaling = malloc((N+1)*sizeof(double));
-        cost_scaling[0] = 0.05;
-        cost_scaling[1] = 0.05;
-        cost_scaling[2] = 0.05;
-        cost_scaling[3] = 0.05;
-        cost_scaling[4] = 0.05;
-        cost_scaling[5] = 0.05;
-        cost_scaling[6] = 0.05;
-        cost_scaling[7] = 0.05;
-        cost_scaling[8] = 0.05;
-        cost_scaling[9] = 0.05;
-        cost_scaling[10] = 0.05;
-        cost_scaling[11] = 0.05;
-        cost_scaling[12] = 0.05;
-        cost_scaling[13] = 0.05;
-        cost_scaling[14] = 0.05;
-        cost_scaling[15] = 0.05;
-        cost_scaling[16] = 0.05;
-        cost_scaling[17] = 0.05;
-        cost_scaling[18] = 0.05;
-        cost_scaling[19] = 0.05;
-        cost_scaling[20] = 1.0;
+        cost_scaling[0] = 0.1;
+        cost_scaling[1] = 0.1;
+        cost_scaling[2] = 0.1;
+        cost_scaling[3] = 0.1;
+        cost_scaling[4] = 0.1;
+        cost_scaling[5] = 0.1;
+        cost_scaling[6] = 0.1;
+        cost_scaling[7] = 0.1;
+        cost_scaling[8] = 0.1;
+        cost_scaling[9] = 0.1;
+        cost_scaling[10] = 1.0;
         for (int i = 0; i <= N; i++)
         {
             ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, i, "scaling", &cost_scaling[i]);

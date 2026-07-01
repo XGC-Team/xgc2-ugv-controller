@@ -22,11 +22,18 @@ class TrackingState final : public ::state_machine::State {
 
    private:
     void requestSolveIfDue(::state_machine::StateContext& ctx);
+    void publishCommandIfDue(::state_machine::StateContext& ctx);
+    bool hasCommand() const;
     void emitZeroCommand(::state_machine::StateContext& ctx) const;
+    void emitCurrentCommand(::state_machine::StateContext& ctx) const;
 
     UnicycleUgvController& controller_;
     PeriodicGate solve_gate_;
-    uint64_t sequence_{0U};
+    PeriodicGate command_gate_;
+    uint64_t request_sequence_{0U};
+    uint64_t in_flight_sequence_{0U};
+    bool request_in_flight_{false};
+    double request_deadline_{0.0};
 };
 
 }  // namespace unicycle_ugv_controller

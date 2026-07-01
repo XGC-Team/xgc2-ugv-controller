@@ -267,12 +267,22 @@ bool ReferenceCache::sampleHorizon(const ros::Time& now, double stage_dt, int ho
     refs.clear();
     refs.reserve(static_cast<size_t>(horizon_steps) + 1U);
     const double base_t = std::max(0.0, (now - start_time).toSec());
+    bool have_previous_yaw = false;
+    double previous_yaw = 0.0;
     for (int i = 0; i <= horizon_steps; ++i) {
         trajectory::PlanarReference2 ref;
         if (!evaluator->evaluate(base_t + static_cast<double>(i) * stage_dt, ref)) {
             return false;
         }
-        refs.push_back(toSample(ref));
+        auto sample = toSample(ref);
+        if (std::isfinite(sample.state.yaw)) {
+            if (have_previous_yaw) {
+                sample.state.yaw = previous_yaw + wrapAngle(sample.state.yaw - previous_yaw);
+            }
+            previous_yaw = sample.state.yaw;
+            have_previous_yaw = true;
+        }
+        refs.push_back(sample);
     }
     return true;
 }

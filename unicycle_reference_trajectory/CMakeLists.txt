@@ -2,8 +2,10 @@ cmake_minimum_required(VERSION 3.0.2)
 project(unicycle_reference_trajectory)
 
 find_package(catkin REQUIRED COMPONENTS
+  estimator_vrpn_ugv_state
   geometry_msgs
   message_generation
+  nav_msgs
   roscpp
   rospy
   std_msgs
@@ -31,7 +33,8 @@ generate_messages(
 
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS geometry_msgs message_runtime roscpp rospy std_msgs
+  CATKIN_DEPENDS estimator_vrpn_ugv_state geometry_msgs message_runtime nav_msgs roscpp rospy
+                 std_msgs
   DEPENDS EIGEN3 xgc2_math
 )
 
@@ -62,11 +65,22 @@ target_link_libraries(unicycle_reference_trajectory_node
   pthread
 )
 
+add_executable(unicycle_target_replanner_node
+  src/target_replanner_main.cpp
+  src/target_replanner_node.cpp
+)
+add_dependencies(unicycle_target_replanner_node ${${PROJECT_NAME}_EXPORTED_TARGETS}
+                                                ${catkin_EXPORTED_TARGETS})
+target_link_libraries(unicycle_target_replanner_node
+  xgc2_math::trajectory
+  ${catkin_LIBRARIES}
+)
+
 install(DIRECTORY include/${PROJECT_NAME}/
   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
 )
 
-install(TARGETS unicycle_reference_trajectory_node
+install(TARGETS unicycle_reference_trajectory_node unicycle_target_replanner_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

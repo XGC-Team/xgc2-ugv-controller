@@ -2,6 +2,7 @@
 
 #include <ros/time.h>
 
+#include <array>
 #include <vector>
 
 #include "unicycle_ugv_controller/common/types.h"
@@ -21,6 +22,12 @@ class NmpcTrackingBackend {
     }
     double solveTimeMs() const {
         return solve_time_ms_;
+    }
+    const std::array<Se2StateVector, UNICYCLE_NMPC_N + 1>& predictedStates() const {
+        return solver_.predictedStates();
+    }
+    size_t predictedStateCount() const {
+        return solver_.predictedStateCount();
     }
 
    private:
