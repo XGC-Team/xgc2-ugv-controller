@@ -185,11 +185,7 @@ jobs:
 
   build-debs:
     name: Build debs (${{ matrix.arch }})
-    needs:
-      - validate-release-inputs
-      - package-compliance
-      - cpp-quality
-      - source-tests
+    needs: validate-release-inputs
     strategy:
       fail-fast: false
       matrix:
