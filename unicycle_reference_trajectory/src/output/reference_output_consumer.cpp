@@ -1,14 +1,14 @@
 #include "unicycle_reference_trajectory/output/reference_output_consumer.h"
 
 #include <geometry_msgs/PoseStamped.h>
-#include <xgc2_math/trajectory/analytic/2d/circle_2d.hpp>
-#include <xgc2_math/trajectory/analytic/2d/circle_entry_2d.hpp>
-#include <xgc2_math/trajectory/analytic/2d/figure_eight_2d.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <memory>
 #include <utility>
+#include <xgc2_math/trajectory/analytic/2d/circle_2d.hpp>
+#include <xgc2_math/trajectory/analytic/2d/circle_entry_2d.hpp>
+#include <xgc2_math/trajectory/analytic/2d/figure_eight_2d.hpp>
 
 namespace unicycle_reference_trajectory {
 namespace {
@@ -33,8 +33,7 @@ double visualizationDuration(const trajectory::TrajectoryEvaluator2& evaluator,
                              double configured_duration) {
     const double base_duration =
         std::min(evaluator.duration(), configured_duration > 0.0 ? configured_duration : 20.0);
-    if (const auto* circle =
-            dynamic_cast<const trajectory::CircleCurveEvaluator2*>(&evaluator)) {
+    if (const auto* circle = dynamic_cast<const trajectory::CircleCurveEvaluator2*>(&evaluator)) {
         const auto& params = circle->params();
         const double period = periodFromRadiusAndSpeed(params.radius, params.line_speed);
         return period > 0.0 ? std::min(base_duration, period) : base_duration;

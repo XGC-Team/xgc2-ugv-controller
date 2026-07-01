@@ -33,7 +33,8 @@ fi
 required_files=(
   .clang-format
   .clang-tidy
-  .github/workflows/build-debs.yml
+  .github/workflows/ci.yml
+  .github/workflows/release.yml
   .xgc2/product.yml
   .xgc2/scripts/build_debs_in_docker.sh
   .xgc2/scripts/check_core_libraries.sh
@@ -71,9 +72,10 @@ grep -q "id: xgc2-ugv-controller" .xgc2/product.yml
 grep -Eq '^version: [0-9]+\.[0-9]+\.[0-9]+-[0-9]+$' .xgc2/product.yml
 grep -q "<name>unicycle_ugv_controller</name>" unicycle_ugv_controller/package.xml
 grep -q "<name>unicycle_reference_trajectory</name>" unicycle_reference_trajectory/package.xml
-grep -q "run_tests_unicycle_reference_trajectory" .github/workflows/build-debs.yml
-grep -q "run_tests_unicycle_ugv_controller" .github/workflows/build-debs.yml
-grep -q "check_version_bump.sh --ci" .github/workflows/build-debs.yml
+grep -q "run_tests_unicycle_reference_trajectory" .github/workflows/ci.yml
+grep -q "run_tests_unicycle_ugv_controller" .github/workflows/ci.yml
+grep -q "expected_version" .github/workflows/release.yml
+grep -q "expected_source_sha" .github/workflows/release.yml
 grep -q "PACKAGE=\"ros-\${ROS_DISTRO}-xgc2-ugv-controller\"" .xgc2/scripts/package_debs.sh
 grep -q "unicycle_ugv_controller" .xgc2/scripts/package_debs.sh
 grep -q "unicycle_reference_trajectory" .xgc2/scripts/package_debs.sh

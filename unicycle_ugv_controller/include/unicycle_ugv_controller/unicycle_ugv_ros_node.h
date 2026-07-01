@@ -1,12 +1,12 @@
 #pragma once
 
 #include <ros/ros.h>
-#include <state_machine/state_machine.hpp>
 #include <std_msgs/UInt32.h>
 
 #include <memory>
 #include <state_machine/runtime/async_task_executor.hpp>
 #include <state_machine/runtime/event_dispatcher.hpp>
+#include <state_machine/state_machine.hpp>
 #include <string>
 #include <vector>
 

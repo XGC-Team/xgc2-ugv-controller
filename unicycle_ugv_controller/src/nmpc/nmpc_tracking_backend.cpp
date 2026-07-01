@@ -15,9 +15,8 @@ bool finiteStateVector(const Se2StateVector& state) {
 }
 
 bool initialConstraintSatisfied(const std::array<Se2StateVector, UNICYCLE_NMPC_N + 1>& states,
-                                size_t count, const Se2StateVector& x0,
-                                double& position_error, double& yaw_error,
-                                double& speed_error) {
+                                size_t count, const Se2StateVector& x0, double& position_error,
+                                double& yaw_error, double& speed_error) {
     if (count == 0U || !finiteStateVector(x0) || !finiteStateVector(states[0])) {
         position_error = std::numeric_limits<double>::quiet_NaN();
         yaw_error = std::numeric_limits<double>::quiet_NaN();
@@ -30,8 +29,7 @@ bool initialConstraintSatisfied(const std::array<Se2StateVector, UNICYCLE_NMPC_N
     speed_error = std::abs(states[0](3) - x0(3));
     constexpr double kInitialConstraintTolerance = 1.0e-5;
     return position_error <= kInitialConstraintTolerance &&
-           yaw_error <= kInitialConstraintTolerance &&
-           speed_error <= kInitialConstraintTolerance;
+           yaw_error <= kInitialConstraintTolerance && speed_error <= kInitialConstraintTolerance;
 }
 
 }  // namespace
