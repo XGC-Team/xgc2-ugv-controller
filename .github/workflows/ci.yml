@@ -131,7 +131,6 @@ jobs:
 
   build-debs:
     name: Build debs (${{ matrix.arch }})
-    needs: package-compliance
     strategy:
       fail-fast: false
       matrix:
