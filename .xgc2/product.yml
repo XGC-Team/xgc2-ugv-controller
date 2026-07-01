@@ -1,44 +1,45 @@
 schema: xgc2.product.v1
 id: xgc2-ugv-controller
 name: XGC2 UGV Controller
-version: 1.1.1-1
+version: 1.1.1-2
 kind: ros1-apt
-summary: ROS1 unicycle UGV controller and planar reference trajectory packages for XGC2 robots.
-
+summary: ROS1 unicycle UGV controller and planar reference trajectory packages for
+  XGC2 robots.
 ros:
   distro: noetic
   packages:
-    - unicycle_reference_trajectory
-    - unicycle_ugv_controller
-
+  - unicycle_reference_trajectory
+  - unicycle_ugv_controller
 apt:
   distribution: focal
   install:
-    - ros-noetic-xgc2-ugv-controller
+  - ros-noetic-xgc2-ugv-controller
   packages:
-    - ros-noetic-xgc2-ugv-controller
+  - ros-noetic-xgc2-ugv-controller
   depends:
-    - libeigen3-dev
-    - libxgc2-state-machine-dev (>= 0.1.2-1~focal)
-    - libxgc2-math-dev (>= 0.5.1-1)
-    - xgc2-acados (>= 0.1.0-3~focal)
-    - ros-noetic-xgc2-ros1-utils
-    - ros-noetic-xgc2-estimator-rigid-state (>= 1.1.0-1)
-
+  - libeigen3-dev
+  - libxgc2-state-machine-dev (>= 0.1.2-2~focal)
+  - libxgc2-math-dev (>= 0.5.5-2)
+  - xgc2-acados (>= 0.1.0-4~focal)
+  - ros-noetic-xgc2-ros1-utils
+  - ros-noetic-xgc2-estimator-rigid-state (>= 1.1.3-3)
 usage:
-  install: |
-    sudo apt update
+  install: 'sudo apt update
+
     sudo apt install ros-noetic-xgc2-ugv-controller
-  smoke_test: |
-    roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch
+
+    '
+  smoke_test: 'roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch
+
     roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch
 
+    '
 ownership:
   paths:
-    - /opt/ros/noetic/share/unicycle_reference_trajectory
-    - /opt/ros/noetic/share/unicycle_ugv_controller
-    - /opt/ros/noetic/include/unicycle_reference_trajectory
-    - /opt/ros/noetic/include/unicycle_ugv_controller
-    - /opt/ros/noetic/lib/unicycle_reference_trajectory
-    - /opt/ros/noetic/lib/unicycle_ugv_controller
-    - /opt/ros/noetic/lib/libunicycle_ugv_controller_nmpc_runtime.so
+  - /opt/ros/noetic/share/unicycle_reference_trajectory
+  - /opt/ros/noetic/share/unicycle_ugv_controller
+  - /opt/ros/noetic/include/unicycle_reference_trajectory
+  - /opt/ros/noetic/include/unicycle_ugv_controller
+  - /opt/ros/noetic/lib/unicycle_reference_trajectory
+  - /opt/ros/noetic/lib/unicycle_ugv_controller
+  - /opt/ros/noetic/lib/libunicycle_ugv_controller_nmpc_runtime.so
