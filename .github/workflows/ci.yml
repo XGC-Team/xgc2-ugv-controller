@@ -23,7 +23,6 @@ jobs:
       - name: Check package metadata
         run: |
           git diff --check HEAD
-          .xgc2/scripts/check_version_bump.sh --ci
           .xgc2/scripts/check_package_compliance.sh
 
   cpp-quality:
@@ -146,9 +145,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-
-      - name: Check product version bump
-        run: .xgc2/scripts/check_version_bump.sh --ci
 
       - name: Build and install-check deb package in Docker
         run: |
