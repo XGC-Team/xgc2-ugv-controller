@@ -76,7 +76,7 @@ case "${TIDY_SCOPE}" in
     if ! git -C "${REPO_ROOT}" rev-parse --verify HEAD^ >/dev/null 2>&1; then
       git_ref_name="${GITHUB_REF_NAME:-}"
       if [[ -n "${git_ref_name}" ]]; then
-        git -C "${REPO_ROOT}" fetch --depth=2 origin "${git_ref_name}" || true
+        timeout 30s git -C "${REPO_ROOT}" fetch --depth=2 origin "${git_ref_name}" || true
       fi
     fi
 

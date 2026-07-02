@@ -29,9 +29,12 @@ jobs:
     name: C++ quality
     continue-on-error: true
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     container: ros:noetic-ros-base-focal
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Install quality dependencies
         run: |
