@@ -65,19 +65,14 @@ jobs:
 
   cpp-quality:
     name: C++ quality
+    if: ${{ inputs.run_cpp_quality }}
     needs: validate-release-inputs
     runs-on: ubuntu-latest
     container: ros:noetic-ros-base-focal
     steps:
-      - name: Skip C++ quality
-        if: ${{ !inputs.run_cpp_quality }}
-        run: echo "C++ quality disabled by input"
-
       - uses: actions/checkout@v4
-        if: inputs.run_cpp_quality
 
       - name: Install quality dependencies
-        if: inputs.run_cpp_quality
         run: |
           export DEBIAN_FRONTEND=noninteractive
           .xgc2/scripts/setup_xgc2_apt_source.sh
@@ -102,7 +97,6 @@ jobs:
             ros-noetic-xgc2-ros1-utils
 
       - name: Run C++ quality gate
-        if: inputs.run_cpp_quality
         run: .xgc2/scripts/check_cpp_quality.sh
 
   source-tests:
