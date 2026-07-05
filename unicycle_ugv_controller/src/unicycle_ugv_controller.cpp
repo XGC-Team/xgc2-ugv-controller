@@ -1,6 +1,6 @@
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
 
-#include <estimator_vrpn_ugv_state/PlanarStateEstimate.h>
+#include <rigid_state_estimator_msgs/PlanarStateEstimate.h>
 #include <ros/console.h>
 
 #include <stdexcept>
@@ -55,8 +55,9 @@ void UnicycleUgvController::setConfig(const ControllerConfig& config) {
 bool UnicycleUgvController::healthReady() const {
     const auto cfg = config();
     return stateFresh(state_, ros::Time(current_time_sec_), cfg.state_timeout) &&
-           state_.estimator_state == estimator_vrpn_ugv_state::PlanarStateEstimate::STATE_RUNNING &&
-           (state_.estimator_flags & estimator_vrpn_ugv_state::PlanarStateEstimate::FLAG_FAULT) ==
+           state_.estimator_state ==
+               rigid_state_estimator_msgs::PlanarStateEstimate::STATE_RUNNING &&
+           (state_.estimator_flags & rigid_state_estimator_msgs::PlanarStateEstimate::FLAG_FAULT) ==
                0U;
 }
 

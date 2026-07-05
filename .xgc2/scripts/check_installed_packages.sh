@@ -8,7 +8,7 @@ source "/opt/ros/${ROS_DISTRO}/setup.bash"
 set -u
 
 dpkg -s "ros-${ROS_DISTRO}-xgc2-ugv-controller" >/dev/null
-dpkg -s "ros-${ROS_DISTRO}-xgc2-estimator-rigid-state" >/dev/null
+dpkg -s "ros-${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs" >/dev/null
 dpkg -s "ros-${ROS_DISTRO}-xgc2-ros1-utils" >/dev/null
 dpkg -s libxgc2-state-machine-dev >/dev/null
 dpkg -s libxgc2-math-dev >/dev/null
@@ -17,7 +17,8 @@ xgc2_acados_version="$(dpkg-query -W -f='${Version}' xgc2-acados)"
 dpkg --compare-versions "${xgc2_acados_version}" ge "0.1.0-5~focal"
 test "$(rospack find unicycle_reference_trajectory)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory"
 test "$(rospack find unicycle_ugv_controller)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_ugv_controller"
-test "$(rospack find estimator_vrpn_ugv_state)" = "/opt/ros/${ROS_DISTRO}/share/estimator_vrpn_ugv_state"
+test "$(rospack find rigid_state_estimator_msgs)" = "/opt/ros/${ROS_DISTRO}/share/rigid_state_estimator_msgs"
+rosmsg show rigid_state_estimator_msgs/PlanarStateEstimate | grep -q '^uint8 estimator_state$'
 test -f "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory/config/unicycle_reference_trajectory.yaml"
 test -f "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory/launch/ugv_unicycle_reference_trajectory.launch"
 test -f "/opt/ros/${ROS_DISTRO}/include/unicycle_reference_trajectory/unicycle_reference_trajectory_runtime.h"

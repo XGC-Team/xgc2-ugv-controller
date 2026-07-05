@@ -96,7 +96,7 @@ jobs:
             ros-noetic-roscpp \
             ros-noetic-rospy \
             ros-noetic-std-msgs \
-            ros-noetic-xgc2-estimator-rigid-state \
+            ros-noetic-xgc2-estimator-rigid-state-msgs \
             ros-noetic-xgc2-ros1-utils
 
       - name: Run C++ quality gate
@@ -145,7 +145,7 @@ jobs:
             ros-noetic-rostest \
             ros-noetic-rosunit \
             ros-noetic-std-msgs \
-            ros-noetic-xgc2-estimator-rigid-state \
+            ros-noetic-xgc2-estimator-rigid-state-msgs \
             ros-noetic-xgc2-ros1-utils
 
       - name: Build package and run launch compliance

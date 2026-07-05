@@ -1,6 +1,6 @@
 #pragma once
 
-#include <estimator_vrpn_ugv_state/PlanarStateEstimate.h>
+#include <rigid_state_estimator_msgs/PlanarStateEstimate.h>
 #include <ros/ros.h>
 
 #include <functional>
@@ -18,7 +18,7 @@ class StateInputProducer {
                        EventSink event_sink, uint32_t queue_size);
 
    private:
-    void stateCallback(const estimator_vrpn_ugv_state::PlanarStateEstimate::ConstPtr& msg);
+    void stateCallback(const rigid_state_estimator_msgs::PlanarStateEstimate::ConstPtr& msg);
     void post(::state_machine::EventId id, const char* source, const ros::Time& stamp);
 
     UgvState& state_;

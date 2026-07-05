@@ -145,7 +145,7 @@ bool TargetReplannerNode::loadTargetSequence() {
 }
 
 void TargetReplannerNode::stateCallback(
-    const estimator_vrpn_ugv_state::PlanarStateEstimate::ConstPtr& msg) {
+    const rigid_state_estimator_msgs::PlanarStateEstimate::ConstPtr& msg) {
     if (!msg) {
         return;
     }

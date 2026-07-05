@@ -6,10 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(catkin REQUIRED COMPONENTS
-  estimator_vrpn_ugv_state
   geometry_msgs
   message_generation
   nav_msgs
+  rigid_state_estimator_msgs
   roscpp
   ros1_utils
   std_msgs
@@ -119,7 +119,7 @@ endif()
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES unicycle_ugv_controller_nmpc_runtime
-  CATKIN_DEPENDS estimator_vrpn_ugv_state geometry_msgs message_runtime nav_msgs roscpp ros1_utils std_msgs unicycle_reference_trajectory
+  CATKIN_DEPENDS geometry_msgs message_runtime nav_msgs rigid_state_estimator_msgs roscpp ros1_utils std_msgs unicycle_reference_trajectory
   DEPENDS EIGEN3
 )
 

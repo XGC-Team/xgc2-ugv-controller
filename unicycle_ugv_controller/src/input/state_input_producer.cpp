@@ -12,7 +12,7 @@ StateInputProducer::StateInputProducer(ros::NodeHandle& nh, UgvState& state,
 }
 
 void StateInputProducer::stateCallback(
-    const estimator_vrpn_ugv_state::PlanarStateEstimate::ConstPtr& msg) {
+    const rigid_state_estimator_msgs::PlanarStateEstimate::ConstPtr& msg) {
     if (!msg) {
         ROS_ERROR("[UgvStateInputProducer] Received null state estimate");
         return;

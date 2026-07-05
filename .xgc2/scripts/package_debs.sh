@@ -94,7 +94,7 @@ Section: misc
 Priority: optional
 Architecture: ${ARCH}
 Maintainer: XGC2 <apt@example.com>
-Depends: libeigen3-dev, libxgc2-state-machine-dev (>= 0.1.2-5~focal), libxgc2-math-dev (>= 0.5.5-5), xgc2-acados (>= 0.1.0-7~focal), ros-${ROS_DISTRO}-xgc2-ros1-utils, ros-${ROS_DISTRO}-xgc2-estimator-rigid-state (>= 1.1.3-6), ros-${ROS_DISTRO}-message-runtime, ros-${ROS_DISTRO}-roscpp, ros-${ROS_DISTRO}-rospy, ros-${ROS_DISTRO}-std-msgs, ros-${ROS_DISTRO}-geometry-msgs
+Depends: libeigen3-dev, libxgc2-state-machine-dev (>= 0.1.2-5~focal), libxgc2-math-dev (>= 0.5.5-5), xgc2-acados (>= 0.1.0-7~focal), ros-${ROS_DISTRO}-xgc2-ros1-utils, ros-${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs (>= 1.1.4-1), ros-${ROS_DISTRO}-message-runtime, ros-${ROS_DISTRO}-roscpp, ros-${ROS_DISTRO}-rospy, ros-${ROS_DISTRO}-std-msgs, ros-${ROS_DISTRO}-geometry-msgs
 Replaces: ros-${ROS_DISTRO}-xgc2-controller (<< 1.3.2-1)
 Breaks: ros-${ROS_DISTRO}-xgc2-controller (<< 1.3.2-1)
 Description: XGC2 ROS1 UGV controller and reference trajectory packages

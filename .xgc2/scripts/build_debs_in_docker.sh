@@ -75,7 +75,7 @@ docker run --rm \
       ros-noetic-rostest \
       ros-noetic-rosunit \
       ros-noetic-std-msgs \
-      ros-noetic-xgc2-estimator-rigid-state \
+      ros-noetic-xgc2-estimator-rigid-state-msgs \
       ros-noetic-xgc2-ros1-utils
 
     rm -rf /workspace/work/src /workspace/work/build /workspace/work/devel /workspace/work/install-root

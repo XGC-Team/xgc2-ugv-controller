@@ -2,10 +2,10 @@ cmake_minimum_required(VERSION 3.0.2)
 project(unicycle_reference_trajectory)
 
 find_package(catkin REQUIRED COMPONENTS
-  estimator_vrpn_ugv_state
   geometry_msgs
   message_generation
   nav_msgs
+  rigid_state_estimator_msgs
   roscpp
   rospy
   std_msgs
@@ -33,7 +33,7 @@ generate_messages(
 
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS estimator_vrpn_ugv_state geometry_msgs message_runtime nav_msgs roscpp rospy
+  CATKIN_DEPENDS geometry_msgs message_runtime nav_msgs rigid_state_estimator_msgs roscpp rospy
                  std_msgs
   DEPENDS EIGEN3 xgc2_math
 )
