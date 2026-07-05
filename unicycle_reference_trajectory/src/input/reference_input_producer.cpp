@@ -18,12 +18,13 @@ geometry_msgs::Quaternion yawQuaternion(double yaw) {
 }
 
 uint16_t normalizedAnalyticType(uint16_t type) {
-    if (type == AnalyticReference::ANALYTIC_HOLD || type == AnalyticReference::ANALYTIC_CIRCLE ||
-        type == AnalyticReference::ANALYTIC_CIRCLE_ENTRY ||
-        type == AnalyticReference::ANALYTIC_FIGURE_EIGHT) {
+    if (type == unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_HOLD ||
+        type == unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_CIRCLE ||
+        type == unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_CIRCLE_ENTRY ||
+        type == unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_FIGURE_EIGHT) {
         return type;
     }
-    return AnalyticReference::ANALYTIC_CIRCLE;
+    return unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_CIRCLE;
 }
 
 }  // namespace
@@ -48,13 +49,15 @@ ReferenceInputProducer::ReferenceInputProducer(ros::NodeHandle& nh,
 
 void ReferenceInputProducer::update(double now_sec) {
     if (!default_analytic_.enabled || default_analytic_sent_ || !std::isfinite(now_sec) ||
-        runtime_.currentState() != ReferenceStatus::STATE_READY) {
+        runtime_.currentState() !=
+            unicycle_reference_trajectory_msgs::ReferenceStatus::STATE_READY) {
         return;
     }
     publishDefaultAnalytic(now_sec);
 }
 
-void ReferenceInputProducer::analyticCallback(const AnalyticReference::ConstPtr& msg) {
+void ReferenceInputProducer::analyticCallback(
+    const unicycle_reference_trajectory_msgs::AnalyticReference::ConstPtr& msg) {
     if (!msg) {
         ROS_ERROR("[ReferenceInputProducer] Null analytic reference");
         return;
@@ -66,7 +69,8 @@ void ReferenceInputProducer::analyticCallback(const AnalyticReference::ConstPtr&
     post(event_type::ANALYTIC_RECEIVED, "analytic_reference");
 }
 
-void ReferenceInputProducer::waypointCallback(const WaypointReferenceRequest::ConstPtr& msg) {
+void ReferenceInputProducer::waypointCallback(
+    const unicycle_reference_trajectory_msgs::WaypointReferenceRequest::ConstPtr& msg) {
     if (!msg) {
         ROS_ERROR("[ReferenceInputProducer] Null waypoint reference");
         return;
@@ -78,7 +82,8 @@ void ReferenceInputProducer::waypointCallback(const WaypointReferenceRequest::Co
     post(event_type::WAYPOINT_RECEIVED, "waypoint_reference");
 }
 
-void ReferenceInputProducer::sampledCallback(const SampledReference::ConstPtr& msg) {
+void ReferenceInputProducer::sampledCallback(
+    const unicycle_reference_trajectory_msgs::SampledReference::ConstPtr& msg) {
     if (!msg) {
         ROS_ERROR("[ReferenceInputProducer] Null sampled reference");
         return;
@@ -98,7 +103,7 @@ void ReferenceInputProducer::resetCallback(const std_msgs::Empty::ConstPtr& msg)
 }
 
 void ReferenceInputProducer::publishDefaultAnalytic(double now_sec) {
-    AnalyticReference msg;
+    unicycle_reference_trajectory_msgs::AnalyticReference msg;
     msg.header.stamp = ros::Time(now_sec);
     msg.request_id = default_analytic_.request_id;
     msg.trajectory_id = default_analytic_.trajectory_id;

@@ -1,13 +1,13 @@
 #pragma once
 
 #include <ros/ros.h>
+#include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
+#include <unicycle_reference_trajectory_msgs/SampledReference.h>
+#include <unicycle_reference_trajectory_msgs/WaypointReferenceRequest.h>
 
 #include <string>
 
 #include "std_msgs/Empty.h"
-#include "unicycle_reference_trajectory/AnalyticReference.h"
-#include "unicycle_reference_trajectory/SampledReference.h"
-#include "unicycle_reference_trajectory/WaypointReferenceRequest.h"
 #include "unicycle_reference_trajectory/unicycle_reference_trajectory_runtime.h"
 
 namespace unicycle_reference_trajectory {
@@ -17,7 +17,7 @@ struct DefaultAnalyticReferenceConfig {
     uint32_t request_id{1U};
     uint32_t trajectory_id{1U};
     uint32_t revision{1U};
-    uint16_t analytic_type{AnalyticReference::ANALYTIC_CIRCLE};
+    uint16_t analytic_type{unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_CIRCLE};
     double start_delay{0.5};
     double duration{120.0};
     double origin_x{0.0};
@@ -41,9 +41,11 @@ class ReferenceInputProducer {
     void update(double now_sec);
 
    private:
-    void analyticCallback(const AnalyticReference::ConstPtr& msg);
-    void waypointCallback(const WaypointReferenceRequest::ConstPtr& msg);
-    void sampledCallback(const SampledReference::ConstPtr& msg);
+    void analyticCallback(
+        const unicycle_reference_trajectory_msgs::AnalyticReference::ConstPtr& msg);
+    void waypointCallback(
+        const unicycle_reference_trajectory_msgs::WaypointReferenceRequest::ConstPtr& msg);
+    void sampledCallback(const unicycle_reference_trajectory_msgs::SampledReference::ConstPtr& msg);
     void resetCallback(const std_msgs::Empty::ConstPtr& msg);
     void publishDefaultAnalytic(double now_sec);
     void post(uint32_t event_id, const char* source);

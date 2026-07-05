@@ -68,11 +68,15 @@ ReferenceOutputConsumer::ReferenceOutputConsumer(
       reference_path_sample_dt_(reference_path_sample_dt > 0.0 ? reference_path_sample_dt : 0.5),
       reference_path_preview_duration_(
           reference_path_preview_duration > 0.0 ? reference_path_preview_duration : 20.0) {
-    status_pub_ = nh.advertise<ReferenceStatus>(status_topic, queue_size, true);
-    active_analytic_pub_ = nh.advertise<AnalyticReference>(active_analytic_topic, queue_size, true);
+    status_pub_ = nh.advertise<unicycle_reference_trajectory_msgs::ReferenceStatus>(
+        status_topic, queue_size, true);
+    active_analytic_pub_ = nh.advertise<unicycle_reference_trajectory_msgs::AnalyticReference>(
+        active_analytic_topic, queue_size, true);
     active_polynomial_pub_ =
-        nh.advertise<ActivePolynomialReference>(active_polynomial_topic, queue_size, true);
-    active_sampled_pub_ = nh.advertise<SampledReference>(active_sampled_topic, queue_size, true);
+        nh.advertise<unicycle_reference_trajectory_msgs::ActivePolynomialReference>(
+            active_polynomial_topic, queue_size, true);
+    active_sampled_pub_ = nh.advertise<unicycle_reference_trajectory_msgs::SampledReference>(
+        active_sampled_topic, queue_size, true);
     reference_path_pub_ = nh.advertise<nav_msgs::Path>(reference_path_topic, queue_size, true);
 }
 

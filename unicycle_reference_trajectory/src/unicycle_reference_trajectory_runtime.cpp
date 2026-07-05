@@ -53,20 +53,21 @@ double adjustedStartTime(double requested, double now, double min_lead_time) {
     return std::max(requested, minimum);
 }
 
-double paramAt(const AnalyticReference& msg, size_t index, double fallback) {
+double paramAt(const unicycle_reference_trajectory_msgs::AnalyticReference& msg, size_t index,
+               double fallback) {
     return msg.params.size() > index && std::isfinite(msg.params[index]) ? msg.params[index]
                                                                          : fallback;
 }
 
 trajectory::WaypointConstraintType2 constraintType(uint8_t value) {
     switch (value) {
-        case WaypointReferenceRequest::CONSTRAINT_SPHERE:
+        case unicycle_reference_trajectory_msgs::WaypointReferenceRequest::CONSTRAINT_SPHERE:
             return trajectory::WaypointConstraintType2::kSphere;
-        case WaypointReferenceRequest::CONSTRAINT_BOX:
+        case unicycle_reference_trajectory_msgs::WaypointReferenceRequest::CONSTRAINT_BOX:
             return trajectory::WaypointConstraintType2::kBox;
-        case WaypointReferenceRequest::CONSTRAINT_GATE:
+        case unicycle_reference_trajectory_msgs::WaypointReferenceRequest::CONSTRAINT_GATE:
             return trajectory::WaypointConstraintType2::kGate;
-        case WaypointReferenceRequest::CONSTRAINT_POINT:
+        case unicycle_reference_trajectory_msgs::WaypointReferenceRequest::CONSTRAINT_POINT:
         default:
             return trajectory::WaypointConstraintType2::kPoint;
     }
@@ -103,7 +104,7 @@ void ReferenceTrajectoryRuntime::setConfig(const ReferenceTrajectoryConfig& conf
 }
 
 void ReferenceTrajectoryRuntime::reset() {
-    state_ = ReferenceStatus::STATE_SELF_CHECK;
+    state_ = unicycle_reference_trajectory_msgs::ReferenceStatus::STATE_SELF_CHECK;
     current_time_sec_ = 0.0;
     flags_ = 0U;
     pending_kind_ = PendingKind::kNone;
@@ -113,9 +114,9 @@ void ReferenceTrajectoryRuntime::reset() {
     active_start_sec_ = 0.0;
     active_duration_ = 0.0;
     active_evaluator_.reset();
-    active_analytic_ = AnalyticReference{};
-    active_sampled_ = SampledReference{};
-    active_polynomial_ = ActivePolynomialReference{};
+    active_analytic_ = unicycle_reference_trajectory_msgs::AnalyticReference{};
+    active_sampled_ = unicycle_reference_trajectory_msgs::SampledReference{};
+    active_polynomial_ = unicycle_reference_trajectory_msgs::ActivePolynomialReference{};
     setupMachine();
 }
 
@@ -131,11 +132,12 @@ void ReferenceTrajectoryRuntime::update(double now_sec) {
         transition_result.status.ok() ? machine_->update({64, 64, true}) : transition_result;
     if (!tick_result.status.ok()) {
         flags_ |= trajectory::kFlagInvalidInput;
-        state_ = ReferenceStatus::STATE_FAULT;
+        state_ = unicycle_reference_trajectory_msgs::ReferenceStatus::STATE_FAULT;
     }
 }
 
-bool ReferenceTrajectoryRuntime::acceptAnalytic(const AnalyticReference& msg) {
+bool ReferenceTrajectoryRuntime::acceptAnalytic(
+    const unicycle_reference_trajectory_msgs::AnalyticReference& msg) {
     uint32_t flags = 0U;
     if (!buildAnalyticEvaluator(msg, flags)) {
         flags_ |= flags;
@@ -148,7 +150,8 @@ bool ReferenceTrajectoryRuntime::acceptAnalytic(const AnalyticReference& msg) {
     return true;
 }
 
-bool ReferenceTrajectoryRuntime::acceptSampled(const SampledReference& msg) {
+bool ReferenceTrajectoryRuntime::acceptSampled(
+    const unicycle_reference_trajectory_msgs::SampledReference& msg) {
     trajectory::SampledEvaluator2 evaluator;
     uint32_t flags = 0U;
     if (!buildSampledEvaluator(msg, evaluator, flags)) {
@@ -162,7 +165,8 @@ bool ReferenceTrajectoryRuntime::acceptSampled(const SampledReference& msg) {
     return true;
 }
 
-bool ReferenceTrajectoryRuntime::acceptWaypoint(const WaypointReferenceRequest& msg) {
+bool ReferenceTrajectoryRuntime::acceptWaypoint(
+    const unicycle_reference_trajectory_msgs::WaypointReferenceRequest& msg) {
     trajectory::WaypointProblem2 problem;
     uint32_t flags = 0U;
     if (!buildWaypointProblem(msg, problem, flags)) {
@@ -226,7 +230,7 @@ bool ReferenceTrajectoryRuntime::planPendingWaypoint() {
         return false;
     }
 
-    ActivePolynomialReference msg;
+    unicycle_reference_trajectory_msgs::ActivePolynomialReference msg;
     msg.header = pending_waypoint_.header;
     msg.header.stamp = ros::Time(current_time_sec_);
     msg.trajectory_id = pending_waypoint_.trajectory_id;
@@ -264,20 +268,21 @@ void ReferenceTrajectoryRuntime::enterState(uint8_t state) {
     state_ = state;
 }
 
-ReferenceStatus ReferenceTrajectoryRuntime::makeStatus(double stamp_sec) const {
-    ReferenceStatus status;
+unicycle_reference_trajectory_msgs::ReferenceStatus ReferenceTrajectoryRuntime::makeStatus(
+    double stamp_sec) const {
+    unicycle_reference_trajectory_msgs::ReferenceStatus status;
     status.header.stamp = ros::Time(stamp_sec);
     status.state = state_;
     status.flags = flags_;
     status.active_trajectory_id = active_trajectory_id_;
     status.active_revision = active_revision_;
-    status.active_type = ReferenceStatus::TYPE_NONE;
+    status.active_type = unicycle_reference_trajectory_msgs::ReferenceStatus::TYPE_NONE;
     if (active_type_ == trajectory::TrajectoryModelType::kAnalytic) {
-        status.active_type = ReferenceStatus::TYPE_ANALYTIC;
+        status.active_type = unicycle_reference_trajectory_msgs::ReferenceStatus::TYPE_ANALYTIC;
     } else if (active_type_ == trajectory::TrajectoryModelType::kPolynomial) {
-        status.active_type = ReferenceStatus::TYPE_POLYNOMIAL;
+        status.active_type = unicycle_reference_trajectory_msgs::ReferenceStatus::TYPE_POLYNOMIAL;
     } else if (active_type_ == trajectory::TrajectoryModelType::kSampled) {
-        status.active_type = ReferenceStatus::TYPE_SAMPLED;
+        status.active_type = unicycle_reference_trajectory_msgs::ReferenceStatus::TYPE_SAMPLED;
     }
     return status;
 }
@@ -383,8 +388,8 @@ void ReferenceTrajectoryRuntime::setupMachine() {
 }
 
 std::unique_ptr<trajectory::TrajectoryEvaluator2>
-ReferenceTrajectoryRuntime::buildAnalyticEvaluator(const AnalyticReference& msg,
-                                                   uint32_t& flags) const {
+ReferenceTrajectoryRuntime::buildAnalyticEvaluator(
+    const unicycle_reference_trajectory_msgs::AnalyticReference& msg, uint32_t& flags) const {
     flags = msg.flags;
     const double duration = msg.duration > 0.0 ? msg.duration : 60.0;
     const Eigen::Vector2d origin = pointToVector(msg.origin.position);
@@ -398,7 +403,7 @@ ReferenceTrajectoryRuntime::buildAnalyticEvaluator(const AnalyticReference& msg,
 
     std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator;
     switch (msg.analytic_type) {
-        case AnalyticReference::ANALYTIC_HOLD: {
+        case unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_HOLD: {
             trajectory::HoldCurveParameters2 params;
             params.flags = msg.flags;
             params.duration = duration;
@@ -407,7 +412,7 @@ ReferenceTrajectoryRuntime::buildAnalyticEvaluator(const AnalyticReference& msg,
             evaluator = std::make_unique<trajectory::HoldCurveEvaluator2>(params);
             break;
         }
-        case AnalyticReference::ANALYTIC_CIRCLE: {
+        case unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_CIRCLE: {
             trajectory::CircleCurveParameters2 params;
             params.flags = msg.flags;
             params.duration = duration;
@@ -417,7 +422,7 @@ ReferenceTrajectoryRuntime::buildAnalyticEvaluator(const AnalyticReference& msg,
             evaluator = std::make_unique<trajectory::CircleCurveEvaluator2>(params);
             break;
         }
-        case AnalyticReference::ANALYTIC_FIGURE_EIGHT: {
+        case unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_FIGURE_EIGHT: {
             trajectory::FigureEightCurveParameters2 params;
             params.flags = msg.flags;
             params.duration = duration;
@@ -427,7 +432,7 @@ ReferenceTrajectoryRuntime::buildAnalyticEvaluator(const AnalyticReference& msg,
             evaluator = std::make_unique<trajectory::FigureEightCurveEvaluator2>(params);
             break;
         }
-        case AnalyticReference::ANALYTIC_CIRCLE_ENTRY:
+        case unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_CIRCLE_ENTRY:
         default: {
             trajectory::CircleEntryCurveParameters2 params;
             params.flags = msg.flags;
@@ -457,9 +462,9 @@ ReferenceTrajectoryRuntime::buildAnalyticEvaluator(const AnalyticReference& msg,
     return evaluator;
 }
 
-bool ReferenceTrajectoryRuntime::buildSampledEvaluator(const SampledReference& msg,
-                                                       trajectory::SampledEvaluator2& evaluator,
-                                                       uint32_t& flags) const {
+bool ReferenceTrajectoryRuntime::buildSampledEvaluator(
+    const unicycle_reference_trajectory_msgs::SampledReference& msg,
+    trajectory::SampledEvaluator2& evaluator, uint32_t& flags) const {
     flags = msg.flags;
     std::vector<trajectory::SampledPoint2> samples;
     samples.reserve(msg.points.size());
@@ -487,9 +492,9 @@ bool ReferenceTrajectoryRuntime::buildSampledEvaluator(const SampledReference& m
     return (flags & (trajectory::kFlagInvalidInput | trajectory::kFlagNonFinite)) == 0U;
 }
 
-bool ReferenceTrajectoryRuntime::buildWaypointProblem(const WaypointReferenceRequest& msg,
-                                                      trajectory::WaypointProblem2& problem,
-                                                      uint32_t& flags) const {
+bool ReferenceTrajectoryRuntime::buildWaypointProblem(
+    const unicycle_reference_trajectory_msgs::WaypointReferenceRequest& msg,
+    trajectory::WaypointProblem2& problem, uint32_t& flags) const {
     flags = msg.flags;
     problem.flags = msg.flags;
     problem.segment_times = msg.segment_times;
@@ -534,8 +539,8 @@ bool ReferenceTrajectoryRuntime::buildWaypointProblem(const WaypointReferenceReq
 }
 
 void ReferenceTrajectoryRuntime::setActiveAnalytic(
-    const AnalyticReference& msg, std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator,
-    uint32_t flags) {
+    const unicycle_reference_trajectory_msgs::AnalyticReference& msg,
+    std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator, uint32_t flags) {
     active_type_ = trajectory::TrajectoryModelType::kAnalytic;
     active_trajectory_id_ = msg.trajectory_id;
     active_revision_ = msg.revision;
@@ -547,8 +552,8 @@ void ReferenceTrajectoryRuntime::setActiveAnalytic(
 }
 
 void ReferenceTrajectoryRuntime::setActiveSampled(
-    const SampledReference& msg, std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator,
-    uint32_t flags) {
+    const unicycle_reference_trajectory_msgs::SampledReference& msg,
+    std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator, uint32_t flags) {
     active_type_ = trajectory::TrajectoryModelType::kSampled;
     active_trajectory_id_ = msg.trajectory_id;
     active_revision_ = msg.revision;
@@ -560,8 +565,8 @@ void ReferenceTrajectoryRuntime::setActiveSampled(
 }
 
 void ReferenceTrajectoryRuntime::setActivePolynomial(
-    ActivePolynomialReference msg, std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator,
-    uint32_t flags) {
+    unicycle_reference_trajectory_msgs::ActivePolynomialReference msg,
+    std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator, uint32_t flags) {
     active_type_ = trajectory::TrajectoryModelType::kPolynomial;
     active_trajectory_id_ = msg.trajectory_id;
     active_revision_ = msg.revision;

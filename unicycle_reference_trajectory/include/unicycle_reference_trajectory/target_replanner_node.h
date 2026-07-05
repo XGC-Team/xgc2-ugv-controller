@@ -3,14 +3,13 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <rigid_state_estimator_msgs/PlanarStateEstimate.h>
 #include <ros/ros.h>
+#include <unicycle_reference_trajectory_msgs/SampledReference.h>
 
 #include <cstdint>
 #include <random>
 #include <string>
 #include <vector>
 #include <xgc2_math/trajectory.hpp>
-
-#include "unicycle_reference_trajectory/SampledReference.h"
 
 namespace unicycle_reference_trajectory {
 

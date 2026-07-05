@@ -2,15 +2,15 @@
 
 #include <nav_msgs/Path.h>
 #include <ros/ros.h>
+#include <unicycle_reference_trajectory_msgs/ActivePolynomialReference.h>
+#include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
+#include <unicycle_reference_trajectory_msgs/ReferenceStatus.h>
+#include <unicycle_reference_trajectory_msgs/SampledReference.h>
 
 #include <state_machine/runtime/async_task_executor.hpp>
 #include <state_machine/runtime/event_dispatcher.hpp>
 #include <string>
 
-#include "unicycle_reference_trajectory/ActivePolynomialReference.h"
-#include "unicycle_reference_trajectory/AnalyticReference.h"
-#include "unicycle_reference_trajectory/ReferenceStatus.h"
-#include "unicycle_reference_trajectory/SampledReference.h"
 #include "unicycle_reference_trajectory/unicycle_reference_trajectory_runtime.h"
 
 namespace unicycle_reference_trajectory {

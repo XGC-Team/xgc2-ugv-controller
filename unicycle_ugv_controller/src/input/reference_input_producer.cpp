@@ -21,7 +21,7 @@ ReferenceInputProducer::ReferenceInputProducer(ros::NodeHandle& nh, ReferenceCac
 }
 
 void ReferenceInputProducer::analyticCallback(
-    const unicycle_reference_trajectory::AnalyticReference::ConstPtr& msg) {
+    const unicycle_reference_trajectory_msgs::AnalyticReference::ConstPtr& msg) {
     if (!msg || !cache_.updateAnalytic(*msg, ros::Time::now())) {
         ROS_WARN_THROTTLE(1.0, "[UgvReferenceInputProducer] Rejected active analytic reference");
         return;
@@ -30,7 +30,7 @@ void ReferenceInputProducer::analyticCallback(
 }
 
 void ReferenceInputProducer::polynomialCallback(
-    const unicycle_reference_trajectory::ActivePolynomialReference::ConstPtr& msg) {
+    const unicycle_reference_trajectory_msgs::ActivePolynomialReference::ConstPtr& msg) {
     if (!msg || !cache_.updatePolynomial(*msg, ros::Time::now())) {
         ROS_WARN_THROTTLE(1.0, "[UgvReferenceInputProducer] Rejected active polynomial reference");
         return;
@@ -39,7 +39,7 @@ void ReferenceInputProducer::polynomialCallback(
 }
 
 void ReferenceInputProducer::sampledCallback(
-    const unicycle_reference_trajectory::SampledReference::ConstPtr& msg) {
+    const unicycle_reference_trajectory_msgs::SampledReference::ConstPtr& msg) {
     if (!msg || !cache_.updateSampled(*msg, ros::Time::now())) {
         ROS_WARN_THROTTLE(1.0, "[UgvReferenceInputProducer] Rejected active sampled reference");
         return;

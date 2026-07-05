@@ -68,14 +68,17 @@ docker run --rm \
       xgc2-acados \
       ros-noetic-geometry-msgs \
       ros-noetic-message-generation \
+      ros-noetic-nav-msgs \
       ros-noetic-roscpp \
       ros-noetic-roslaunch \
+      ros-noetic-rosmsg \
       ros-noetic-rospack \
       ros-noetic-rospy \
       ros-noetic-rostest \
       ros-noetic-rosunit \
       ros-noetic-std-msgs \
       ros-noetic-xgc2-estimator-rigid-state-msgs \
+      ros-noetic-xgc2-unicycle-reference-trajectory-msgs \
       ros-noetic-xgc2-ros1-utils
 
     rm -rf /workspace/work/src /workspace/work/build /workspace/work/devel /workspace/work/install-root

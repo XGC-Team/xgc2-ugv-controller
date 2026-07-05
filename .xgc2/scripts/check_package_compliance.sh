@@ -51,12 +51,6 @@ required_files=(
   unicycle_ugv_controller/config/unicycle_ugv_controller.yaml
   unicycle_reference_trajectory/CMakeLists.txt
   unicycle_reference_trajectory/package.xml
-  unicycle_reference_trajectory/msg/AnalyticReference.msg
-  unicycle_reference_trajectory/msg/WaypointReferenceRequest.msg
-  unicycle_reference_trajectory/msg/SampledReference.msg
-  unicycle_reference_trajectory/msg/ActivePolynomialReference.msg
-  unicycle_reference_trajectory/msg/PlanarReferencePoint.msg
-  unicycle_reference_trajectory/msg/ReferenceStatus.msg
   unicycle_reference_trajectory/include/unicycle_reference_trajectory/unicycle_reference_trajectory_runtime.h
   unicycle_reference_trajectory/launch/ugv_unicycle_reference_trajectory.launch
 )
@@ -83,7 +77,8 @@ grep -q "libxgc2-state-machine-dev (>= 0.1.2-5~focal)" .xgc2/scripts/package_deb
 grep -q "libxgc2-math-dev (>= 0.5.5-5)" .xgc2/scripts/package_debs.sh
 grep -q "xgc2-acados (>= 0.1.0-7~focal)" .xgc2/product.yml
 grep -q "xgc2-acados (>= 0.1.0-7~focal)" .xgc2/scripts/package_debs.sh
-grep -q "ros-\${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs (>= 1.1.4-1)" .xgc2/scripts/package_debs.sh
+grep -q "ros-\${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs (>= 1.2.0-1)" .xgc2/scripts/package_debs.sh
+grep -q "ros-\${ROS_DISTRO}-xgc2-unicycle-reference-trajectory-msgs (>= 1.2.0-1)" .xgc2/scripts/package_debs.sh
 
 if grep -R --exclude='check_package_compliance.sh' "ros-noetic-xgc2-reference" \
   .github .xgc2 README.md unicycle_ugv_controller unicycle_reference_trajectory >/dev/null; then

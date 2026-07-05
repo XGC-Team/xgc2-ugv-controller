@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <rigid_state_estimator_msgs/PlanarStateEstimate.h>
-#include <unicycle_reference_trajectory/AnalyticReference.h>
+#include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
 
 #include "unicycle_ugv_controller/common/reference_cache.h"
 #include "unicycle_ugv_controller/common/types.h"
@@ -63,10 +63,10 @@ TEST(UnicycleUgvControllerRuntime, AutoStartTrackingWhenStateAndReferenceAreRead
     config.auto_start_tracking = true;
     controller.setConfig(config);
 
-    unicycle_reference_trajectory::AnalyticReference reference;
+    unicycle_reference_trajectory_msgs::AnalyticReference reference;
     reference.trajectory_id = 1U;
     reference.revision = 1U;
-    reference.analytic_type = unicycle_reference_trajectory::AnalyticReference::ANALYTIC_HOLD;
+    reference.analytic_type = unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_HOLD;
     reference.start_time = ros::Time(1.0);
     reference.duration = 10.0;
     reference.origin.orientation.w = 1.0;
@@ -82,10 +82,11 @@ TEST(UnicycleUgvControllerRuntime, SampledNmpcHorizonKeepsYawContinuousAcrossPi)
     ros::Time::init();
     ReferenceCache cache;
 
-    unicycle_reference_trajectory::AnalyticReference reference;
+    unicycle_reference_trajectory_msgs::AnalyticReference reference;
     reference.trajectory_id = 1U;
     reference.revision = 1U;
-    reference.analytic_type = unicycle_reference_trajectory::AnalyticReference::ANALYTIC_CIRCLE;
+    reference.analytic_type =
+        unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_CIRCLE;
     reference.start_time = ros::Time(0.0);
     reference.duration = 30.0;
     reference.origin.orientation.w = 1.0;

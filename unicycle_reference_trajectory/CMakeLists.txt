@@ -3,38 +3,22 @@ project(unicycle_reference_trajectory)
 
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
-  message_generation
   nav_msgs
   rigid_state_estimator_msgs
   roscpp
   rospy
   std_msgs
+  unicycle_reference_trajectory_msgs
 )
 find_package(xgc2_state_machine REQUIRED CONFIG)
 find_package(xgc2_math REQUIRED CONFIG)
 
 find_package(Eigen3 REQUIRED)
 
-add_message_files(
-  FILES
-  ActivePolynomialReference.msg
-  AnalyticReference.msg
-  PlanarReferencePoint.msg
-  ReferenceStatus.msg
-  SampledReference.msg
-  WaypointReferenceRequest.msg
-)
-
-generate_messages(
-  DEPENDENCIES
-  geometry_msgs
-  std_msgs
-)
-
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS geometry_msgs message_runtime nav_msgs rigid_state_estimator_msgs roscpp rospy
-                 std_msgs
+  CATKIN_DEPENDS geometry_msgs nav_msgs rigid_state_estimator_msgs roscpp rospy std_msgs
+                 unicycle_reference_trajectory_msgs
   DEPENDS EIGEN3 xgc2_math
 )
 

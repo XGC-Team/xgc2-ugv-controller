@@ -7,7 +7,7 @@ namespace unicycle_reference_trajectory {
 FaultState::FaultState(ReferenceTrajectoryRuntime& runtime) : runtime_(runtime) {}
 
 ::state_machine::ActionResult FaultState::onEnter(::state_machine::StateContext& ctx) {
-    runtime_.enterState(ReferenceStatus::STATE_FAULT);
+    runtime_.enterState(unicycle_reference_trajectory_msgs::ReferenceStatus::STATE_FAULT);
     status_gate_.reset();
     onTick(ctx);
     return {};

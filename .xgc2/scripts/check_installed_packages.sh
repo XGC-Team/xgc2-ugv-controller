@@ -9,6 +9,7 @@ set -u
 
 dpkg -s "ros-${ROS_DISTRO}-xgc2-ugv-controller" >/dev/null
 dpkg -s "ros-${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs" >/dev/null
+dpkg -s "ros-${ROS_DISTRO}-xgc2-unicycle-reference-trajectory-msgs" >/dev/null
 dpkg -s "ros-${ROS_DISTRO}-xgc2-ros1-utils" >/dev/null
 dpkg -s libxgc2-state-machine-dev >/dev/null
 dpkg -s libxgc2-math-dev >/dev/null
@@ -18,12 +19,15 @@ dpkg --compare-versions "${xgc2_acados_version}" ge "0.1.0-5~focal"
 test "$(rospack find unicycle_reference_trajectory)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory"
 test "$(rospack find unicycle_ugv_controller)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_ugv_controller"
 test "$(rospack find rigid_state_estimator_msgs)" = "/opt/ros/${ROS_DISTRO}/share/rigid_state_estimator_msgs"
+test "$(rospack find unicycle_reference_trajectory_msgs)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory_msgs"
 rosmsg show rigid_state_estimator_msgs/PlanarStateEstimate | grep -q '^uint8 estimator_state$'
+rosmsg show unicycle_reference_trajectory_msgs/AnalyticReference | grep -q '^uint16 analytic_type$'
+rosmsg show unicycle_reference_trajectory_msgs/SampledReference | grep -q '^unicycle_reference_trajectory_msgs/PlanarReferencePoint\[\] points$'
 test -f "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory/config/unicycle_reference_trajectory.yaml"
 test -f "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory/launch/ugv_unicycle_reference_trajectory.launch"
 test -f "/opt/ros/${ROS_DISTRO}/include/unicycle_reference_trajectory/unicycle_reference_trajectory_runtime.h"
-test -f "/opt/ros/${ROS_DISTRO}/include/unicycle_reference_trajectory/AnalyticReference.h"
-test -f "/opt/ros/${ROS_DISTRO}/include/unicycle_reference_trajectory/PlanarReferencePoint.h"
+test -f "/opt/ros/${ROS_DISTRO}/include/unicycle_reference_trajectory_msgs/AnalyticReference.h"
+test -f "/opt/ros/${ROS_DISTRO}/include/unicycle_reference_trajectory_msgs/PlanarReferencePoint.h"
 test -f "/opt/ros/${ROS_DISTRO}/share/unicycle_ugv_controller/config/unicycle_ugv_controller.yaml"
 test -f "/opt/ros/${ROS_DISTRO}/share/unicycle_ugv_controller/launch/ugv_unicycle_nmpc_controller.launch"
 test -f "/opt/ros/${ROS_DISTRO}/include/unicycle_ugv_controller/unicycle_ugv_controller.h"

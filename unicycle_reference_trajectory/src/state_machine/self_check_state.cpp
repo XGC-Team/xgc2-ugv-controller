@@ -8,7 +8,7 @@ SelfCheckState::SelfCheckState(ReferenceTrajectoryRuntime& runtime) : runtime_(r
 
 ::state_machine::ActionResult SelfCheckState::onEnter(::state_machine::StateContext& ctx) {
     (void)ctx;
-    runtime_.enterState(ReferenceStatus::STATE_SELF_CHECK);
+    runtime_.enterState(unicycle_reference_trajectory_msgs::ReferenceStatus::STATE_SELF_CHECK);
     return {};
 }
 

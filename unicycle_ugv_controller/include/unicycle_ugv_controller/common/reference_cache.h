@@ -1,6 +1,9 @@
 #pragma once
 
 #include <ros/time.h>
+#include <unicycle_reference_trajectory_msgs/ActivePolynomialReference.h>
+#include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
+#include <unicycle_reference_trajectory_msgs/SampledReference.h>
 
 #include <memory>
 #include <mutex>
@@ -8,19 +11,15 @@
 #include <xgc2_math/control.hpp>
 #include <xgc2_math/trajectory.hpp>
 
-#include "unicycle_reference_trajectory/ActivePolynomialReference.h"
-#include "unicycle_reference_trajectory/AnalyticReference.h"
-#include "unicycle_reference_trajectory/SampledReference.h"
-
 namespace unicycle_ugv_controller {
 
 class ReferenceCache {
    public:
-    bool updateAnalytic(const unicycle_reference_trajectory::AnalyticReference& msg,
+    bool updateAnalytic(const unicycle_reference_trajectory_msgs::AnalyticReference& msg,
                         const ros::Time& received_time);
-    bool updatePolynomial(const unicycle_reference_trajectory::ActivePolynomialReference& msg,
+    bool updatePolynomial(const unicycle_reference_trajectory_msgs::ActivePolynomialReference& msg,
                           const ros::Time& received_time);
-    bool updateSampled(const unicycle_reference_trajectory::SampledReference& msg,
+    bool updateSampled(const unicycle_reference_trajectory_msgs::SampledReference& msg,
                        const ros::Time& received_time);
     void clear();
     bool valid(const ros::Time& now, double timeout) const;

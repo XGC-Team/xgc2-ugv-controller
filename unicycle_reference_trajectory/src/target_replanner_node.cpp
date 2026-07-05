@@ -41,7 +41,8 @@ TargetReplannerNode::TargetReplannerNode(ros::NodeHandle& nh) : nh_(nh), private
         target_sub_ =
             nh_.subscribe(target_topic_, queue_size_, &TargetReplannerNode::targetCallback, this);
     }
-    sampled_pub_ = nh_.advertise<SampledReference>(sampled_topic_, queue_size_, true);
+    sampled_pub_ = nh_.advertise<unicycle_reference_trajectory_msgs::SampledReference>(
+        sampled_topic_, queue_size_, true);
     replan_timer_ = nh_.createTimer(ros::Duration(replan_period_),
                                     &TargetReplannerNode::timerCallback, this, false, true);
     ROS_INFO(
@@ -271,7 +272,7 @@ bool TargetReplannerNode::publishPlan(const xgc2_math::trajectory::Se2TargetStat
         return false;
     }
 
-    SampledReference msg;
+    unicycle_reference_trajectory_msgs::SampledReference msg;
     msg.header.stamp = ros::Time::now();
     msg.header.frame_id = frame_id_;
     msg.trajectory_id = trajectory_id_++;
@@ -281,7 +282,7 @@ bool TargetReplannerNode::publishPlan(const xgc2_math::trajectory::Se2TargetStat
     msg.sample_dt = planner_options_.sample_dt;
     msg.points.reserve(result.samples.size());
     for (const auto& sample : result.samples) {
-        PlanarReferencePoint point;
+        unicycle_reference_trajectory_msgs::PlanarReferencePoint point;
         point.t_from_start = sample.t;
         point.x = sample.reference.position.x();
         point.y = sample.reference.position.y();

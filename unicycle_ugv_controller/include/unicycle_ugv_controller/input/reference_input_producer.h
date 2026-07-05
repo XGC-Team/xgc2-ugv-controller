@@ -1,9 +1,9 @@
 #pragma once
 
 #include <ros/ros.h>
-#include <unicycle_reference_trajectory/ActivePolynomialReference.h>
-#include <unicycle_reference_trajectory/AnalyticReference.h>
-#include <unicycle_reference_trajectory/SampledReference.h>
+#include <unicycle_reference_trajectory_msgs/ActivePolynomialReference.h>
+#include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
+#include <unicycle_reference_trajectory_msgs/SampledReference.h>
 
 #include <functional>
 #include <state_machine/state_machine.hpp>
@@ -23,10 +23,11 @@ class ReferenceInputProducer {
                            uint32_t queue_size);
 
    private:
-    void analyticCallback(const unicycle_reference_trajectory::AnalyticReference::ConstPtr& msg);
+    void analyticCallback(
+        const unicycle_reference_trajectory_msgs::AnalyticReference::ConstPtr& msg);
     void polynomialCallback(
-        const unicycle_reference_trajectory::ActivePolynomialReference::ConstPtr& msg);
-    void sampledCallback(const unicycle_reference_trajectory::SampledReference::ConstPtr& msg);
+        const unicycle_reference_trajectory_msgs::ActivePolynomialReference::ConstPtr& msg);
+    void sampledCallback(const unicycle_reference_trajectory_msgs::SampledReference::ConstPtr& msg);
     void post(::state_machine::EventId id, const char* source);
 
     ReferenceCache& cache_;

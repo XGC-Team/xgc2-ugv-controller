@@ -7,7 +7,7 @@ namespace unicycle_reference_trajectory {
 PlanningState::PlanningState(ReferenceTrajectoryRuntime& runtime) : runtime_(runtime) {}
 
 ::state_machine::ActionResult PlanningState::onEnter(::state_machine::StateContext& ctx) {
-    runtime_.enterState(ReferenceStatus::STATE_PLANNING);
+    runtime_.enterState(unicycle_reference_trajectory_msgs::ReferenceStatus::STATE_PLANNING);
     const bool ok = runtime_.planPendingWaypoint();
     ::state_machine::Event event(ok ? event_type::PLAN_SUCCEEDED : event_type::PLAN_FAILED,
                                  ::state_machine::EventTimestamp{runtime_.currentTime()});

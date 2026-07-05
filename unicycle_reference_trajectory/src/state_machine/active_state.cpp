@@ -7,7 +7,7 @@ namespace unicycle_reference_trajectory {
 ActiveState::ActiveState(ReferenceTrajectoryRuntime& runtime) : runtime_(runtime) {}
 
 ::state_machine::ActionResult ActiveState::onEnter(::state_machine::StateContext& ctx) {
-    runtime_.enterState(ReferenceStatus::STATE_ACTIVE);
+    runtime_.enterState(unicycle_reference_trajectory_msgs::ReferenceStatus::STATE_ACTIVE);
     status_gate_.reset();
     active_gate_.reset();
     if (!runtime_.activatePending()) {

@@ -7,13 +7,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
-  message_generation
   nav_msgs
   rigid_state_estimator_msgs
   roscpp
   ros1_utils
   std_msgs
-  unicycle_reference_trajectory
+  unicycle_reference_trajectory_msgs
 )
 find_package(Eigen3 REQUIRED)
 find_package(xgc2_acados REQUIRED CONFIG)
@@ -119,7 +118,8 @@ endif()
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES unicycle_ugv_controller_nmpc_runtime
-  CATKIN_DEPENDS geometry_msgs message_runtime nav_msgs rigid_state_estimator_msgs roscpp ros1_utils std_msgs unicycle_reference_trajectory
+  CATKIN_DEPENDS geometry_msgs nav_msgs rigid_state_estimator_msgs roscpp ros1_utils std_msgs
+                 unicycle_reference_trajectory_msgs
   DEPENDS EIGEN3
 )
 
