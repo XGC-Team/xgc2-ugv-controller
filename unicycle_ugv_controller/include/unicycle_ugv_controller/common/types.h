@@ -60,7 +60,6 @@ constexpr uint32_t SelfCheck = 1;
 constexpr uint32_t Ready = 2;
 constexpr uint32_t Tracking = 3;
 constexpr uint32_t Hold = 4;
-constexpr uint32_t Fault = 9;
 }  // namespace state_type
 
 namespace region_type {
@@ -69,16 +68,16 @@ constexpr uint32_t CONTROL = 2;
 }  // namespace region_type
 
 namespace event_type {
-constexpr uint32_t CMD_TRACK = 1;
-constexpr uint32_t CMD_HOLD = 2;
-constexpr uint32_t CMD_RESET = 3;
+constexpr uint32_t TRACKING_REQUESTED = 1;
+constexpr uint32_t HOLD_REQUESTED = 2;
+constexpr uint32_t RESET_REQUESTED = 3;
 constexpr uint32_t INPUT_STATE_UPDATED = 20;
 constexpr uint32_t INPUT_REFERENCE_UPDATED = 21;
 constexpr uint32_t INPUT_REFERENCE_LOST = 22;
 constexpr uint32_t INPUT_NMPC_SOLVE_SUCCEEDED = 23;
 constexpr uint32_t INPUT_NMPC_SOLVE_FAILED = 24;
 constexpr uint32_t HEALTH_READY = 40;
-constexpr uint32_t HEALTH_FAULT = 41;
+constexpr uint32_t HEALTH_UNHEALTHY = 41;
 }  // namespace event_type
 
 namespace output_event_type {
@@ -88,7 +87,6 @@ constexpr uint32_t PUBLISH_ZERO_CMD_VEL = 10002;
 }  // namespace output_event_type
 
 namespace transition_priority {
-constexpr int FAULT = 100;
 constexpr int COMMAND = 50;
 constexpr int AUTOMATIC = 20;
 }  // namespace transition_priority

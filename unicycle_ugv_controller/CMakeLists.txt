@@ -173,8 +173,7 @@ add_executable(${PROJECT_NAME}_node
   src/state_machine/self_check_state.cpp
   src/state_machine/ready_state.cpp
   src/state_machine/tracking_state.cpp
-  src/state_machine/hold_state.cpp
-  src/state_machine/fault_state.cpp)
+  src/state_machine/hold_state.cpp)
 add_dependencies(${PROJECT_NAME}_node
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS})
@@ -212,8 +211,7 @@ if(CATKIN_ENABLE_TESTING)
     src/state_machine/self_check_state.cpp
     src/state_machine/ready_state.cpp
     src/state_machine/tracking_state.cpp
-    src/state_machine/hold_state.cpp
-    src/state_machine/fault_state.cpp)
+    src/state_machine/hold_state.cpp)
   if(TARGET unicycle_ugv_controller_runtime_test)
     target_link_libraries(unicycle_ugv_controller_runtime_test
       unicycle_ugv_controller_nmpc_runtime

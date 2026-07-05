@@ -13,7 +13,7 @@ HealthMonitorState::HealthMonitorState(UnicycleUgvController& controller)
 ::state_machine::ActionResult HealthMonitorState::onTick(::state_machine::StateContext& ctx) {
     const bool ready = controller_.healthReady();
     if (ready != last_ready_) {
-        postHealthEvent(ctx, ready ? event_type::HEALTH_READY : event_type::HEALTH_FAULT);
+        postHealthEvent(ctx, ready ? event_type::HEALTH_READY : event_type::HEALTH_UNHEALTHY);
         last_ready_ = ready;
     }
     return {};

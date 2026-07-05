@@ -38,7 +38,6 @@ add_executable(unicycle_reference_trajectory_node
   src/state_machine/ready_state.cpp
   src/state_machine/planning_state.cpp
   src/state_machine/active_state.cpp
-  src/state_machine/fault_state.cpp
 )
 add_dependencies(unicycle_reference_trajectory_node ${${PROJECT_NAME}_EXPORTED_TARGETS}
                                       ${catkin_EXPORTED_TARGETS})

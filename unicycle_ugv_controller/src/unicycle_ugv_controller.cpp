@@ -6,7 +6,6 @@
 #include <stdexcept>
 #include <utility>
 
-#include "unicycle_ugv_controller/state_machine/fault_state.h"
 #include "unicycle_ugv_controller/state_machine/health_monitor_state.h"
 #include "unicycle_ugv_controller/state_machine/hold_state.h"
 #include "unicycle_ugv_controller/state_machine/ready_state.h"
@@ -107,9 +106,6 @@ void UnicycleUgvController::setupMachine() {
         .state(state_type::Hold)
         .name("Hold")
         .impl(std::make_unique<HoldState>(*this))
-        .state(state_type::Fault)
-        .name("Fault")
-        .impl(std::make_unique<FaultState>(*this))
         .endRegion();
 
     builder.transition()
@@ -120,37 +116,37 @@ void UnicycleUgvController::setupMachine() {
     builder.transition()
         .from(state_type::Ready)
         .to(state_type::SelfCheck)
-        .on(event_type::HEALTH_FAULT)
-        .priority(transition_priority::FAULT);
+        .on(event_type::HEALTH_UNHEALTHY)
+        .priority(transition_priority::AUTOMATIC);
     builder.transition()
         .from(state_type::Hold)
         .to(state_type::SelfCheck)
-        .on(event_type::HEALTH_FAULT)
-        .priority(transition_priority::FAULT);
+        .on(event_type::HEALTH_UNHEALTHY)
+        .priority(transition_priority::AUTOMATIC);
     builder.transition()
         .from(state_type::Tracking)
-        .to(state_type::Fault)
-        .on(event_type::HEALTH_FAULT)
-        .priority(transition_priority::FAULT);
+        .to(state_type::SelfCheck)
+        .on(event_type::HEALTH_UNHEALTHY)
+        .priority(transition_priority::AUTOMATIC);
     builder.transition()
         .from(state_type::Ready)
         .to(state_type::Tracking)
-        .on(event_type::CMD_TRACK)
+        .on(event_type::TRACKING_REQUESTED)
         .priority(transition_priority::COMMAND);
     builder.transition()
         .from(state_type::Hold)
         .to(state_type::Tracking)
-        .on(event_type::CMD_TRACK)
+        .on(event_type::TRACKING_REQUESTED)
         .priority(transition_priority::COMMAND);
     builder.transition()
         .from(state_type::Tracking)
         .to(state_type::Hold)
-        .on(event_type::CMD_HOLD)
+        .on(event_type::HOLD_REQUESTED)
         .priority(transition_priority::COMMAND);
     builder.transition()
         .from(state_type::Ready)
         .to(state_type::Hold)
-        .on(event_type::CMD_HOLD)
+        .on(event_type::HOLD_REQUESTED)
         .priority(transition_priority::COMMAND);
     builder.transition()
         .from(state_type::Tracking)
@@ -160,14 +156,8 @@ void UnicycleUgvController::setupMachine() {
     builder.transition()
         .from(state_type::Hold)
         .to(state_type::SelfCheck)
-        .on(event_type::CMD_RESET)
+        .on(event_type::RESET_REQUESTED)
         .priority(transition_priority::COMMAND);
-    builder.transition()
-        .from(state_type::Fault)
-        .to(state_type::SelfCheck)
-        .on(event_type::CMD_RESET)
-        .priority(transition_priority::COMMAND);
-
     auto result = builder.build();
     requireOk(result.status, "build UGV controller state machine");
     machine_ = std::move(result.value);
@@ -183,7 +173,7 @@ void UnicycleUgvController::maybeAutoStartTracking() {
     if (control_state != state_type::Ready && control_state != state_type::Hold) {
         return;
     }
-    ::state_machine::Event event(event_type::CMD_TRACK,
+    ::state_machine::Event event(event_type::TRACKING_REQUESTED,
                                  ::state_machine::EventTimestamp{current_time_sec_});
     event.source = "auto_start_tracking";
     event.category = ::state_machine::EventCategory::kInput;

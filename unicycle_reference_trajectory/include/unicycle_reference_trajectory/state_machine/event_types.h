@@ -9,7 +9,6 @@ constexpr uint32_t SelfCheck = 1;
 constexpr uint32_t Ready = 2;
 constexpr uint32_t Planning = 3;
 constexpr uint32_t Active = 4;
-constexpr uint32_t Fault = 9;
 }  // namespace state_type
 
 namespace region_type {
@@ -35,7 +34,6 @@ constexpr uint32_t PUBLISH_ACTIVE_SAMPLED = 1003;
 }  // namespace output_event_type
 
 namespace transition_priority {
-constexpr int FAULT = 100;
 constexpr int REQUEST = 50;
 constexpr int AUTOMATIC = 10;
 }  // namespace transition_priority
