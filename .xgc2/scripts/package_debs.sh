@@ -3,7 +3,7 @@ set -euo pipefail
 
 INSTALL_ROOT=""
 OUTPUT_DIR=""
-ROS_DISTRO="${ROS_DISTRO:-noetic}"
+ROS_DISTRO="${ROS_DISTRO:-melodic}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 PACKAGE="ros-${ROS_DISTRO}-xgc2-ugv-controller"
@@ -13,7 +13,7 @@ ROS_PACKAGES=(
 )
 
 product_version() {
-  awk -F': *' '/^version:[[:space:]]*/ {print $2; exit}' "${REPO_ROOT}/.xgc2/product.yml"
+  sed -n 's/^version:[[:space:]]*//p' "${REPO_ROOT}/.xgc2/product.yml" | head -n 1
 }
 
 VERSION="${PACKAGE_VERSION:-$(product_version)}"
@@ -78,6 +78,7 @@ copy_ros_package() {
   copy_path "${PREFIX_ROOT}/share/common-lisp/ros/${ros_package}" "${pkg_root}"
   copy_path "${PREFIX_ROOT}/share/gennodejs/ros/${ros_package}" "${pkg_root}"
   copy_path "${PREFIX_ROOT}/share/roseus/ros/${ros_package}" "${pkg_root}"
+  copy_path "${PREFIX_ROOT}/lib/python2.7/dist-packages/${ros_package}" "${pkg_root}"
   copy_path "${PREFIX_ROOT}/lib/python3/dist-packages/${ros_package}" "${pkg_root}"
 }
 
@@ -94,7 +95,7 @@ Section: misc
 Priority: optional
 Architecture: ${ARCH}
 Maintainer: XGC2 <apt@example.com>
-Depends: libeigen3-dev, libxgc2-state-machine-dev (>= 0.1.2-5~focal), libxgc2-math-dev (>= 0.5.5-5), xgc2-acados (>= 0.1.0-7~focal), ros-${ROS_DISTRO}-xgc2-ros1-utils, ros-${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs (>= 1.2.0-1), ros-${ROS_DISTRO}-xgc2-unicycle-reference-trajectory-msgs (>= 1.2.0-1), ros-${ROS_DISTRO}-message-runtime, ros-${ROS_DISTRO}-roscpp, ros-${ROS_DISTRO}-rospy, ros-${ROS_DISTRO}-std-msgs, ros-${ROS_DISTRO}-geometry-msgs, ros-${ROS_DISTRO}-nav-msgs
+Depends: libeigen3-dev, libxgc2-state-machine-dev (>= 0.1.3-2~bionic), libxgc2-math-dev (>= 0.5.6-2~bionic), xgc2-acados (>= 0.1.0-8~bionic), ros-${ROS_DISTRO}-xgc2-ros1-utils, ros-${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs (>= 1.2.0-1), ros-${ROS_DISTRO}-xgc2-unicycle-reference-trajectory-msgs (>= 1.2.0-1), ros-${ROS_DISTRO}-message-runtime, ros-${ROS_DISTRO}-roscpp, ros-${ROS_DISTRO}-rospy, ros-${ROS_DISTRO}-std-msgs, ros-${ROS_DISTRO}-geometry-msgs, ros-${ROS_DISTRO}-nav-msgs
 Replaces: ros-${ROS_DISTRO}-xgc2-controller (<< 1.3.2-1)
 Breaks: ros-${ROS_DISTRO}-xgc2-controller (<< 1.3.2-1)
 Description: XGC2 ROS1 UGV controller and reference trajectory packages

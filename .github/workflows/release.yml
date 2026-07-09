@@ -43,7 +43,7 @@ jobs:
       - name: Validate expected version and source SHA
         run: |
           set -euo pipefail
-          actual_version="$(awk -F': *' '/^version:[[:space:]]*/ {print $2; exit}' .xgc2/product.yml)"
+          actual_version="$(sed -n 's/^version:[[:space:]]*//p' .xgc2/product.yml | head -n 1)"
           actual_sha="$(git rev-parse HEAD)"
           test "${actual_version}" = "${{ inputs.expected_version }}"
           test "${actual_sha}" = "${{ inputs.expected_source_sha }}"
@@ -69,7 +69,7 @@ jobs:
     needs: validate-release-inputs
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    container: ros:noetic-ros-base-focal
+    container: ros:melodic-ros-base-bionic
     steps:
       - uses: actions/checkout@v4
         with:
@@ -91,15 +91,15 @@ jobs:
             python3-numpy \
             rsync \
             xgc2-acados \
-            ros-noetic-geometry-msgs \
-            ros-noetic-message-generation \
-            ros-noetic-nav-msgs \
-            ros-noetic-roscpp \
-            ros-noetic-rospy \
-            ros-noetic-std-msgs \
-            ros-noetic-xgc2-estimator-rigid-state-msgs \
-            ros-noetic-xgc2-unicycle-reference-trajectory-msgs \
-            ros-noetic-xgc2-ros1-utils
+            ros-melodic-geometry-msgs \
+            ros-melodic-message-generation \
+            ros-melodic-nav-msgs \
+            ros-melodic-roscpp \
+            ros-melodic-rospy \
+            ros-melodic-std-msgs \
+            ros-melodic-xgc2-estimator-rigid-state-msgs \
+            ros-melodic-xgc2-unicycle-reference-trajectory-msgs \
+            ros-melodic-xgc2-ros1-utils
 
       - name: Run C++ quality gate
         run: .xgc2/scripts/check_cpp_quality.sh
@@ -108,7 +108,7 @@ jobs:
     name: Source build and tests
     needs: validate-release-inputs
     runs-on: ubuntu-latest
-    container: ros:noetic-ros-base-focal
+    container: ros:melodic-ros-base-bionic
     steps:
       - name: Skip source tests
         if: ${{ !inputs.run_source_tests }}
@@ -138,19 +138,19 @@ jobs:
             libxgc2-state-machine-dev \
             rsync \
             xgc2-acados \
-            ros-noetic-geometry-msgs \
-            ros-noetic-message-generation \
-            ros-noetic-nav-msgs \
-            ros-noetic-roscpp \
-            ros-noetic-roslaunch \
-            ros-noetic-rospack \
-            ros-noetic-rospy \
-            ros-noetic-rostest \
-            ros-noetic-rosunit \
-            ros-noetic-std-msgs \
-            ros-noetic-xgc2-estimator-rigid-state-msgs \
-            ros-noetic-xgc2-unicycle-reference-trajectory-msgs \
-            ros-noetic-xgc2-ros1-utils
+            ros-melodic-geometry-msgs \
+            ros-melodic-message-generation \
+            ros-melodic-nav-msgs \
+            ros-melodic-roscpp \
+            ros-melodic-roslaunch \
+            ros-melodic-rospack \
+            ros-melodic-rospy \
+            ros-melodic-rostest \
+            ros-melodic-rosunit \
+            ros-melodic-std-msgs \
+            ros-melodic-xgc2-estimator-rigid-state-msgs \
+            ros-melodic-xgc2-unicycle-reference-trajectory-msgs \
+            ros-melodic-xgc2-ros1-utils
 
       - name: Build package and run launch compliance
         if: inputs.run_source_tests
@@ -164,7 +164,7 @@ jobs:
 
           cd "$work_dir"
           set +u
-          source /opt/ros/noetic/setup.bash
+          source /opt/ros/melodic/setup.bash
           set -u
           parallel_jobs="$(nproc)"
           PYTHONPATH="$work_dir/src/xgc2-ugv-controller/unicycle_ugv_controller/tools" \
@@ -176,7 +176,7 @@ jobs:
             run_tests_unicycle_ugv_controller
           catkin_test_results
           DESTDIR="$install_root" catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" install \
-            -DCMAKE_INSTALL_PREFIX=/opt/ros/noetic \
+            -DCMAKE_INSTALL_PREFIX=/opt/ros/melodic \
             -DCMAKE_BUILD_TYPE=Release
           source devel/setup.bash
           test "$(rospack find unicycle_reference_trajectory)" = "$work_dir/src/xgc2-ugv-controller/unicycle_reference_trajectory"

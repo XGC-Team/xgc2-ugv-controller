@@ -73,16 +73,16 @@ grep -q "expected_source_sha" .github/workflows/release.yml
 grep -q "PACKAGE=\"ros-\${ROS_DISTRO}-xgc2-ugv-controller\"" .xgc2/scripts/package_debs.sh
 grep -q "unicycle_ugv_controller" .xgc2/scripts/package_debs.sh
 grep -q "unicycle_reference_trajectory" .xgc2/scripts/package_debs.sh
-grep -q "libxgc2-state-machine-dev (>= 0.1.2-5~focal)" .xgc2/scripts/package_debs.sh
-grep -q "libxgc2-math-dev (>= 0.5.5-5)" .xgc2/scripts/package_debs.sh
-grep -q "xgc2-acados (>= 0.1.0-7~focal)" .xgc2/product.yml
-grep -q "xgc2-acados (>= 0.1.0-7~focal)" .xgc2/scripts/package_debs.sh
+grep -q "libxgc2-state-machine-dev (>= 0.1.3-2~bionic)" .xgc2/scripts/package_debs.sh
+grep -q "libxgc2-math-dev (>= 0.5.6-2~bionic)" .xgc2/scripts/package_debs.sh
+grep -q "xgc2-acados (>= 0.1.0-8~bionic)" .xgc2/product.yml
+grep -q "xgc2-acados (>= 0.1.0-8~bionic)" .xgc2/scripts/package_debs.sh
 grep -q "ros-\${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs (>= 1.2.0-1)" .xgc2/scripts/package_debs.sh
 grep -q "ros-\${ROS_DISTRO}-xgc2-unicycle-reference-trajectory-msgs (>= 1.2.0-1)" .xgc2/scripts/package_debs.sh
 
-if grep -R --exclude='check_package_compliance.sh' "ros-noetic-xgc2-reference" \
+if grep -R --exclude='check_package_compliance.sh' "ros-melodic-xgc2-reference" \
   .github .xgc2 README.md unicycle_ugv_controller unicycle_reference_trajectory >/dev/null; then
-  echo "Deprecated ros-noetic-xgc2-reference dependency found." >&2
+  echo "Deprecated ros-melodic-xgc2-reference dependency found." >&2
   exit 1
 fi
 

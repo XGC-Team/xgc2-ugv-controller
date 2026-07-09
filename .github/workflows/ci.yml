@@ -3,7 +3,7 @@ name: ci
 on:
   push:
     branches:
-      - noetic
+      - melodic
   pull_request:
   workflow_dispatch:
 
@@ -30,111 +30,122 @@ jobs:
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    container: ros:noetic-ros-base-focal
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      - name: Install quality dependencies
+      - name: Run C++ quality gate in Docker
         run: |
-          export DEBIAN_FRONTEND=noninteractive
-          .xgc2/scripts/setup_xgc2_apt_source.sh
-          apt-get install -y --no-install-recommends \
-            build-essential \
-            clang-format \
-            clang-tidy \
-            cmake \
-            git \
-            libeigen3-dev \
-            libxgc2-math-dev \
-            libxgc2-state-machine-dev \
-            python3-numpy \
-            rsync \
-            xgc2-acados \
-            ros-noetic-geometry-msgs \
-            ros-noetic-message-generation \
-            ros-noetic-nav-msgs \
-            ros-noetic-roscpp \
-            ros-noetic-rospy \
-            ros-noetic-std-msgs \
-            ros-noetic-xgc2-estimator-rigid-state-msgs \
-            ros-noetic-xgc2-unicycle-reference-trajectory-msgs \
-            ros-noetic-xgc2-ros1-utils
+          docker pull ros:melodic-ros-base-bionic
+          docker run --rm \
+            -e DEBIAN_FRONTEND=noninteractive \
+            -e GITHUB_EVENT_NAME="$GITHUB_EVENT_NAME" \
+            -e GITHUB_REF_NAME="$GITHUB_REF_NAME" \
+            -v "$GITHUB_WORKSPACE:/workspace/xgc2-ugv-controller" \
+            ros:melodic-ros-base-bionic \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              cd /workspace/xgc2-ugv-controller
+              .xgc2/scripts/setup_xgc2_apt_source.sh
+              apt-get install -y --no-install-recommends \
+                build-essential \
+                clang-format \
+                clang-tidy \
+                cmake \
+                git \
+                libeigen3-dev \
+                libxgc2-math-dev \
+                libxgc2-state-machine-dev \
+                python3-numpy \
+                rsync \
+                xgc2-acados \
+                ros-melodic-geometry-msgs \
+                ros-melodic-message-generation \
+                ros-melodic-nav-msgs \
+                ros-melodic-roscpp \
+                ros-melodic-rospy \
+                ros-melodic-std-msgs \
+                ros-melodic-xgc2-estimator-rigid-state-msgs \
+                ros-melodic-xgc2-unicycle-reference-trajectory-msgs \
+                ros-melodic-xgc2-ros1-utils
 
-      - name: Run C++ quality gate
-        run: .xgc2/scripts/check_cpp_quality.sh
+              .xgc2/scripts/check_cpp_quality.sh
+            '
 
   source-tests:
     name: Source build and tests
     runs-on: ubuntu-latest
-    container: ros:noetic-ros-base-focal
     steps:
-      - name: Install git for checkout
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y --no-install-recommends git
-
       - uses: actions/checkout@v4
 
-      - name: Install build dependencies
+      - name: Build package and run launch compliance in Docker
         run: |
-          export DEBIAN_FRONTEND=noninteractive
-          .xgc2/scripts/setup_xgc2_apt_source.sh
-          apt-get install -y --no-install-recommends \
-            build-essential \
-            cmake \
-            git \
-            libeigen3-dev \
-            libxgc2-math-dev \
-            libxgc2-state-machine-dev \
-            rsync \
-            xgc2-acados \
-            ros-noetic-geometry-msgs \
-            ros-noetic-message-generation \
-            ros-noetic-nav-msgs \
-            ros-noetic-roscpp \
-            ros-noetic-roslaunch \
-            ros-noetic-rospack \
-            ros-noetic-rospy \
-            ros-noetic-rostest \
-            ros-noetic-rosunit \
-            ros-noetic-std-msgs \
-            ros-noetic-xgc2-estimator-rigid-state-msgs \
-            ros-noetic-xgc2-unicycle-reference-trajectory-msgs \
-            ros-noetic-xgc2-ros1-utils
+          docker pull ros:melodic-ros-base-bionic
+          docker run --rm \
+            -e DEBIAN_FRONTEND=noninteractive \
+            -v "$GITHUB_WORKSPACE:/workspace/xgc2-ugv-controller:ro" \
+            -v "$RUNNER_TEMP:/workspace/tmp" \
+            ros:melodic-ros-base-bionic \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              /workspace/xgc2-ugv-controller/.xgc2/scripts/setup_xgc2_apt_source.sh
+              apt-get install -y --no-install-recommends \
+                build-essential \
+                cmake \
+                git \
+                libeigen3-dev \
+                libxgc2-math-dev \
+                libxgc2-state-machine-dev \
+                python3-numpy \
+                rsync \
+                xgc2-acados \
+                ros-melodic-geometry-msgs \
+                ros-melodic-message-generation \
+                ros-melodic-nav-msgs \
+                ros-melodic-roscpp \
+                ros-melodic-roslaunch \
+                ros-melodic-rospack \
+                ros-melodic-rospy \
+                ros-melodic-rostest \
+                ros-melodic-rosunit \
+                ros-melodic-std-msgs \
+                ros-melodic-xgc2-estimator-rigid-state-msgs \
+                ros-melodic-xgc2-unicycle-reference-trajectory-msgs \
+                ros-melodic-xgc2-ros1-utils
 
-      - name: Build package and run launch compliance
-        run: |
-          set -euo pipefail
-          work_dir="${RUNNER_TEMP}/xgc2-ugv-controller-compliance"
-          install_root="${RUNNER_TEMP}/xgc2-ugv-controller-install-root"
-          rm -rf "$work_dir" "$install_root"
-          mkdir -p "$work_dir/src/xgc2-ugv-controller"
-          rsync -a --delete "$GITHUB_WORKSPACE/" "$work_dir/src/xgc2-ugv-controller/"
+              work_dir="/workspace/tmp/xgc2-ugv-controller-compliance"
+              install_root="/workspace/tmp/xgc2-ugv-controller-install-root"
+              rm -rf "$work_dir" "$install_root"
+              mkdir -p "$work_dir/src/xgc2-ugv-controller"
+              rsync -a --delete /workspace/xgc2-ugv-controller/ "$work_dir/src/xgc2-ugv-controller/"
 
-          cd "$work_dir"
-          set +u
-          source /opt/ros/noetic/setup.bash
-          set -u
-          parallel_jobs="$(nproc)"
-          PYTHONPATH="$work_dir/src/xgc2-ugv-controller/unicycle_ugv_controller/tools" \
-            python3 -B -m unittest discover \
-              -s "$work_dir/src/xgc2-ugv-controller/unicycle_ugv_controller/tools/unicycle_nmpc/tests" \
-              -v
-          catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" \
-            run_tests_unicycle_reference_trajectory \
-            run_tests_unicycle_ugv_controller
-          catkin_test_results
-          DESTDIR="$install_root" catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" install \
-            -DCMAKE_INSTALL_PREFIX=/opt/ros/noetic \
-            -DCMAKE_BUILD_TYPE=Release
-          source devel/setup.bash
-          test "$(rospack find unicycle_reference_trajectory)" = "$work_dir/src/xgc2-ugv-controller/unicycle_reference_trajectory"
-          test "$(rospack find unicycle_ugv_controller)" = "$work_dir/src/xgc2-ugv-controller/unicycle_ugv_controller"
-          roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch >/tmp/xgc2-unicycle-reference-files.txt
-          roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch >/tmp/xgc2-unicycle-controller-files.txt
+              cd "$work_dir"
+              set +u
+              source /opt/ros/melodic/setup.bash
+              set -u
+              parallel_jobs="$(nproc)"
+              PYTHONPATH="$work_dir/src/xgc2-ugv-controller/unicycle_ugv_controller/tools" \
+                python3 -B -m unittest discover \
+                  -s "$work_dir/src/xgc2-ugv-controller/unicycle_ugv_controller/tools/unicycle_nmpc/tests" \
+                  -v
+              catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" \
+                run_tests_unicycle_reference_trajectory \
+                run_tests_unicycle_ugv_controller
+              catkin_test_results
+              DESTDIR="$install_root" catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" install \
+                -DCMAKE_INSTALL_PREFIX=/opt/ros/melodic \
+                -DCMAKE_BUILD_TYPE=Release
+              set +u
+              source devel/setup.bash
+              set -u
+              test "$(rospack find unicycle_reference_trajectory)" = "$work_dir/src/xgc2-ugv-controller/unicycle_reference_trajectory"
+              test "$(rospack find unicycle_ugv_controller)" = "$work_dir/src/xgc2-ugv-controller/unicycle_ugv_controller"
+              roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch >/tmp/xgc2-unicycle-reference-files.txt
+              roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch >/tmp/xgc2-unicycle-controller-files.txt
+            '
 
   build-debs:
     name: Build debs (${{ matrix.arch }})

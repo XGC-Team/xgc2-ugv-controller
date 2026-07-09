@@ -13,13 +13,13 @@ Packages:
 
 ```bash
 sudo apt update
-sudo apt install ros-noetic-xgc2-ugv-controller
+sudo apt install ros-melodic-xgc2-ugv-controller
 ```
 
 ## Smoke Test
 
 ```bash
-source /opt/ros/noetic/setup.bash
+source /opt/ros/melodic/setup.bash
 roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch
 roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch
 ```

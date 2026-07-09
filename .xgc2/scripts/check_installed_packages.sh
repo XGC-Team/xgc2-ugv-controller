@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROS_DISTRO="${ROS_DISTRO:-noetic}"
+ROS_DISTRO="${ROS_DISTRO:-melodic}"
 set +u
 # shellcheck source=/dev/null
 source "/opt/ros/${ROS_DISTRO}/setup.bash"
@@ -15,7 +15,7 @@ dpkg -s libxgc2-state-machine-dev >/dev/null
 dpkg -s libxgc2-math-dev >/dev/null
 dpkg -s xgc2-acados >/dev/null
 xgc2_acados_version="$(dpkg-query -W -f='${Version}' xgc2-acados)"
-dpkg --compare-versions "${xgc2_acados_version}" ge "0.1.0-5~focal"
+dpkg --compare-versions "${xgc2_acados_version}" ge "0.1.0-8~bionic"
 test "$(rospack find unicycle_reference_trajectory)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory"
 test "$(rospack find unicycle_ugv_controller)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_ugv_controller"
 test "$(rospack find rigid_state_estimator_msgs)" = "/opt/ros/${ROS_DISTRO}/share/rigid_state_estimator_msgs"

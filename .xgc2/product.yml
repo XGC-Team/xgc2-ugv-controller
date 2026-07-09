@@ -1,33 +1,33 @@
 schema: xgc2.product.v1
 id: xgc2-ugv-controller
 name: XGC2 UGV Controller
-version: 1.1.4-1
+version: 1.1.4-2
 kind: ros1-apt
 summary: ROS1 unicycle UGV controller and planar reference trajectory packages for
   XGC2 robots.
 ros:
-  distro: noetic
+  distro: melodic
   packages:
   - unicycle_reference_trajectory
   - unicycle_ugv_controller
 apt:
-  distribution: focal
+  distribution: bionic
   install:
-  - ros-noetic-xgc2-ugv-controller
+  - ros-melodic-xgc2-ugv-controller
   packages:
-  - ros-noetic-xgc2-ugv-controller
+  - ros-melodic-xgc2-ugv-controller
   depends:
   - libeigen3-dev
-  - libxgc2-state-machine-dev (>= 0.1.2-5~focal)
-  - libxgc2-math-dev (>= 0.5.5-5)
-  - xgc2-acados (>= 0.1.0-7~focal)
-  - ros-noetic-xgc2-ros1-utils
-  - ros-noetic-xgc2-estimator-rigid-state-msgs (>= 1.2.0-1)
-  - ros-noetic-xgc2-unicycle-reference-trajectory-msgs (>= 1.2.0-1)
+  - libxgc2-state-machine-dev (>= 0.1.3-2~bionic)
+  - libxgc2-math-dev (>= 0.5.6-2~bionic)
+  - xgc2-acados (>= 0.1.0-8~bionic)
+  - ros-melodic-xgc2-ros1-utils
+  - ros-melodic-xgc2-estimator-rigid-state-msgs (>= 1.2.0-1)
+  - ros-melodic-xgc2-unicycle-reference-trajectory-msgs (>= 1.2.0-1)
 usage:
   install: 'sudo apt update
 
-    sudo apt install ros-noetic-xgc2-ugv-controller
+    sudo apt install ros-melodic-xgc2-ugv-controller
 
     '
   smoke_test: 'roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch
@@ -37,10 +37,10 @@ usage:
     '
 ownership:
   paths:
-  - /opt/ros/noetic/share/unicycle_reference_trajectory
-  - /opt/ros/noetic/share/unicycle_ugv_controller
-  - /opt/ros/noetic/include/unicycle_reference_trajectory
-  - /opt/ros/noetic/include/unicycle_ugv_controller
-  - /opt/ros/noetic/lib/unicycle_reference_trajectory
-  - /opt/ros/noetic/lib/unicycle_ugv_controller
-  - /opt/ros/noetic/lib/libunicycle_ugv_controller_nmpc_runtime.so
+  - /opt/ros/melodic/share/unicycle_reference_trajectory
+  - /opt/ros/melodic/share/unicycle_ugv_controller
+  - /opt/ros/melodic/include/unicycle_reference_trajectory
+  - /opt/ros/melodic/include/unicycle_ugv_controller
+  - /opt/ros/melodic/lib/unicycle_reference_trajectory
+  - /opt/ros/melodic/lib/unicycle_ugv_controller
+  - /opt/ros/melodic/lib/libunicycle_ugv_controller_nmpc_runtime.so

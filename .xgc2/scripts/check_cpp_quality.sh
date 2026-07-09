@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-ROS_DISTRO="${ROS_DISTRO:-noetic}"
+ROS_DISTRO="${ROS_DISTRO:-melodic}"
 
 require_command() {
   local command_name="$1"
@@ -27,6 +27,8 @@ require_command clang-format
 require_command clang-tidy
 require_command catkin_make
 require_command rsync
+
+git config --global --add safe.directory "${REPO_ROOT}" >/dev/null 2>&1 || true
 
 if [[ -n "${XGC2_CLANG_TIDY_SCOPE:-}" ]]; then
   TIDY_SCOPE="${XGC2_CLANG_TIDY_SCOPE}"
@@ -54,7 +56,15 @@ fi
 echo "Running clang-format..."
 (
   cd "${REPO_ROOT}"
-  clang-format --dry-run --Werror "${CXX_FILES[@]}"
+  tmp_format_dir="$(mktemp -d)"
+  trap 'rm -rf "${tmp_format_dir}"' EXIT
+  format_status=0
+  for file in "${CXX_FILES[@]}"; do
+    mkdir -p "${tmp_format_dir}/$(dirname "${file}")"
+    clang-format "${file}" > "${tmp_format_dir}/${file}"
+    diff -u "${file}" "${tmp_format_dir}/${file}" || format_status=1
+  done
+  exit "${format_status}"
 )
 
 collect_full_tidy_files() {

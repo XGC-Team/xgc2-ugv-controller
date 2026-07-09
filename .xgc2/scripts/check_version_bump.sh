@@ -24,7 +24,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 read_version() {
-  awk -F': *' '/^version:[[:space:]]*/ {print $2; exit}' "$1"
+  sed -n 's/^version:[[:space:]]*//p' "$1" | head -n 1
 }
 
 version_from_git() {

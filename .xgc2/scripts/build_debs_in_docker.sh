@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-DOCKER_IMAGE="${DOCKER_IMAGE:-ros:noetic-ros-base-focal}"
+DOCKER_IMAGE="${DOCKER_IMAGE:-ros:melodic-ros-base-bionic}"
 WORK_DIR="${WORK_DIR:-${REPO_ROOT}/.work/docker}"
 OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/debs}"
 INSTALL_CHECK="${INSTALL_CHECK:-true}"
@@ -66,20 +66,20 @@ docker run --rm \
       python3-numpy \
       rsync \
       xgc2-acados \
-      ros-noetic-geometry-msgs \
-      ros-noetic-message-generation \
-      ros-noetic-nav-msgs \
-      ros-noetic-roscpp \
-      ros-noetic-roslaunch \
-      ros-noetic-rosmsg \
-      ros-noetic-rospack \
-      ros-noetic-rospy \
-      ros-noetic-rostest \
-      ros-noetic-rosunit \
-      ros-noetic-std-msgs \
-      ros-noetic-xgc2-estimator-rigid-state-msgs \
-      ros-noetic-xgc2-unicycle-reference-trajectory-msgs \
-      ros-noetic-xgc2-ros1-utils
+      ros-melodic-geometry-msgs \
+      ros-melodic-message-generation \
+      ros-melodic-nav-msgs \
+      ros-melodic-roscpp \
+      ros-melodic-roslaunch \
+      ros-melodic-rosmsg \
+      ros-melodic-rospack \
+      ros-melodic-rospy \
+      ros-melodic-rostest \
+      ros-melodic-rosunit \
+      ros-melodic-std-msgs \
+      ros-melodic-xgc2-estimator-rigid-state-msgs \
+      ros-melodic-xgc2-unicycle-reference-trajectory-msgs \
+      ros-melodic-xgc2-ros1-utils
 
     rm -rf /workspace/work/src /workspace/work/build /workspace/work/devel /workspace/work/install-root
     mkdir -p /workspace/work/src/xgc2-ugv-controller
@@ -87,7 +87,7 @@ docker run --rm \
 
     cd /workspace/work
     set +u
-    source /opt/ros/noetic/setup.bash
+    source /opt/ros/melodic/setup.bash
     set -u
     parallel_jobs="$(nproc)"
     PYTHONPATH=/workspace/work/src/xgc2-ugv-controller/unicycle_ugv_controller/tools \
@@ -99,7 +99,7 @@ docker run --rm \
       run_tests_unicycle_ugv_controller
     catkin_test_results
     DESTDIR=/workspace/work/install-root catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" install \
-      -DCMAKE_INSTALL_PREFIX=/opt/ros/noetic \
+      -DCMAKE_INSTALL_PREFIX=/opt/ros/melodic \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG" \
       -DCMAKE_C_FLAGS_RELEASE="-O3 -DNDEBUG"

@@ -1,45 +1,71 @@
-from __future__ import annotations
-
-from dataclasses import dataclass, field
 import ctypes
 import os
 import sys
 from importlib.util import find_spec
 from pathlib import Path
+from typing import List, Optional
 
 import numpy as np
 
 
-@dataclass(frozen=True)
 class Bounds:
-    a_min: float = -2.0
-    a_max: float = 2.0
-    omega_min: float = -2.5
-    omega_max: float = 2.5
-    v_min: float = -0.5
-    v_max: float = 3.0
+    def __init__(
+        self,
+        a_min=-2.0,
+        a_max=2.0,
+        omega_min=-2.5,
+        omega_max=2.5,
+        v_min=-0.5,
+        v_max=3.0,
+    ):
+        self.a_min = a_min
+        self.a_max = a_max
+        self.omega_min = omega_min
+        self.omega_max = omega_max
+        self.v_min = v_min
+        self.v_max = v_max
 
 
-@dataclass(frozen=True)
 class CostWeights:
-    position: np.ndarray = field(default_factory=lambda: np.array([20.0, 20.0]))
-    yaw: float = 8.0
-    speed: float = 4.0
-    control: np.ndarray = field(default_factory=lambda: np.array([0.05, 0.08]))
-    terminal_position: np.ndarray = field(default_factory=lambda: np.array([60.0, 60.0]))
-    terminal_yaw: float = 20.0
-    terminal_speed: float = 10.0
+    def __init__(
+        self,
+        position=None,
+        yaw=8.0,
+        speed=4.0,
+        control=None,
+        terminal_position=None,
+        terminal_yaw=20.0,
+        terminal_speed=10.0,
+    ):
+        self.position = np.array([20.0, 20.0]) if position is None else position
+        self.yaw = yaw
+        self.speed = speed
+        self.control = np.array([0.05, 0.08]) if control is None else control
+        self.terminal_position = (
+            np.array([60.0, 60.0]) if terminal_position is None else terminal_position
+        )
+        self.terminal_yaw = terminal_yaw
+        self.terminal_speed = terminal_speed
 
 
-@dataclass(frozen=True)
 class MPCConfig:
-    horizon: float = 1.0
-    steps: int = 10
-    max_iter: int = 20
-    ftol: float = 1.0e-4
-    model_name: str = "unicycle_nmpc"
-    code_export_directory: str | None = None
-    json_file: str | None = None
+    def __init__(
+        self,
+        horizon=1.0,
+        steps=10,
+        max_iter=20,
+        ftol=1.0e-4,
+        model_name="unicycle_nmpc",
+        code_export_directory=None,
+        json_file=None,
+    ):
+        self.horizon = horizon
+        self.steps = steps
+        self.max_iter = max_iter
+        self.ftol = ftol
+        self.model_name = model_name
+        self.code_export_directory = code_export_directory
+        self.json_file = json_file
 
     @property
     def dt(self) -> float:
@@ -50,8 +76,8 @@ class MPCConfig:
         return self.horizon / self.steps
 
 
-def _env_paths(*names: str) -> list[Path]:
-    paths: list[Path] = []
+def _env_paths(*names: str) -> List[Path]:
+    paths = []
     for name in names:
         for raw_path in os.environ.get(name, "").split(os.pathsep):
             if not raw_path:
@@ -63,6 +89,7 @@ def _env_paths(*names: str) -> list[Path]:
 
 
 def configure_acados_environment() -> None:
+    os.environ.setdefault("MPLBACKEND", "Agg")
     acados_root = None
     for name in ("XGC2_ACADOS_SOURCE_DIR", "ACADOS_SOURCE_DIR", "ACADOS_ROOT"):
         raw = os.environ.get(name)
@@ -102,9 +129,9 @@ class AcadosBackendUnavailable(RuntimeError):
 class AcadosUnicycleNMPC:
     def __init__(
         self,
-        config: MPCConfig | None = None,
-        bounds: Bounds | None = None,
-        weights: CostWeights | None = None,
+        config: Optional[MPCConfig] = None,
+        bounds: Optional[Bounds] = None,
+        weights: Optional[CostWeights] = None,
     ) -> None:
         configure_acados_environment()
         if find_spec("casadi") is None or find_spec("acados_template") is None:
