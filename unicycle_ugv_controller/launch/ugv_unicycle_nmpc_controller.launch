@@ -23,7 +23,7 @@
     <arg name="nmpc_solve_timeout" default="0.05"/>
     <arg name="nmpc_result_timeout" default="0.1"/>
 
-    <arg name="min_linear_speed" default="-0.5"/>
+    <arg name="min_linear_speed" default="-1.5"/>
     <arg name="max_linear_speed" default="3.0"/>
     <arg name="max_angular_speed" default="2.5"/>
     <arg name="max_linear_acceleration" default="2.0"/>

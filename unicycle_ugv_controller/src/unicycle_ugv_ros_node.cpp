@@ -119,7 +119,7 @@ void UnicycleUgvRosNode::loadParams() {
     config_.max_linear_speed = finitePositiveOr(config_.max_linear_speed, 3.0);
     if (!std::isfinite(config_.min_linear_speed) ||
         config_.min_linear_speed >= config_.max_linear_speed) {
-        config_.min_linear_speed = -0.5;
+        config_.min_linear_speed = -1.5;
     }
     config_.max_angular_speed = finitePositiveOr(config_.max_angular_speed, 2.5);
     config_.max_linear_acceleration = finitePositiveOr(config_.max_linear_acceleration, 2.0);

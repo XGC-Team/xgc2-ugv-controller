@@ -16,7 +16,7 @@ class Bounds:
     a_max: float = 2.0
     omega_min: float = -2.5
     omega_max: float = 2.5
-    v_min: float = -0.5
+    v_min: float = -1.5
     v_max: float = 3.0
 
 

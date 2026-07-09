@@ -21,7 +21,7 @@ struct ControllerConfig {
     double nmpc_request_rate_hz{100.0};
     bool auto_start_tracking{false};
     double max_linear_speed{3.0};
-    double min_linear_speed{-0.5};
+    double min_linear_speed{-1.5};
     double max_angular_speed{2.5};
     double max_linear_acceleration{2.0};
 };

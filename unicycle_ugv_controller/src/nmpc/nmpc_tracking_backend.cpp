@@ -36,9 +36,19 @@ bool initialConstraintSatisfied(const std::array<Se2StateVector, UNICYCLE_NMPC_N
 
 void NmpcTrackingBackend::configure(const ControllerConfig& config) {
     config_ = config;
+    bounds_configured_ = solver_.configureBounds(
+        config_.min_linear_speed, config_.max_linear_speed,
+        config_.max_linear_acceleration, config_.max_angular_speed);
+    if (!bounds_configured_) {
+        status_ = -103;
+    }
 }
 
 bool NmpcTrackingBackend::enter() {
+    if (!bounds_configured_) {
+        status_ = -103;
+        return false;
+    }
     entered_ = solver_.initialize();
     if (entered_) {
         solver_.resetWarmStart();

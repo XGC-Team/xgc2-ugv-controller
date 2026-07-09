@@ -26,6 +26,8 @@ class UnicycleNmpcSolver {
     UnicycleNmpcSolver& operator=(const UnicycleNmpcSolver&) = delete;
 
     bool initialize();
+    bool configureBounds(double min_linear_speed, double max_linear_speed,
+                         double max_linear_acceleration, double max_angular_speed);
     void resetWarmStart();
     bool solve(const Se2StateVector& x0, const std::vector<Se2Reference>& refs);
 
@@ -52,6 +54,7 @@ class UnicycleNmpcSolver {
     }
 
    private:
+    bool applyRuntimeBounds();
     bool setInitialState(const Se2StateVector& x0);
     bool setReference(int stage, const Se2Reference& ref);
     void setGuesses(const Se2StateVector& x0, const std::vector<Se2Reference>& refs);
@@ -68,6 +71,10 @@ class UnicycleNmpcSolver {
     std::array<Se2ControlVector, UNICYCLE_NMPC_N> u_guess_{};
     std::array<Se2StateVector, UNICYCLE_NMPC_N + 1> x_solution_{};
     std::array<Se2ControlVector, UNICYCLE_NMPC_N> u_solution_{};
+    std::array<double, UNICYCLE_NMPC_NU> input_lower_bounds_{{-2.0, -2.5}};
+    std::array<double, UNICYCLE_NMPC_NU> input_upper_bounds_{{2.0, 2.5}};
+    std::array<double, 1> speed_lower_bound_{{-1.5}};
+    std::array<double, 1> speed_upper_bound_{{3.0}};
     Se2ControlVector optimal_control_{Se2ControlVector::Zero()};
     double predicted_speed_{0.0};
 };

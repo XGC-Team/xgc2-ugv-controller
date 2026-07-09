@@ -33,6 +33,7 @@ class NmpcTrackingBackend {
    private:
     ControllerConfig config_{};
     UnicycleNmpcSolver solver_;
+    bool bounds_configured_{false};
     bool entered_{false};
     int status_{-1};
     double solve_time_ms_{0.0};

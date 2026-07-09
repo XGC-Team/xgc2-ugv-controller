@@ -617,7 +617,7 @@ void unicycle_nmpc_acados_setup_nlp_in(unicycle_nmpc_solver_capsule* capsule, co
     double* lubx = calloc(2*NBX, sizeof(double));
     double* lbx = lubx;
     double* ubx = lubx + NBX;
-    lbx[0] = -0.5;
+    lbx[0] = -1.5;
     ubx[0] = 3.0;
 
     for (int i = 1; i < N; i++)
@@ -650,7 +650,7 @@ void unicycle_nmpc_acados_setup_nlp_in(unicycle_nmpc_solver_capsule* capsule, co
     double* lubx_e = calloc(2*NBXN, sizeof(double));
     double* lbx_e = lubx_e;
     double* ubx_e = lubx_e + NBXN;
-    lbx_e[0] = -0.5;
+    lbx_e[0] = -1.5;
     ubx_e[0] = 3.0;
     ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, nlp_out, N, "idxbx", idxbx_e);
     ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, nlp_out, N, "lbx", lbx_e);

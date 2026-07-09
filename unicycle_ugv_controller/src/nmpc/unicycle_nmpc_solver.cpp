@@ -2,7 +2,9 @@
 
 #include <ros/console.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 
 namespace unicycle_ugv_controller {
 
@@ -41,8 +43,44 @@ bool UnicycleNmpcSolver::initialize() {
         return false;
     }
     initialized_ = true;
+    if (!applyRuntimeBounds()) {
+        cleanup();
+        return false;
+    }
     resetWarmStart();
     return true;
+}
+
+bool UnicycleNmpcSolver::configureBounds(double min_linear_speed, double max_linear_speed,
+                                         double max_linear_acceleration,
+                                         double max_angular_speed) {
+    if (!std::isfinite(min_linear_speed) || !std::isfinite(max_linear_speed) ||
+        min_linear_speed >= max_linear_speed || !std::isfinite(max_linear_acceleration) ||
+        max_linear_acceleration <= 0.0 || !std::isfinite(max_angular_speed) ||
+        max_angular_speed <= 0.0) {
+        ROS_ERROR(
+            "[UnicycleNmpcSolver] Invalid runtime bounds speed=[%.3f, %.3f] accel=%.3f "
+            "omega=%.3f",
+            min_linear_speed, max_linear_speed, max_linear_acceleration, max_angular_speed);
+        return false;
+    }
+
+    const std::array<double, UNICYCLE_NMPC_NU> input_lower{
+        {-max_linear_acceleration, -max_angular_speed}};
+    const std::array<double, UNICYCLE_NMPC_NU> input_upper{
+        {max_linear_acceleration, max_angular_speed}};
+    const bool changed = input_lower != input_lower_bounds_ || input_upper != input_upper_bounds_ ||
+                         speed_lower_bound_[0] != min_linear_speed ||
+                         speed_upper_bound_[0] != max_linear_speed;
+    input_lower_bounds_ = input_lower;
+    input_upper_bounds_ = input_upper;
+    speed_lower_bound_[0] = min_linear_speed;
+    speed_upper_bound_[0] = max_linear_speed;
+    if (!changed || !capsule_) {
+        return true;
+    }
+    resetWarmStart();
+    return applyRuntimeBounds();
 }
 
 void UnicycleNmpcSolver::resetWarmStart() {
@@ -96,6 +134,38 @@ bool UnicycleNmpcSolver::setInitialState(const Se2StateVector& x0) {
     return status == 0;
 }
 
+bool UnicycleNmpcSolver::applyRuntimeBounds() {
+    if (!capsule_) {
+        return false;
+    }
+    ocp_nlp_config* config = unicycle_nmpc_acados_get_nlp_config(capsule_);
+    ocp_nlp_dims* dims = unicycle_nmpc_acados_get_nlp_dims(capsule_);
+    ocp_nlp_in* in = unicycle_nmpc_acados_get_nlp_in(capsule_);
+    ocp_nlp_out* out = unicycle_nmpc_acados_get_nlp_out(capsule_);
+
+    int status = 0;
+    for (int i = 0; i < UNICYCLE_NMPC_N; ++i) {
+        status |= ocp_nlp_constraints_model_set(config, dims, in, out, i, "lbu",
+                                                input_lower_bounds_.data());
+        status |= ocp_nlp_constraints_model_set(config, dims, in, out, i, "ubu",
+                                                input_upper_bounds_.data());
+    }
+    for (int i = 1; i <= UNICYCLE_NMPC_N; ++i) {
+        status |= ocp_nlp_constraints_model_set(config, dims, in, out, i, "lbx",
+                                                speed_lower_bound_.data());
+        status |= ocp_nlp_constraints_model_set(config, dims, in, out, i, "ubx",
+                                                speed_upper_bound_.data());
+    }
+    if (status != 0) {
+        ROS_ERROR("[UnicycleNmpcSolver] Failed to apply runtime input/state bounds");
+        return false;
+    }
+    ROS_INFO("[UnicycleNmpcSolver] Runtime bounds speed=[%.3f, %.3f] accel=%.3f omega=%.3f",
+             speed_lower_bound_[0], speed_upper_bound_[0], input_upper_bounds_[0],
+             input_upper_bounds_[1]);
+    return true;
+}
+
 bool UnicycleNmpcSolver::setReference(int stage, const Se2Reference& ref) {
     Eigen::Matrix<double, UNICYCLE_NMPC_NP, 1> p;
     p.segment<4>(0) = control::packState(ref.state);
@@ -113,10 +183,19 @@ void UnicycleNmpcSolver::setGuesses(const Se2StateVector& x0,
         for (int i = 0; i <= UNICYCLE_NMPC_N; ++i) {
             x_guess_[static_cast<size_t>(i)] =
                 control::packState(refs[static_cast<size_t>(i)].state);
+            x_guess_[static_cast<size_t>(i)](3) =
+                std::clamp(x_guess_[static_cast<size_t>(i)](3), speed_lower_bound_[0],
+                           speed_upper_bound_[0]);
         }
         for (int i = 0; i < UNICYCLE_NMPC_N; ++i) {
             u_guess_[static_cast<size_t>(i)] =
                 control::packControl(refs[static_cast<size_t>(i)].control);
+            for (int j = 0; j < UNICYCLE_NMPC_NU; ++j) {
+                u_guess_[static_cast<size_t>(i)](j) =
+                    std::clamp(u_guess_[static_cast<size_t>(i)](j),
+                               input_lower_bounds_[static_cast<size_t>(j)],
+                               input_upper_bounds_[static_cast<size_t>(j)]);
+            }
         }
     }
     x_guess_[0] = x0;
