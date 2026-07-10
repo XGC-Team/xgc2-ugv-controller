@@ -15,7 +15,7 @@ dpkg -s libxgc2-state-machine-dev >/dev/null
 dpkg -s libxgc2-math-dev >/dev/null
 dpkg -s xgc2-acados >/dev/null
 xgc2_acados_version="$(dpkg-query -W -f='${Version}' xgc2-acados)"
-dpkg --compare-versions "${xgc2_acados_version}" ge "0.1.0-5~focal"
+dpkg --compare-versions "${xgc2_acados_version}" ge "0.1.0-10~focal"
 test "$(rospack find unicycle_reference_trajectory)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory"
 test "$(rospack find unicycle_ugv_controller)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_ugv_controller"
 test "$(rospack find rigid_state_estimator_msgs)" = "/opt/ros/${ROS_DISTRO}/share/rigid_state_estimator_msgs"

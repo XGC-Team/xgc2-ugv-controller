@@ -89,7 +89,7 @@ grep -q "PACKAGE=\"ros-\${ROS_DISTRO}-xgc2-ugv-controller\"" .xgc2/scripts/packa
 grep -q "unicycle_ugv_controller" .xgc2/scripts/package_debs.sh
 grep -q "unicycle_reference_trajectory" .xgc2/scripts/package_debs.sh
 grep -q "libxgc2-state-machine-dev (>= 0.1.3-4~focal)" .xgc2/scripts/package_debs.sh
-grep -q "libxgc2-math-dev (>= 0.5.6-5~focal)" .xgc2/scripts/package_debs.sh
+grep -q "libxgc2-math-dev (>= 0.5.6-6~focal)" .xgc2/scripts/package_debs.sh
 grep -q "xgc2-acados (>= 0.1.0-10~focal)" .xgc2/product.yml
 grep -q "xgc2-acados (>= 0.1.0-10~focal)" .xgc2/scripts/package_debs.sh
 grep -q "ros-\${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs (>= 1.2.0-3)" .xgc2/scripts/package_debs.sh
