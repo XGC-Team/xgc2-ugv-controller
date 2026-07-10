@@ -52,8 +52,7 @@ bool UnicycleNmpcSolver::initialize() {
 }
 
 bool UnicycleNmpcSolver::configureBounds(double min_linear_speed, double max_linear_speed,
-                                         double max_linear_acceleration,
-                                         double max_angular_speed) {
+                                         double max_linear_acceleration, double max_angular_speed) {
     if (!std::isfinite(min_linear_speed) || !std::isfinite(max_linear_speed) ||
         min_linear_speed >= max_linear_speed || !std::isfinite(max_linear_acceleration) ||
         max_linear_acceleration <= 0.0 || !std::isfinite(max_angular_speed) ||
@@ -183,9 +182,8 @@ void UnicycleNmpcSolver::setGuesses(const Se2StateVector& x0,
         for (int i = 0; i <= UNICYCLE_NMPC_N; ++i) {
             x_guess_[static_cast<size_t>(i)] =
                 control::packState(refs[static_cast<size_t>(i)].state);
-            x_guess_[static_cast<size_t>(i)](3) =
-                std::clamp(x_guess_[static_cast<size_t>(i)](3), speed_lower_bound_[0],
-                           speed_upper_bound_[0]);
+            x_guess_[static_cast<size_t>(i)](3) = std::clamp(
+                x_guess_[static_cast<size_t>(i)](3), speed_lower_bound_[0], speed_upper_bound_[0]);
         }
         for (int i = 0; i < UNICYCLE_NMPC_N; ++i) {
             u_guess_[static_cast<size_t>(i)] =

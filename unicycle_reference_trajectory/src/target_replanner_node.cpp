@@ -263,10 +263,8 @@ bool TargetReplannerNode::publishPlan(const xgc2_math::trajectory::Se2TargetStat
     }
 
     constexpr uint32_t kHardPlanFlags =
-        xgc2_math::trajectory::kFlagInvalidInput |
-        xgc2_math::trajectory::kFlagNonFinite |
-        xgc2_math::trajectory::kFlagVelocityLimit |
-        xgc2_math::trajectory::kFlagAccelerationLimit |
+        xgc2_math::trajectory::kFlagInvalidInput | xgc2_math::trajectory::kFlagNonFinite |
+        xgc2_math::trajectory::kFlagVelocityLimit | xgc2_math::trajectory::kFlagAccelerationLimit |
         xgc2_math::trajectory::kFlagYawRateLimit;
     if ((result.flags & kHardPlanFlags) != 0U) {
         ROS_WARN(
