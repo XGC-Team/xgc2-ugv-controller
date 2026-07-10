@@ -1,7 +1,7 @@
 schema: xgc2.product.v1
 id: xgc2-ugv-controller
 name: XGC2 UGV Controller
-version: 1.1.4-6
+version: 1.1.4-7
 kind: ros1-apt
 summary: ROS1 unicycle UGV controller and planar reference trajectory packages for
   XGC2 robots.

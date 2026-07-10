@@ -68,6 +68,22 @@ grep -q "<name>unicycle_ugv_controller</name>" unicycle_ugv_controller/package.x
 grep -q "<name>unicycle_reference_trajectory</name>" unicycle_reference_trajectory/package.xml
 grep -q "run_tests_unicycle_reference_trajectory" .github/workflows/ci.yml
 grep -q "run_tests_unicycle_ugv_controller" .github/workflows/ci.yml
+awk '
+  /^  cpp-quality:/ { in_quality = 1; next }
+  /^  source-tests:/ { in_quality = 0 }
+  in_quality && /name: Install git for checkout/ { install_git = NR }
+  in_quality && /uses: actions\/checkout@v4/ { checkout = NR }
+  in_quality && /name: Configure Git safe directory/ { safe_directory = NR }
+  END {
+    valid = install_git && checkout && safe_directory && \
+      install_git < checkout && checkout < safe_directory
+    exit !valid
+  }
+' .github/workflows/ci.yml
+grep -Fq 'git config --global --add safe.directory "$GITHUB_WORKSPACE"' .github/workflows/ci.yml
+grep -Fq 'if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then' .xgc2/scripts/check_cpp_quality.sh
+grep -Fq 'git config --global --get-all safe.directory' .xgc2/scripts/check_cpp_quality.sh
+grep -Fq 'git config --global --add safe.directory "${REPO_ROOT}"' .xgc2/scripts/check_cpp_quality.sh
 grep -q "expected_version" .github/workflows/release.yml
 grep -q "expected_source_sha" .github/workflows/release.yml
 grep -q "PACKAGE=\"ros-\${ROS_DISTRO}-xgc2-ugv-controller\"" .xgc2/scripts/package_debs.sh

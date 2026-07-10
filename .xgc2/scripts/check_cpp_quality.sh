@@ -26,7 +26,21 @@ set -u
 require_command clang-format
 require_command clang-tidy
 require_command catkin_make
+require_command git
 require_command rsync
+
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  safe_directory_configured=false
+  while IFS= read -r safe_directory; do
+    if [[ "${safe_directory}" == "${REPO_ROOT}" ]]; then
+      safe_directory_configured=true
+      break
+    fi
+  done < <(git config --global --get-all safe.directory || true)
+  if [[ "${safe_directory_configured}" != "true" ]]; then
+    git config --global --add safe.directory "${REPO_ROOT}"
+  fi
+fi
 
 if [[ -n "${XGC2_CLANG_TIDY_SCOPE:-}" ]]; then
   TIDY_SCOPE="${XGC2_CLANG_TIDY_SCOPE}"
