@@ -32,6 +32,12 @@ jobs:
     timeout-minutes: 20
     container: ros:noetic-ros-base-focal
     steps:
+      - name: Install git for checkout
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends git
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
@@ -45,7 +51,6 @@ jobs:
             clang-format \
             clang-tidy \
             cmake \
-            git \
             libeigen3-dev \
             libxgc2-math-dev \
             libxgc2-state-machine-dev \
