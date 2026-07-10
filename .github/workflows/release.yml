@@ -25,6 +25,7 @@ on:
         description: Run source-tree catkin tests before Docker deb builds
         required: true
         default: false
+        type: boolean
       release_id:
         description: Parent orchestrator run id used for correlation and audit.
         required: false
