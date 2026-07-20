@@ -44,3 +44,10 @@ ownership:
   - /opt/ros/noetic/lib/unicycle_reference_trajectory
   - /opt/ros/noetic/lib/unicycle_ugv_controller
   - /opt/ros/noetic/lib/libunicycle_ugv_controller_nmpc_runtime.so
+release:
+  dependency_policy:
+    libxgc2-math-dev: rebuild
+    libxgc2-state-machine-dev: rebuild
+    xgc2-acados: rebuild
+    xgc2-ros-msgs: rebuild
+    xgc2-ros1-utils: rebuild
