@@ -7,6 +7,11 @@
     <arg name="queue_size" default="10"/>
 
     <arg name="state_estimate_topic" default="alg/state_estimator/state"/>
+    <arg name="state_source" default="state_estimator"/>
+    <arg name="vrpn_client_node" default="/vrpn_client_node"/>
+    <arg name="vrpn_rigid_body" default="$(arg ns)"/>
+    <arg name="vrpn_pose_topic" default="$(arg vrpn_client_node)/$(arg vrpn_rigid_body)/pose"/>
+    <arg name="vrpn_twist_topic" default="$(arg vrpn_client_node)/$(arg vrpn_rigid_body)/twist"/>
     <arg name="active_analytic_topic" default="alg/unicycle_reference_trajectory/active/analytic"/>
     <arg name="active_polynomial_topic" default="alg/unicycle_reference_trajectory/active/polynomial"/>
     <arg name="active_sampled_topic" default="alg/unicycle_reference_trajectory/active/sampled"/>
@@ -38,6 +43,9 @@
             <param name="control_rate_hz" value="$(arg control_rate_hz)"/>
             <param name="queue_size" value="$(arg queue_size)"/>
             <param name="state_estimate_topic" value="$(arg state_estimate_topic)"/>
+            <param name="state_source" value="$(arg state_source)"/>
+            <param name="vrpn_pose_topic" value="$(arg vrpn_pose_topic)"/>
+            <param name="vrpn_twist_topic" value="$(arg vrpn_twist_topic)"/>
             <param name="active_analytic_topic" value="$(arg active_analytic_topic)"/>
             <param name="active_polynomial_topic" value="$(arg active_polynomial_topic)"/>
             <param name="active_sampled_topic" value="$(arg active_sampled_topic)"/>

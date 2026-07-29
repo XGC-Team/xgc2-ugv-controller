@@ -29,6 +29,11 @@ TrackingState::TrackingState(UnicycleUgvController& controller) : controller_(co
     }
     if (event.id == event_type::INPUT_NMPC_SOLVE_SUCCEEDED && hasCommand()) {
         emitCurrentCommand(ctx);
+    } else if ((event.id == event_type::INPUT_NMPC_SOLVE_SUCCEEDED ||
+                event.id == event_type::INPUT_NMPC_SOLVE_FAILED) &&
+               !hasCommand()) {
+        controller_.clearCommand();
+        emitZeroCommand(ctx);
     }
     return {};
 }
@@ -88,7 +93,7 @@ void TrackingState::publishCommandIfDue(::state_machine::StateContext& ctx) {
 }
 
 bool TrackingState::hasCommand() const {
-    return controller_.command().valid;
+    return controller_.commandReady();
 }
 
 void TrackingState::emitZeroCommand(::state_machine::StateContext& ctx) const {

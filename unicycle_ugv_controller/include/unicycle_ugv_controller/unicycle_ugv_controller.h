@@ -34,6 +34,7 @@ class UnicycleUgvController {
     }
     bool healthReady() const;
     bool referenceReady() const;
+    bool commandReady() const;
     void setCommand(ControlCommand command);
     ControlCommand command() const;
     void clearCommand();

@@ -9,6 +9,11 @@
 
 namespace unicycle_ugv_controller {
 
+enum class StateSource {
+    STATE_ESTIMATOR = 0,
+    VRPN_DIRECT = 1,
+};
+
 struct ControllerConfig {
     double control_rate_hz{100.0};
     double control_period{0.1};
@@ -20,6 +25,7 @@ struct ControllerConfig {
     double command_publish_rate_hz{100.0};
     double nmpc_request_rate_hz{100.0};
     bool auto_start_tracking{false};
+    StateSource state_source{StateSource::STATE_ESTIMATOR};
     double max_linear_speed{3.0};
     double min_linear_speed{-1.5};
     double max_angular_speed{2.5};
@@ -93,6 +99,7 @@ constexpr int AUTOMATIC = 20;
 
 double wrapAngle(double value);
 double yawFromQuaternion(double x, double y, double z, double w);
+bool tryYawFromQuaternion(double x, double y, double z, double w, double& yaw);
 bool finiteState(const UgvState& state);
 bool stateFresh(const UgvState& state, const ros::Time& now, double timeout);
 double clamp(double value, double min_value, double max_value);

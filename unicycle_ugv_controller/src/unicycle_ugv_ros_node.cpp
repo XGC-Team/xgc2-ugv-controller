@@ -39,19 +39,22 @@ UnicycleUgvRosNode::UnicycleUgvRosNode(ros::NodeHandle& nh)
     health_state_pub_ = nh_.advertise<std_msgs::UInt32>(health_state_topic_, queue_size_);
 
     command_input_ = std::make_unique<CommandInputProducer>(nh_, post_input_event, queue_size_);
-    state_input_ = std::make_unique<StateInputProducer>(nh_, state_, state_topic_, post_input_event,
-                                                        queue_size_);
+    state_input_ = std::make_unique<StateInputProducer>(
+        nh_, state_, config_.state_source, state_topic_, vrpn_pose_topic_, vrpn_twist_topic_,
+        post_input_event, queue_size_);
     reference_input_ = std::make_unique<ReferenceInputProducer>(
         nh_, controller_.referenceCache(), active_analytic_topic_, active_polynomial_topic_,
         active_sampled_topic_, post_input_event, queue_size_);
 
     output_executor_.start();
     ROS_INFO(
-        "[UnicycleUgvRosNode] Initialized: state=%s cmd_vel=%s analytic=%s polynomial=%s "
+        "[UnicycleUgvRosNode] Initialized: state_source=%s state=%s vrpn_pose=%s "
+        "vrpn_twist=%s cmd_vel=%s analytic=%s polynomial=%s "
         "sampled=%s control_state=%s health_state=%s",
-        state_topic_.c_str(), cmd_vel_topic_.c_str(), active_analytic_topic_.c_str(),
-        active_polynomial_topic_.c_str(), active_sampled_topic_.c_str(),
-        control_state_topic_.c_str(), health_state_topic_.c_str());
+        config_.state_source == StateSource::VRPN_DIRECT ? "vrpn_direct" : "state_estimator",
+        state_topic_.c_str(), vrpn_pose_topic_.c_str(), vrpn_twist_topic_.c_str(),
+        cmd_vel_topic_.c_str(), active_analytic_topic_.c_str(), active_polynomial_topic_.c_str(),
+        active_sampled_topic_.c_str(), control_state_topic_.c_str(), health_state_topic_.c_str());
 }
 
 UnicycleUgvRosNode::~UnicycleUgvRosNode() {
@@ -74,6 +77,19 @@ void UnicycleUgvRosNode::loadParams() {
     private_nh_.param("queue_size", queue_size, queue_size);
     queue_size_ = std::max(kMinQueueSize, static_cast<uint32_t>(std::max(1, queue_size)));
     private_nh_.param("state_estimate_topic", state_topic_, state_topic_);
+    private_nh_.param("vrpn_pose_topic", vrpn_pose_topic_, vrpn_pose_topic_);
+    private_nh_.param("vrpn_twist_topic", vrpn_twist_topic_, vrpn_twist_topic_);
+    std::string state_source{"state_estimator"};
+    private_nh_.param("state_source", state_source, state_source);
+    if (state_source == "vrpn_direct" || state_source == "vrpn") {
+        config_.state_source = StateSource::VRPN_DIRECT;
+    } else if (state_source == "state_estimator" || state_source == "estimator") {
+        config_.state_source = StateSource::STATE_ESTIMATOR;
+    } else {
+        ROS_WARN("[UnicycleUgvRosNode] Unknown state_source=%s; using state_estimator",
+                 state_source.c_str());
+        config_.state_source = StateSource::STATE_ESTIMATOR;
+    }
     private_nh_.param("active_analytic_topic", active_analytic_topic_, active_analytic_topic_);
     private_nh_.param("active_polynomial_topic", active_polynomial_topic_,
                       active_polynomial_topic_);

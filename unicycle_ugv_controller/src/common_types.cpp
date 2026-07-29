@@ -15,14 +15,26 @@ double yawFromQuaternion(double x, double y, double z, double w) {
     return wrapAngle(std::atan2(siny_cosp, cosy_cosp));
 }
 
+bool tryYawFromQuaternion(double x, double y, double z, double w, double& yaw) {
+    const double norm_squared = x * x + y * y + z * z + w * w;
+    if (!std::isfinite(norm_squared) || norm_squared <= 1.0e-12) {
+        return false;
+    }
+    const double inverse_norm = 1.0 / std::sqrt(norm_squared);
+    yaw = yawFromQuaternion(x * inverse_norm, y * inverse_norm, z * inverse_norm, w * inverse_norm);
+    return std::isfinite(yaw);
+}
+
 bool finiteState(const UgvState& state) {
     return std::isfinite(state.x) && std::isfinite(state.y) && std::isfinite(state.yaw) &&
            std::isfinite(state.speed) && std::isfinite(state.yaw_rate);
 }
 
 bool stateFresh(const UgvState& state, const ros::Time& now, double timeout) {
-    return state.received && finiteState(state) && timeout > 0.0 &&
-           (now - state.stamp).toSec() <= timeout;
+    constexpr double kFutureStampTolerance = 0.05;
+    const double age = (now - state.stamp).toSec();
+    return state.received && finiteState(state) && timeout > 0.0 && std::isfinite(age) &&
+           age >= -kFutureStampTolerance && age <= timeout;
 }
 
 double clamp(double value, double min_value, double max_value) {

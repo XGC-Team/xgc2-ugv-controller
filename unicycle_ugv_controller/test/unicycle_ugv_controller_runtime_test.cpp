@@ -1,6 +1,11 @@
 #include <gtest/gtest.h>
 #include <rigid_state_estimator_msgs/PlanarStateEstimate.h>
 #include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
+#include <unicycle_reference_trajectory_msgs/SampledReference.h>
+
+#include <algorithm>
+#include <limits>
+#include <utility>
 
 #include "unicycle_ugv_controller/common/reference_cache.h"
 #include "unicycle_ugv_controller/common/types.h"
@@ -9,6 +14,39 @@
 
 namespace unicycle_ugv_controller {
 namespace {
+
+bool hasOutputEvent(UnicycleUgvController& controller, ::state_machine::EventId id) {
+    const auto& events = controller.stateMachine().currentOutputEvents();
+    return std::any_of(events.begin(), events.end(),
+                       [id](const ::state_machine::Event& event) { return event.id == id; });
+}
+
+void makeTrackingReady(UnicycleUgvController& controller, UgvState& state) {
+    state.received = true;
+    state.stamp = ros::Time(1.0);
+    state.estimator_state = rigid_state_estimator_msgs::PlanarStateEstimate::STATE_RUNNING;
+    state.estimator_flags = 0U;
+
+    unicycle_reference_trajectory_msgs::AnalyticReference reference;
+    reference.trajectory_id = 1U;
+    reference.revision = 1U;
+    reference.analytic_type = unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_HOLD;
+    reference.start_time = ros::Time(1.0);
+    reference.duration = 10.0;
+    reference.origin.orientation.w = 1.0;
+    ASSERT_TRUE(controller.referenceCache().updateAnalytic(reference, ros::Time(1.0)));
+
+    controller.update(1.0);
+    controller.update(1.01);
+    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+
+    ::state_machine::Event tracking(event_type::TRACKING_REQUESTED,
+                                    ::state_machine::EventTimestamp{1.01});
+    tracking.source = "test";
+    ASSERT_TRUE(controller.postEvent(std::move(tracking)).ok());
+    controller.update(1.02);
+    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Tracking);
+}
 
 TEST(UnicycleUgvControllerRuntime, StartsInSelfCheckWithoutStateEstimate) {
     ros::Time::init();
@@ -30,6 +68,48 @@ TEST(UnicycleUgvControllerRuntime, RunningEstimatorMovesSelfCheckToReady) {
     controller.update(1.0);
     controller.update(1.01);
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+}
+
+TEST(UnicycleUgvControllerRuntime, VrpnDirectDoesNotRequireEstimatorFlags) {
+    ros::Time::init();
+    UgvState state;
+    state.received = true;
+    state.stamp = ros::Time(1.0);
+    state.x = 1.0;
+    state.y = -2.0;
+    state.yaw = 0.5;
+    state.speed = 0.2;
+    state.yaw_rate = -0.1;
+    state.estimator_state = 0U;
+    state.estimator_flags = rigid_state_estimator_msgs::PlanarStateEstimate::FLAG_FAULT;
+
+    UnicycleUgvController controller(state);
+    auto config = controller.config();
+    config.state_source = StateSource::VRPN_DIRECT;
+    controller.setConfig(config);
+    controller.update(1.0);
+    controller.update(1.01);
+    EXPECT_TRUE(controller.healthReady());
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+}
+
+TEST(UnicycleUgvControllerRuntime, StateFreshRejectsExcessivelyFutureStamp) {
+    UgvState state;
+    state.received = true;
+    state.stamp = ros::Time(1.04);
+    EXPECT_TRUE(stateFresh(state, ros::Time(1.0), 0.2));
+
+    state.stamp = ros::Time(1.051);
+    EXPECT_FALSE(stateFresh(state, ros::Time(1.0), 0.2));
+}
+
+TEST(UnicycleUgvControllerRuntime, VrpnQuaternionValidationRejectsZeroAndNonFiniteValues) {
+    double yaw = 0.0;
+    EXPECT_TRUE(tryYawFromQuaternion(0.0, 0.0, 0.0, 1.0, yaw));
+    EXPECT_NEAR(yaw, 0.0, 1.0e-12);
+    EXPECT_FALSE(tryYawFromQuaternion(0.0, 0.0, 0.0, 0.0, yaw));
+    EXPECT_FALSE(
+        tryYawFromQuaternion(std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0, 1.0, yaw));
 }
 
 TEST(UnicycleUgvControllerRuntime, FaultFlagReturnsToSelfCheck) {
@@ -79,6 +159,62 @@ TEST(UnicycleUgvControllerRuntime, AutoStartTrackingWhenStateAndReferenceAreRead
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Tracking);
 }
 
+TEST(UnicycleUgvControllerRuntime, TransientNmpcFailureKeepsFreshCommand) {
+    ros::Time::init();
+    UgvState state;
+    UnicycleUgvController controller(state);
+    auto config = controller.config();
+    config.result_timeout = 0.1;
+    controller.setConfig(config);
+    makeTrackingReady(controller, state);
+
+    ControlCommand command;
+    command.stamp = ros::Time(1.02);
+    command.linear_speed = 0.8;
+    command.angular_speed = -0.2;
+    command.valid = true;
+    controller.setCommand(command);
+
+    ::state_machine::Event failure(event_type::INPUT_NMPC_SOLVE_FAILED,
+                                   ::state_machine::EventTimestamp{1.05});
+    failure.source = "test";
+    failure.correlation_id = 1U;
+    ASSERT_TRUE(controller.postEvent(std::move(failure)).ok());
+    controller.update(1.05);
+
+    EXPECT_TRUE(controller.commandReady());
+    EXPECT_TRUE(controller.command().valid);
+    EXPECT_FALSE(hasOutputEvent(controller, output_event_type::PUBLISH_ZERO_CMD_VEL));
+}
+
+TEST(UnicycleUgvControllerRuntime, SustainedNmpcFailureInvalidatesStaleCommandAndPublishesZero) {
+    ros::Time::init();
+    UgvState state;
+    UnicycleUgvController controller(state);
+    auto config = controller.config();
+    config.result_timeout = 0.1;
+    controller.setConfig(config);
+    makeTrackingReady(controller, state);
+
+    ControlCommand command;
+    command.stamp = ros::Time(1.02);
+    command.linear_speed = 0.8;
+    command.angular_speed = -0.2;
+    command.valid = true;
+    controller.setCommand(command);
+
+    ::state_machine::Event failure(event_type::INPUT_NMPC_SOLVE_FAILED,
+                                   ::state_machine::EventTimestamp{1.13});
+    failure.source = "test";
+    failure.correlation_id = 1U;
+    ASSERT_TRUE(controller.postEvent(std::move(failure)).ok());
+    controller.update(1.13);
+
+    EXPECT_FALSE(controller.commandReady());
+    EXPECT_FALSE(controller.command().valid);
+    EXPECT_TRUE(hasOutputEvent(controller, output_event_type::PUBLISH_ZERO_CMD_VEL));
+}
+
 TEST(UnicycleUgvControllerRuntime, SampledNmpcHorizonKeepsYawContinuousAcrossPi) {
     ros::Time::init();
     ReferenceCache cache;
@@ -100,6 +236,42 @@ TEST(UnicycleUgvControllerRuntime, SampledNmpcHorizonKeepsYawContinuousAcrossPi)
     for (size_t i = 1; i < refs.size(); ++i) {
         EXPECT_LT(std::abs(refs[i].state.yaw - refs[i - 1].state.yaw), 0.1);
         EXPECT_NEAR(refs[i].state.yaw - refs[i - 1].state.yaw, 1.0 / 30.0, 1.0e-6);
+    }
+}
+
+TEST(UnicycleUgvControllerRuntime,
+     ExplicitSampledPlanarKinematicsPreservesReverseSpeedBranch) {
+    ros::Time::init();
+    ReferenceCache cache;
+
+    unicycle_reference_trajectory_msgs::SampledReference reference;
+    reference.trajectory_id = 9U;
+    reference.revision = 1U;
+    reference.flags =
+        unicycle_reference_trajectory_msgs::SampledReference::
+            FLAG_EXPLICIT_PLANAR_KINEMATICS;
+    reference.start_time = ros::Time(1.0);
+    reference.sample_dt = 0.5;
+    for (int index = 0; index < 3; ++index) {
+        unicycle_reference_trajectory_msgs::PlanarReferencePoint point;
+        point.t_from_start = 0.5 * static_cast<double>(index);
+        point.x = -0.1 * static_cast<double>(index);
+        point.y = 0.0;
+        point.yaw = 0.0;
+        point.speed = -0.2;
+        point.vx = -0.2;
+        point.vy = 0.0;
+        reference.points.push_back(point);
+    }
+    ASSERT_TRUE(cache.updateSampled(reference, ros::Time(1.0)));
+
+    std::vector<xgc2_math::control::Se2Reference> refs;
+    ASSERT_TRUE(cache.sampleHorizon(
+        ros::Time(1.0), 0.25, 4, 1.0, refs));
+    ASSERT_EQ(refs.size(), 5U);
+    for (const auto& ref : refs) {
+        EXPECT_NEAR(ref.state.yaw, 0.0, 1.0e-12);
+        EXPECT_NEAR(ref.state.linear_speed, -0.2, 1.0e-12);
     }
 }
 

@@ -2,6 +2,9 @@ control_rate_hz: 100.0
 queue_size: 10
 
 state_estimate_topic: "alg/state_estimator/state"
+state_source: "state_estimator"
+vrpn_pose_topic: "/vrpn_client_node/ugv1/pose"
+vrpn_twist_topic: "/vrpn_client_node/ugv1/twist"
 active_analytic_topic: "alg/unicycle_reference_trajectory/active/analytic"
 active_polynomial_topic: "alg/unicycle_reference_trajectory/active/polynomial"
 active_sampled_topic: "alg/unicycle_reference_trajectory/active/sampled"

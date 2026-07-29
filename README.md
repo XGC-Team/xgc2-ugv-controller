@@ -23,3 +23,19 @@ source /opt/ros/noetic/setup.bash
 roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch
 roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch
 ```
+
+## Control-state modes
+
+The same controller executable supports both state providers:
+
+- `state_source:=state_estimator` consumes `PlanarStateEstimate`.
+- `state_source:=vrpn_direct` consumes trusted VRPN pose and twist directly,
+  without launching an estimator. The product NMPC remains the sole
+  `cmd_vel` publisher for the nonholonomic vehicle.
+
+Example:
+
+```bash
+roslaunch unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch \
+  ns:=ugv1 state_source:=vrpn_direct
+```

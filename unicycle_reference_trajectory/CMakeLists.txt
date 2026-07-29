@@ -19,7 +19,7 @@ catkin_package(
   INCLUDE_DIRS include
   CATKIN_DEPENDS geometry_msgs nav_msgs rigid_state_estimator_msgs roscpp rospy std_msgs
                  unicycle_reference_trajectory_msgs
-  DEPENDS EIGEN3 xgc2_math
+  CFG_EXTRAS unicycle_reference_trajectory-dependencies.cmake
 )
 
 include_directories(

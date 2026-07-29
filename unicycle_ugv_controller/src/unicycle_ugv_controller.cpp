@@ -3,6 +3,7 @@
 #include <rigid_state_estimator_msgs/PlanarStateEstimate.h>
 #include <ros/console.h>
 
+#include <cmath>
 #include <stdexcept>
 #include <utility>
 
@@ -53,8 +54,13 @@ void UnicycleUgvController::setConfig(const ControllerConfig& config) {
 
 bool UnicycleUgvController::healthReady() const {
     const auto cfg = config();
-    return stateFresh(state_, ros::Time(current_time_sec_), cfg.state_timeout) &&
-           state_.estimator_state ==
+    if (!stateFresh(state_, ros::Time(current_time_sec_), cfg.state_timeout)) {
+        return false;
+    }
+    if (cfg.state_source == StateSource::VRPN_DIRECT) {
+        return finiteState(state_);
+    }
+    return state_.estimator_state ==
                rigid_state_estimator_msgs::PlanarStateEstimate::STATE_RUNNING &&
            (state_.estimator_flags & rigid_state_estimator_msgs::PlanarStateEstimate::FLAG_FAULT) ==
                0U;
@@ -63,6 +69,16 @@ bool UnicycleUgvController::healthReady() const {
 bool UnicycleUgvController::referenceReady() const {
     const auto cfg = config();
     return reference_cache_.valid(ros::Time(current_time_sec_), cfg.reference_timeout);
+}
+
+bool UnicycleUgvController::commandReady() const {
+    constexpr double kFutureStampTolerance = 0.05;
+    const auto cfg = config();
+    const auto current_command = command();
+    const double age = current_time_sec_ - current_command.stamp.toSec();
+    return current_command.valid && std::isfinite(current_command.linear_speed) &&
+           std::isfinite(current_command.angular_speed) && std::isfinite(age) &&
+           age >= -kFutureStampTolerance && age <= cfg.result_timeout;
 }
 
 void UnicycleUgvController::setCommand(ControlCommand command) {

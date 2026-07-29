@@ -149,7 +149,12 @@ bool fillSampled(const unicycle_reference_trajectory_msgs::SampledReference& msg
         sample.reference.curvature = point.curvature;
         samples.push_back(sample);
     }
-    if (!evaluator.setSamples(std::move(samples))) {
+    const bool preserve_explicit_planar_kinematics =
+        (msg.flags &
+         unicycle_reference_trajectory_msgs::SampledReference::
+             FLAG_EXPLICIT_PLANAR_KINEMATICS) != 0U;
+    if (!evaluator.setSamples(
+            std::move(samples), preserve_explicit_planar_kinematics)) {
         flags |= trajectory::kFlagInvalidInput;
         return false;
     }

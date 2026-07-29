@@ -120,7 +120,7 @@ catkin_package(
   LIBRARIES unicycle_ugv_controller_nmpc_runtime
   CATKIN_DEPENDS geometry_msgs nav_msgs rigid_state_estimator_msgs roscpp ros1_utils std_msgs
                  unicycle_reference_trajectory_msgs
-  DEPENDS EIGEN3
+  CFG_EXTRAS unicycle_ugv_controller-dependencies.cmake
 )
 
 include_directories(
@@ -192,6 +192,9 @@ install(TARGETS unicycle_ugv_controller_nmpc_runtime ${PROJECT_NAME}_node
 
 install(DIRECTORY include/${PROJECT_NAME}/
   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
+
+install(FILES ${UGV_NMPC_SOLVER_H}
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/nmpc)
 
 install(DIRECTORY config launch
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})

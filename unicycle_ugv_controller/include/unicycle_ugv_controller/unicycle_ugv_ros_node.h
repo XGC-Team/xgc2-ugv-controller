@@ -45,6 +45,8 @@ class UnicycleUgvRosNode {
     ControllerConfig config_{};
     uint32_t queue_size_{10U};
     std::string state_topic_{"alg/state_estimator/state"};
+    std::string vrpn_pose_topic_{"/vrpn_client_node/ugv1/pose"};
+    std::string vrpn_twist_topic_{"/vrpn_client_node/ugv1/twist"};
     std::string active_analytic_topic_{"alg/unicycle_reference_trajectory/active/analytic"};
     std::string active_polynomial_topic_{"alg/unicycle_reference_trajectory/active/polynomial"};
     std::string active_sampled_topic_{"alg/unicycle_reference_trajectory/active/sampled"};
