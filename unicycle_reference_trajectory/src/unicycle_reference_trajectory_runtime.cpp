@@ -475,10 +475,9 @@ bool ReferenceTrajectoryRuntime::buildSampledEvaluator(
     }
     const bool preserve_explicit_planar_kinematics =
         (msg.flags &
-         unicycle_reference_trajectory_msgs::SampledReference::
-             FLAG_EXPLICIT_PLANAR_KINEMATICS) != 0U;
-    if (!evaluator.setSamples(
-            std::move(samples), preserve_explicit_planar_kinematics)) {
+         unicycle_reference_trajectory_msgs::SampledReference::FLAG_EXPLICIT_PLANAR_KINEMATICS) !=
+        0U;
+    if (!evaluator.setSamples(std::move(samples), preserve_explicit_planar_kinematics)) {
         flags |= trajectory::kFlagInvalidInput;
         return false;
     }

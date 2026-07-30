@@ -239,8 +239,7 @@ TEST(UnicycleUgvControllerRuntime, SampledNmpcHorizonKeepsYawContinuousAcrossPi)
     }
 }
 
-TEST(UnicycleUgvControllerRuntime,
-     ExplicitSampledPlanarKinematicsPreservesReverseSpeedBranch) {
+TEST(UnicycleUgvControllerRuntime, ExplicitSampledPlanarKinematicsPreservesReverseSpeedBranch) {
     ros::Time::init();
     ReferenceCache cache;
 
@@ -248,8 +247,7 @@ TEST(UnicycleUgvControllerRuntime,
     reference.trajectory_id = 9U;
     reference.revision = 1U;
     reference.flags =
-        unicycle_reference_trajectory_msgs::SampledReference::
-            FLAG_EXPLICIT_PLANAR_KINEMATICS;
+        unicycle_reference_trajectory_msgs::SampledReference::FLAG_EXPLICIT_PLANAR_KINEMATICS;
     reference.start_time = ros::Time(1.0);
     reference.sample_dt = 0.5;
     for (int index = 0; index < 3; ++index) {
@@ -266,8 +264,7 @@ TEST(UnicycleUgvControllerRuntime,
     ASSERT_TRUE(cache.updateSampled(reference, ros::Time(1.0)));
 
     std::vector<xgc2_math::control::Se2Reference> refs;
-    ASSERT_TRUE(cache.sampleHorizon(
-        ros::Time(1.0), 0.25, 4, 1.0, refs));
+    ASSERT_TRUE(cache.sampleHorizon(ros::Time(1.0), 0.25, 4, 1.0, refs));
     ASSERT_EQ(refs.size(), 5U);
     for (const auto& ref : refs) {
         EXPECT_NEAR(ref.state.yaw, 0.0, 1.0e-12);
