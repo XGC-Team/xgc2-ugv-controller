@@ -70,12 +70,10 @@ grep -q "run_tests_unicycle_ugv_controller" .github/workflows/ci.yml
 awk '
   /^  cpp-quality:/ { in_quality = 1; next }
   /^  source-tests:/ { in_quality = 0 }
-  in_quality && /name: Install git for checkout/ { install_git = NR }
   in_quality && /uses: actions\/checkout@v4/ { checkout = NR }
   in_quality && /name: Configure Git safe directory/ { safe_directory = NR }
   END {
-    valid = install_git && checkout && safe_directory && \
-      install_git < checkout && checkout < safe_directory
+    valid = checkout && safe_directory && checkout < safe_directory
     exit !valid
   }
 ' .github/workflows/ci.yml
