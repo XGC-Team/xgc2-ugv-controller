@@ -30,14 +30,8 @@ jobs:
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    container: ros:noetic-ros-base-focal
+    container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
     steps:
-      - name: Install git for checkout
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y --no-install-recommends git
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
@@ -45,27 +39,14 @@ jobs:
       - name: Configure Git safe directory
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Install quality dependencies
+      - name: Install published XGC2 products
         run: |
           export DEBIAN_FRONTEND=noninteractive
           .xgc2/scripts/setup_xgc2_apt_source.sh
           apt-get install -y --no-install-recommends \
-            build-essential \
-            clang-format \
-            clang-tidy \
-            cmake \
-            libeigen3-dev \
             libxgc2-math-dev \
             libxgc2-state-machine-dev \
-            python3-numpy \
-            rsync \
             xgc2-acados \
-            ros-noetic-geometry-msgs \
-            ros-noetic-message-generation \
-            ros-noetic-nav-msgs \
-            ros-noetic-roscpp \
-            ros-noetic-rospy \
-            ros-noetic-std-msgs \
             ros-noetic-xgc2-estimator-rigid-state-msgs \
             ros-noetic-xgc2-unicycle-reference-trajectory-msgs \
             ros-noetic-xgc2-ros1-utils
@@ -76,39 +57,19 @@ jobs:
   source-tests:
     name: Source build and tests
     runs-on: ubuntu-latest
-    container: ros:noetic-ros-base-focal
+    container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
     steps:
-      - name: Install git for checkout
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y --no-install-recommends git
-
       - uses: actions/checkout@v4
 
-      - name: Install build dependencies
+      - name: Install published XGC2 products
         run: |
           export DEBIAN_FRONTEND=noninteractive
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           .xgc2/scripts/setup_xgc2_apt_source.sh
           apt-get install -y --no-install-recommends \
-            build-essential \
-            cmake \
-            git \
-            libeigen3-dev \
             libxgc2-math-dev \
             libxgc2-state-machine-dev \
-            rsync \
             xgc2-acados \
-            ros-noetic-geometry-msgs \
-            ros-noetic-message-generation \
-            ros-noetic-nav-msgs \
-            ros-noetic-roscpp \
-            ros-noetic-roslaunch \
-            ros-noetic-rospack \
-            ros-noetic-rospy \
-            ros-noetic-rostest \
-            ros-noetic-rosunit \
-            ros-noetic-std-msgs \
             ros-noetic-xgc2-estimator-rigid-state-msgs \
             ros-noetic-xgc2-unicycle-reference-trajectory-msgs \
             ros-noetic-xgc2-ros1-utils

@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-DOCKER_IMAGE="${DOCKER_IMAGE:-ros:noetic-ros-base-focal}"
+DOCKER_IMAGE="${DOCKER_IMAGE:-ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0}"
 WORK_DIR="${WORK_DIR:-${REPO_ROOT}/.work/docker}"
 OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/debs}"
 INSTALL_CHECK="${INSTALL_CHECK:-true}"
@@ -52,8 +52,7 @@ docker run --rm \
     set -euo pipefail
 
     export DEBIAN_FRONTEND=noninteractive
-    /workspace/xgc2-ugv-controller/.xgc2/scripts/setup_xgc2_apt_source.sh
-    apt-get install -y --no-install-recommends \
+    for pkg in \
       build-essential \
       ca-certificates \
       cmake \
@@ -62,11 +61,8 @@ docker run --rm \
       file \
       git \
       libeigen3-dev \
-      libxgc2-math-dev \
-      libxgc2-state-machine-dev \
       python3-numpy \
       rsync \
-      xgc2-acados \
       ros-noetic-geometry-msgs \
       ros-noetic-message-generation \
       ros-noetic-nav-msgs \
@@ -77,7 +73,19 @@ docker run --rm \
       ros-noetic-rospy \
       ros-noetic-rostest \
       ros-noetic-rosunit \
-      ros-noetic-std-msgs \
+      ros-noetic-std-msgs
+    do
+      if ! dpkg -s "${pkg}" >/dev/null 2>&1; then
+        echo "image is missing ${pkg}; use xgc2-build-focal-ros-noetic" >&2
+        exit 1
+      fi
+    done
+
+    /workspace/xgc2-ugv-controller/.xgc2/scripts/setup_xgc2_apt_source.sh
+    apt-get install -y --no-install-recommends \
+      libxgc2-math-dev \
+      libxgc2-state-machine-dev \
+      xgc2-acados \
       ros-noetic-xgc2-estimator-rigid-state-msgs \
       ros-noetic-xgc2-unicycle-reference-trajectory-msgs \
       ros-noetic-xgc2-ros1-utils
