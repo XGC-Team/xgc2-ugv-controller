@@ -13,7 +13,8 @@ ROS_PACKAGES=(
 )
 
 product_version() {
-  awk -F': *' '/^version:[[:space:]]*/ {print $2; exit}' "${REPO_ROOT}/.xgc2/product.yml"
+  # mawk (bionic) does not implement POSIX [[:space:]].
+  awk '/^version:/ {print $2; exit}' "${REPO_ROOT}/.xgc2/product.yml"
 }
 
 VERSION="${PACKAGE_VERSION:-$(product_version)}"
@@ -79,6 +80,7 @@ copy_ros_package() {
   copy_path "${PREFIX_ROOT}/share/gennodejs/ros/${ros_package}" "${pkg_root}"
   copy_path "${PREFIX_ROOT}/share/roseus/ros/${ros_package}" "${pkg_root}"
   copy_path "${PREFIX_ROOT}/lib/python3/dist-packages/${ros_package}" "${pkg_root}"
+  copy_path "${PREFIX_ROOT}/lib/python2.7/dist-packages/${ros_package}" "${pkg_root}"
 }
 
 for ros_package in "${ROS_PACKAGES[@]}"; do

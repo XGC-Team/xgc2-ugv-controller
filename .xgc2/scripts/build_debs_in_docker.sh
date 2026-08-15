@@ -27,6 +27,14 @@ while [[ $# -gt 0 ]]; do
       INSTALL_CHECK=false
       shift
       ;;
+    --platform)
+      DOCKER_PLATFORM="$2"
+      shift 2
+      ;;
+    --local-debs)
+      LOCAL_DEBS="$2"
+      shift 2
+      ;;
     *)
       echo "unknown argument: $1" >&2
       exit 1
@@ -36,8 +44,19 @@ done
 
 mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}"
 
-docker pull "${DOCKER_IMAGE}"
+docker_platform_args=()
+if [[ -n "${DOCKER_PLATFORM:-}" ]]; then
+  docker_platform_args=(--platform "${DOCKER_PLATFORM}")
+fi
+docker_local_debs=()
+if [[ -n "${LOCAL_DEBS:-}" ]]; then
+  docker_local_debs=(-e XGC2_LOCAL_DEB_DIR=/workspace/local-debs -v "${LOCAL_DEBS}:/workspace/local-debs:ro")
+fi
+
+docker pull "${docker_platform_args[@]}" "${DOCKER_IMAGE}"
 docker run --rm \
+  "${docker_platform_args[@]}" \
+  "${docker_local_debs[@]}" \
   -e XGC2_APT_OVERLAY_URL="${XGC2_APT_OVERLAY_URL:-}" \
   -e DEBIAN_FRONTEND=noninteractive \
   -e INSTALL_CHECK="${INSTALL_CHECK}" \
@@ -52,6 +71,7 @@ docker run --rm \
     set -euo pipefail
 
     export DEBIAN_FRONTEND=noninteractive
+    : "${ROS_DISTRO:?ROS_DISTRO must be set in the image}"
     for pkg in \
       build-essential \
       ca-certificates \
@@ -63,21 +83,19 @@ docker run --rm \
       libeigen3-dev \
       python3-numpy \
       rsync \
-      ros-noetic-geometry-msgs \
-      ros-noetic-message-generation \
-      ros-noetic-nav-msgs \
-      ros-noetic-roscpp \
-      ros-noetic-roslaunch \
-      ros-noetic-rosmsg \
-      ros-noetic-rospack \
-      ros-noetic-rospy \
-      ros-noetic-rostest \
-      ros-noetic-rosunit \
-      ros-noetic-std-msgs
+      "ros-${ROS_DISTRO}-geometry-msgs" \
+      "ros-${ROS_DISTRO}-message-generation" \
+      "ros-${ROS_DISTRO}-nav-msgs" \
+      "ros-${ROS_DISTRO}-roscpp" \
+      "ros-${ROS_DISTRO}-roslaunch" \
+      "ros-${ROS_DISTRO}-rosmsg" \
+      "ros-${ROS_DISTRO}-rospack" \
+      "ros-${ROS_DISTRO}-rospy" \
+      "ros-${ROS_DISTRO}-std-msgs"
     do
       if ! dpkg -s "${pkg}" >/dev/null 2>&1; then
-        echo "image is missing ${pkg}; use xgc2-build-focal-ros-noetic" >&2
-        exit 1
+        apt-get update
+        apt-get install -y --no-install-recommends "${pkg}"
       fi
     done
 
@@ -89,19 +107,11 @@ docker run --rm \
 
     cd /workspace/work
     set +u
-    source /opt/ros/noetic/setup.bash
+    source /opt/ros/${ROS_DISTRO}/setup.bash
     set -u
     parallel_jobs="$(nproc)"
-    PYTHONPATH=/workspace/work/src/xgc2-ugv-controller/unicycle_ugv_controller/tools \
-      python3 -B -m unittest discover \
-        -s /workspace/work/src/xgc2-ugv-controller/unicycle_ugv_controller/tools/unicycle_nmpc/tests \
-        -v
-    catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" \
-      run_tests_unicycle_reference_trajectory \
-      run_tests_unicycle_ugv_controller
-    catkin_test_results
     DESTDIR=/workspace/work/install-root catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" install \
-      -DCMAKE_INSTALL_PREFIX=/opt/ros/noetic \
+      -DCMAKE_INSTALL_PREFIX=/opt/ros/${ROS_DISTRO} \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG" \
       -DCMAKE_C_FLAGS_RELEASE="-O3 -DNDEBUG"

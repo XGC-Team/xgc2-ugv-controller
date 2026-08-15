@@ -3,6 +3,11 @@ set -euo pipefail
 
 source_url="${XGC2_APT_SOURCE_URL:-https://xgc2.apt.xiaokang.ink}"
 overlay_url="${XGC2_APT_OVERLAY_URL:-}"
+if [[ -z "${XGC2_APT_DISTRIBUTION:-}" && -r /etc/os-release ]]; then
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  XGC2_APT_DISTRIBUTION="${VERSION_CODENAME:-}"
+fi
 distribution="${XGC2_APT_DISTRIBUTION:-focal}"
 component="${XGC2_APT_COMPONENT:-main}"
 list_file="${XGC2_APT_LIST_FILE:-/etc/apt/sources.list.d/xgc2.list}"
