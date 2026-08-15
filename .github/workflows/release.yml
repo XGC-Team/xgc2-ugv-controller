@@ -29,16 +29,6 @@ on:
         required: false
         default: ""
         type: string
-      run_cpp_quality:
-        description: Run C++ quality checks
-        required: true
-        default: false
-        type: boolean
-      run_source_tests:
-        description: Run source tests
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   actions: read
@@ -79,7 +69,6 @@ jobs:
             echo "apt_overlay_url requires a dependency_set_digest" >&2
             exit 1
           fi
-
   validate-release-inputs:
     needs: prepare-contract
     name: Validate release inputs
@@ -88,15 +77,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
-      - name: Validate expected version and source SHA
-        run: |
-          set -euo pipefail
-          actual_version="$(awk -F': *' '/^version:[[:space:]]*/ {print $2; exit}' .xgc2/product.yml)"
-          actual_sha="$(git rev-parse HEAD)"
-          test "${actual_version}" = "${{ inputs.expected_version }}"
-          test "${actual_sha}" = "${{ inputs.expected_source_sha }}"
-
   package-compliance:
     name: Fast package compliance
     needs: validate-release-inputs
@@ -105,16 +85,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-
-      - name: Check package metadata
-        run: |
-          git diff --check HEAD
-          .xgc2/scripts/check_version_bump.sh --ci
-          .xgc2/scripts/check_package_compliance.sh
-
   cpp-quality:
     name: C++ quality
-    if: ${{ inputs.run_cpp_quality }}
     needs: validate-release-inputs
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -123,15 +95,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-
-      - name: Install published XGC2 products
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          .xgc2/scripts/install_published_products.sh
-
-      - name: Run C++ quality gate
-        run: .xgc2/scripts/check_cpp_quality.sh
-
   source-tests:
     name: Source build and tests
     needs: validate-release-inputs
@@ -141,20 +104,6 @@ jobs:
       - name: Skip source tests
         if: ${{ !inputs.run_source_tests }}
         run: echo "Source tests disabled by input"
-
-      - uses: actions/checkout@v4
-        if: inputs.run_source_tests
-
-      - name: Install published XGC2 products
-        if: inputs.run_source_tests
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          .xgc2/scripts/install_published_products.sh
-
-      - name: Build package and run launch compliance
-        if: inputs.run_source_tests
-        run: .xgc2/scripts/run_source_tests.sh
-
   build-debs:
     name: Build debs (${{ matrix.arch }})
     needs: validate-release-inputs
@@ -171,6 +120,47 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
+
+
+
+      - name: Validate expected version and source SHA
+        run: |
+          set -euo pipefail
+          actual_version="$(awk -F': *' '/^version:[[:space:]]*/ {print $2; exit}' .xgc2/product.yml)"
+          actual_sha="$(git rev-parse HEAD)"
+          test "${actual_version}" = "${{ inputs.expected_version }}"
+          test "${actual_sha}" = "${{ inputs.expected_source_sha }}"
+
+
+      - name: Check package metadata
+        run: |
+          git diff --check HEAD
+          .xgc2/scripts/check_version_bump.sh --ci
+          .xgc2/scripts/check_package_compliance.sh
+
+
+      - name: Install published XGC2 products
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          .xgc2/scripts/install_published_products.sh
+
+      - name: Run C++ quality gate
+        run: .xgc2/scripts/check_cpp_quality.sh
+
+
+      - uses: actions/checkout@v4
+        if: inputs.run_source_tests
+
+      - name: Install published XGC2 products
+        if: inputs.run_source_tests
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          .xgc2/scripts/install_published_products.sh
+
+      - name: Build package and run launch compliance
+        if: inputs.run_source_tests
+        run: .xgc2/scripts/run_source_tests.sh
+
 
       - name: Check product version bump
         run: .xgc2/scripts/check_version_bump.sh --ci
