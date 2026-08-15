@@ -52,6 +52,21 @@ TEST(UnicycleReferenceTrajectoryCore, WaypointSolverProducesPlanarPolynomial) {
     EXPECT_TRUE(end.velocity.isApprox(problem.end_velocity, 1e-9));
 }
 
+TEST(UnicycleReferenceTrajectoryCore, ExplicitYawPreservesReverseSpeed) {
+    trajectory::PolynomialSegment2 segment;
+    segment.duration = 1.0;
+    segment.x = {0.0, -1.0};
+    segment.y = {0.0, 0.0};
+    segment.yaw = {0.0, 0.0};
+
+    trajectory::PiecewisePolynomialEvaluator2 evaluator;
+    ASSERT_TRUE(evaluator.setSegments({segment}, 1U));
+    trajectory::PlanarReference2 output;
+    ASSERT_TRUE(evaluator.evaluate(0.5, output));
+    EXPECT_NEAR(output.speed, -1.0, 1e-12);
+    EXPECT_NEAR(output.yaw, 0.0, 1e-12);
+}
+
 TEST(UnicycleReferenceTrajectoryCore, HoldReportsLowSpeedSingularity) {
     trajectory::HoldCurveEvaluator2 evaluator;
     trajectory::PlanarReference2 output;

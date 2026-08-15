@@ -166,7 +166,10 @@ control::Se2Reference toSample(const trajectory::PlanarReference2& ref) {
     control::Se2Reference sample;
     sample.state.position = ref.position;
     sample.state.yaw = ref.yaw;
-    sample.state.linear_speed = ref.speed;
+    // Keep explicit-yaw reverse references signed. The trajectory evaluator's
+    // legacy speed field may be a norm even when velocity points opposite yaw.
+    sample.state.linear_speed =
+        ref.velocity.dot(Eigen::Vector2d(std::cos(ref.yaw), std::sin(ref.yaw)));
     sample.control.linear_acceleration = ref.linear_acceleration;
     sample.control.yaw_rate = ref.yaw_rate;
     sample.flags = ref.flags;

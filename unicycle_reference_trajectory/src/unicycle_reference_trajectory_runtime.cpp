@@ -44,6 +44,10 @@ double yawFromQuaternion(const geometry_msgs::Quaternion& q) {
     return finiteOr(std::atan2(siny_cosp, cosy_cosp), 0.0);
 }
 
+double unwrapYaw(double yaw, double previous) {
+    return previous + std::atan2(std::sin(yaw - previous), std::cos(yaw - previous));
+}
+
 double adjustedStartTime(double requested, double now, double min_lead_time) {
     const double minimum = now + std::max(0.0, min_lead_time);
     if (!std::isfinite(requested) || requested <= 0.0) {
@@ -516,6 +520,9 @@ bool ReferenceTrajectoryRuntime::buildWaypointProblem(
         trajectory::WaypointConstraint2 constraint;
         constraint.position = pointToVector(msg.waypoints[i].position);
         constraint.yaw = yawFromQuaternion(msg.waypoints[i].orientation);
+        if (!problem.constraints.empty()) {
+            constraint.yaw = unwrapYaw(constraint.yaw, problem.constraints.back().yaw);
+        }
         constraint.type = msg.constraint_types.empty() ? trajectory::WaypointConstraintType2::kPoint
                                                        : constraintType(msg.constraint_types[i]);
         if (!msg.region_size.empty()) {
