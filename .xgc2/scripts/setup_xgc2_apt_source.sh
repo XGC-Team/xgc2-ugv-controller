@@ -13,8 +13,11 @@ if [[ -z "${source_url}" || -z "${distribution}" || -z "${component}" ]]; then
   exit 0
 fi
 
+if ! dpkg -s ca-certificates >/dev/null 2>&1; then
+  echo "image is missing ca-certificates; use xgc2-build-focal-ros-noetic" >&2
+  exit 1
+fi
 apt-get update
-apt-get install -y --no-install-recommends ca-certificates
 echo "deb [trusted=yes arch=${arch}] ${source_url} ${distribution} ${component}" > "${list_file}"
 if [[ -n "${overlay_url}" ]]; then
   echo "deb [trusted=yes arch=${arch}] ${overlay_url%/} ${distribution} ${component}" \

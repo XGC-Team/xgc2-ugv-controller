@@ -42,7 +42,9 @@ required_files=(
   .xgc2/scripts/check_installed_packages.sh
   .xgc2/scripts/check_package_compliance.sh
   .xgc2/scripts/check_version_bump.sh
+  .xgc2/scripts/install_published_products.sh
   .xgc2/scripts/package_debs.sh
+  .xgc2/scripts/run_source_tests.sh
   .xgc2/scripts/setup_xgc2_apt_source.sh
   unicycle_ugv_controller/CMakeLists.txt
   unicycle_ugv_controller/package.xml
@@ -65,8 +67,10 @@ grep -q "id: xgc2-ugv-controller" .xgc2/product.yml
 grep -Eq '^version: [0-9]+\.[0-9]+\.[0-9]+-[0-9]+$' .xgc2/product.yml
 grep -q "<name>unicycle_ugv_controller</name>" unicycle_ugv_controller/package.xml
 grep -q "<name>unicycle_reference_trajectory</name>" unicycle_reference_trajectory/package.xml
-grep -q "run_tests_unicycle_reference_trajectory" .github/workflows/ci.yml
-grep -q "run_tests_unicycle_ugv_controller" .github/workflows/ci.yml
+grep -q "run_tests_unicycle_reference_trajectory" .xgc2/scripts/run_source_tests.sh
+grep -q "run_tests_unicycle_ugv_controller" .xgc2/scripts/run_source_tests.sh
+grep -q "install_published_products.sh" .github/workflows/ci.yml
+grep -q "run_source_tests.sh" .github/workflows/ci.yml
 awk '
   /^  cpp-quality:/ { in_quality = 1; next }
   /^  source-tests:/ { in_quality = 0 }
