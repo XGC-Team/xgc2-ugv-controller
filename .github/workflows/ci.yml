@@ -19,6 +19,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
+
+      - name: Check package metadata
+        run: |
+          git diff --check HEAD
+          .xgc2/scripts/check_package_compliance.sh
+
   cpp-quality:
     name: C++ quality
     continue-on-error: true
@@ -29,34 +35,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-  source-tests:
-    name: Source build and tests
-    runs-on: ubuntu-latest
-    container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
-    steps:
-      - uses: actions/checkout@v4
-  build-debs:
-    name: Build debs (${{ matrix.arch }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-
-      - name: Check package metadata
-        run: |
-          git diff --check HEAD
-          .xgc2/scripts/check_package_compliance.sh
-
 
       - name: Configure Git safe directory
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -67,6 +45,12 @@ jobs:
       - name: Run C++ quality gate
         run: .xgc2/scripts/check_cpp_quality.sh
 
+  source-tests:
+    name: Source build and tests
+    runs-on: ubuntu-latest
+    container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Install published XGC2 products
         run: |
@@ -76,11 +60,43 @@ jobs:
       - name: Build package and run launch compliance
         run: .xgc2/scripts/run_source_tests.sh
 
+  build-debs:
+    name: Build debs (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: amd64-bionic-melodic
+            arch: amd64
+            distribution: bionic
+            runner: ubuntu-latest
+            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-bionic-ros-melodic:1.0.0
+          - name: arm64-bionic-melodic
+            arch: arm64
+            distribution: bionic
+            runner: ubuntu-24.04-arm
+            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-bionic-ros-melodic:1.0.0
+          - name: amd64-focal-noetic
+            arch: amd64
+            distribution: focal
+            runner: ubuntu-latest
+            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
+          - name: arm64-focal-noetic
+            arch: arm64
+            distribution: focal
+            runner: ubuntu-24.04-arm
+            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Build and install-check deb package in Docker
         run: |
           .xgc2/scripts/build_debs_in_docker.sh \
-            --work-dir "$RUNNER_TEMP/xgc2-ugv-controller-${{ matrix.arch }}" \
+            --image "${{ matrix.image }}" \
+            --work-dir "$RUNNER_TEMP/xgc2-ugv-controller-${{ matrix.name }}" \
             --output-dir "$GITHUB_WORKSPACE/debs"
 
       - name: Create trusted build manifest
@@ -89,14 +105,15 @@ jobs:
           python3 .xgc2/scripts/xgc2_artifact_manifest.py build \
             --deb-dir debs --output-dir .ci/build-manifests \
             --product xgc2-ugv-controller --product-version "$product_version" \
-            --distribution focal --architecture "${{ matrix.arch }}" \
+            --distribution "${{ matrix.distribution }}" \
+            --architecture "${{ matrix.arch }}" \
             --source-sha "$GITHUB_SHA" --ci-run-id "$GITHUB_RUN_ID" \
             --ci-workflow "$GITHUB_WORKFLOW" --ci-workflow-ref "$GITHUB_WORKFLOW_REF"
 
       - name: Upload deb artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: xgc2-ugv-controller-debs-${{ matrix.arch }}
+          name: xgc2-ugv-controller-debs-${{ matrix.name }}
           path: |
             debs/*.deb
             .ci/build-manifests/*.json
