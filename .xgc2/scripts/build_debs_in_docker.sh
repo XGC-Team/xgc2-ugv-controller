@@ -94,8 +94,8 @@ docker run --rm \
       "ros-${ROS_DISTRO}-std-msgs"
     do
       if ! dpkg -s "${pkg}" >/dev/null 2>&1; then
-        apt-get update
-        apt-get install -y --no-install-recommends "${pkg}"
+        echo "image is missing ${pkg}; add it to xgc2-images, do not apt in product CI" >&2
+        exit 1
       fi
     done
 
