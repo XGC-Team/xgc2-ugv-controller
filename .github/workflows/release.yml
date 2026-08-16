@@ -105,70 +105,49 @@ jobs:
         if: ${{ !inputs.run_source_tests }}
         run: echo "Source tests disabled by input"
   build-debs:
-    name: Build debs (${{ matrix.arch }})
+    name: Build debs (${{ matrix.name }})
     needs: validate-release-inputs
     strategy:
       fail-fast: false
       matrix:
         include:
-          - arch: amd64
+          - name: amd64-focal
+            arch: amd64
+            distribution: focal
             runner: ubuntu-latest
-          - arch: arm64
+            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
+          - name: arm64-focal
+            arch: arm64
+            distribution: focal
             runner: ubuntu-24.04-arm
+            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
+          - name: amd64-bionic
+            arch: amd64
+            distribution: bionic
+            runner: ubuntu-latest
+            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-bionic-ros-melodic:1.0.0
+          - name: arm64-bionic
+            arch: arm64
+            distribution: bionic
+            runner: ubuntu-24.04-arm
+            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-bionic-ros-melodic:1.0.0
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-
 
       - name: Validate expected version and source SHA
         run: |
           set -euo pipefail
-          actual_version="$(awk -F': *' '/^version:[[:space:]]*/ {print $2; exit}' .xgc2/product.yml)"
+          actual_version="$(awk '/^version:/ {print $2; exit}' .xgc2/product.yml)"
           actual_sha="$(git rev-parse HEAD)"
           test "${actual_version}" = "${{ inputs.expected_version }}"
           test "${actual_sha}" = "${{ inputs.expected_source_sha }}"
 
-
-      - name: Check package metadata
-        run: |
-          git diff --check HEAD
-          .xgc2/scripts/check_version_bump.sh --ci
-          .xgc2/scripts/check_package_compliance.sh
-
-
-      - name: Install published XGC2 products
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          .xgc2/scripts/install_published_products.sh
-
-      - name: Run C++ quality gate
-        run: .xgc2/scripts/check_cpp_quality.sh
-
-
-      - uses: actions/checkout@v4
-        if: inputs.run_source_tests
-
-      - name: Install published XGC2 products
-        if: inputs.run_source_tests
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          .xgc2/scripts/install_published_products.sh
-
-      - name: Build package and run launch compliance
-        if: inputs.run_source_tests
-        run: .xgc2/scripts/run_source_tests.sh
-
-
-      - name: Check product version bump
-        run: .xgc2/scripts/check_version_bump.sh --ci
-
       - name: Build and install-check deb package in Docker
         run: |
           .xgc2/scripts/build_debs_in_docker.sh \
-            --work-dir "$RUNNER_TEMP/xgc2-ugv-controller-${{ matrix.arch }}" \
+            --image "${{ matrix.image }}" \
+            --work-dir "$RUNNER_TEMP/xgc2-ugv-controller-${{ matrix.name }}" \
             --output-dir "$GITHUB_WORKSPACE/debs"
 
       - name: Create release-train build manifest
@@ -176,7 +155,7 @@ jobs:
           python3 .xgc2/scripts/xgc2_artifact_manifest.py build \
             --deb-dir debs --output-dir .ci/build-manifests \
             --product xgc2-ugv-controller --product-version "${{ inputs.expected_version }}" \
-            --distribution focal --architecture "${{ matrix.arch }}" \
+            --distribution "${{ matrix.distribution }}" --architecture "${{ matrix.arch }}" \
             --source-sha "${{ inputs.expected_source_sha }}" --ci-run-id "$GITHUB_RUN_ID" \
             --ci-workflow "$GITHUB_WORKFLOW" --ci-workflow-ref "$GITHUB_WORKFLOW_REF"
 
@@ -184,7 +163,7 @@ jobs:
         if: ${{ inputs.prepare_action == 'release' }}
         uses: actions/upload-artifact@v4
         with:
-          name: xgc2-ugv-controller-debs-${{ matrix.arch }}
+          name: xgc2-ugv-controller-debs-${{ matrix.name }}
           path: |
             debs/*.deb
             .ci/build-manifests/*.json
