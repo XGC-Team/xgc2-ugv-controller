@@ -1,11 +1,10 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 import ctypes
 import os
 import sys
 from importlib.util import find_spec
 from pathlib import Path
+from typing import List, Optional
 
 import numpy as np
 
@@ -38,8 +37,8 @@ class MPCConfig:
     max_iter: int = 20
     ftol: float = 1.0e-4
     model_name: str = "unicycle_nmpc"
-    code_export_directory: str | None = None
-    json_file: str | None = None
+    code_export_directory: Optional[str] = None
+    json_file: Optional[str] = None
 
     @property
     def dt(self) -> float:
@@ -50,8 +49,8 @@ class MPCConfig:
         return self.horizon / self.steps
 
 
-def _env_paths(*names: str) -> list[Path]:
-    paths: list[Path] = []
+def _env_paths(*names: str) -> List[Path]:
+    paths: List[Path] = []
     for name in names:
         for raw_path in os.environ.get(name, "").split(os.pathsep):
             if not raw_path:
@@ -102,9 +101,9 @@ class AcadosBackendUnavailable(RuntimeError):
 class AcadosUnicycleNMPC:
     def __init__(
         self,
-        config: MPCConfig | None = None,
-        bounds: Bounds | None = None,
-        weights: CostWeights | None = None,
+        config: Optional[MPCConfig] = None,
+        bounds: Optional[Bounds] = None,
+        weights: Optional[CostWeights] = None,
     ) -> None:
         configure_acados_environment()
         if find_spec("casadi") is None or find_spec("acados_template") is None:

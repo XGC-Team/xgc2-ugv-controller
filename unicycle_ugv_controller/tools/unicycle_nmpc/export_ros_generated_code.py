@@ -1,8 +1,7 @@
-from __future__ import annotations
-
 import argparse
 import shutil
 from pathlib import Path
+from typing import List, Optional
 
 from .controller import AcadosUnicycleNMPC, MPCConfig
 
@@ -60,7 +59,7 @@ def export_solver(output_dir: Path, *, horizon: float, steps: int) -> None:
     remove_unused_export_files(output_dir)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--horizon", type=float, default=1.0)
