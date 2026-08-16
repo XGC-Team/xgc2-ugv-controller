@@ -1,7 +1,7 @@
 schema: xgc2.product.v1
 id: xgc2-ugv-controller
 name: XGC2 UGV Controller
-version: 1.1.4-23
+version: 1.1.4-24
 kind: ros1-apt
 summary: ROS1 unicycle UGV controller and planar reference trajectory packages for
   XGC2 robots.
@@ -13,7 +13,13 @@ ros:
 apt:
   distribution: bionic,focal
   install:
+  - ros-melodic-xgc2-ugv-controller
   - ros-noetic-xgc2-ugv-controller
+  package_distributions:
+    ros-melodic-xgc2-ugv-controller:
+    - bionic
+    ros-noetic-xgc2-ugv-controller:
+    - focal
   packages:
   - ros-melodic-xgc2-ugv-controller
   - ros-noetic-xgc2-ugv-controller
@@ -31,6 +37,8 @@ apt:
 usage:
   install: 'sudo apt update
 
+    sudo apt install ros-melodic-xgc2-ugv-controller
+
     sudo apt install ros-noetic-xgc2-ugv-controller
 
     '
@@ -41,6 +49,13 @@ usage:
     '
 ownership:
   paths:
+  - /opt/ros/melodic/share/unicycle_reference_trajectory
+  - /opt/ros/melodic/share/unicycle_ugv_controller
+  - /opt/ros/melodic/include/unicycle_reference_trajectory
+  - /opt/ros/melodic/include/unicycle_ugv_controller
+  - /opt/ros/melodic/lib/unicycle_reference_trajectory
+  - /opt/ros/melodic/lib/unicycle_ugv_controller
+  - /opt/ros/melodic/lib/libunicycle_ugv_controller_nmpc_runtime.so
   - /opt/ros/noetic/share/unicycle_reference_trajectory
   - /opt/ros/noetic/share/unicycle_ugv_controller
   - /opt/ros/noetic/include/unicycle_reference_trajectory
@@ -56,5 +71,5 @@ release:
     xgc2-ros-msgs: rebuild
     xgc2-ros1-utils: rebuild
   apt_versions:
-    bionic: 1.1.4-23
-    focal: 1.1.4-23
+    bionic: 1.1.4-24
+    focal: 1.1.4-24
