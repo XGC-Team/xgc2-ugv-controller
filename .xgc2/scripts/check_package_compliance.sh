@@ -69,6 +69,10 @@ grep -q "<name>unicycle_ugv_controller</name>" unicycle_ugv_controller/package.x
 grep -q "<name>unicycle_reference_trajectory</name>" unicycle_reference_trajectory/package.xml
 grep -q "run_tests_unicycle_reference_trajectory" .xgc2/scripts/run_source_tests.sh
 grep -q "run_tests_unicycle_ugv_controller" .xgc2/scripts/run_source_tests.sh
+if grep -Eq '^[[:space:]]*continue-on-error:[[:space:]]*true' .github/workflows/ci.yml; then
+  echo "CI quality/test jobs must fail closed" >&2
+  exit 1
+fi
 grep -q "install_published_products.sh" .github/workflows/ci.yml
 grep -q "run_source_tests.sh" .github/workflows/ci.yml
 awk '

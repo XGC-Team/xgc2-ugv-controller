@@ -27,7 +27,6 @@ jobs:
 
   cpp-quality:
     name: C++ quality
-    continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
@@ -47,7 +46,6 @@ jobs:
 
   source-tests:
     name: Source build and tests
-    continue-on-error: true
     runs-on: ubuntu-latest
     container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
     steps:
