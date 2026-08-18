@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
+#include <unicycle_reference_trajectory/shuttle_leg.h>
 
 #include <cmath>
-#include <unicycle_reference_trajectory/shuttle_leg.h>
 #include <xgc2_math/trajectory.hpp>
 
 namespace {
@@ -127,8 +127,8 @@ TEST(ShuttleLeg, OnRailRequiresXAndPlusYYaw) {
     EXPECT_FALSE(unicycle_reference_trajectory::shuttleOnRail(1.0, 0.0, rail, 0.25, 0.4));
     EXPECT_TRUE(unicycle_reference_trajectory::shuttleOnRailX(1.1, rail, 0.25));
     EXPECT_FALSE(unicycle_reference_trajectory::shuttleOnRailX(2.0, rail, 0.25));
-    EXPECT_NEAR(unicycle_reference_trajectory::shuttleHeadingTowardRail(2.0, 1.0), 3.141592653589793,
-                1e-9);
+    EXPECT_NEAR(unicycle_reference_trajectory::shuttleHeadingTowardRail(2.0, 1.0),
+                3.141592653589793, 1e-9);
     EXPECT_NEAR(unicycle_reference_trajectory::shuttleHeadingTowardRail(0.0, 1.0), 0.0, 1e-9);
 }
 
@@ -152,11 +152,12 @@ TEST(ShuttleLeg, ReplanOnArrivalOrTimeoutOnly) {
 }
 
 TEST(ShuttleLeg, ReplanKeepsSameEndUntilArrival) {
-    EXPECT_NEAR(unicycle_reference_trajectory::shuttleGoalYForReplan(true, false, 0.0, -2.0, 2.0,
-                                                                     2.0),
-                2.0, 1e-12);
-    EXPECT_NEAR(unicycle_reference_trajectory::shuttleGoalYForReplan(true, true, 2.0, -2.0, 2.0, 2.0),
-                -2.0, 1e-12);
+    EXPECT_NEAR(
+        unicycle_reference_trajectory::shuttleGoalYForReplan(true, false, 0.0, -2.0, 2.0, 2.0), 2.0,
+        1e-12);
+    EXPECT_NEAR(
+        unicycle_reference_trajectory::shuttleGoalYForReplan(true, true, 2.0, -2.0, 2.0, 2.0), -2.0,
+        1e-12);
 }
 
 TEST(ShuttleLeg, ArrivalUsesPlanarHypotNotJustY) {

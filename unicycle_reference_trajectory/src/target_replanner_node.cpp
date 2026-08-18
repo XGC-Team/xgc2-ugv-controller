@@ -1,12 +1,12 @@
 #include "unicycle_reference_trajectory/target_replanner_node.h"
 
-#include "unicycle_reference_trajectory/shuttle_leg.h"
-
 #include <XmlRpcValue.h>
 
 #include <algorithm>
 #include <cmath>
 #include <random>
+
+#include "unicycle_reference_trajectory/shuttle_leg.h"
 
 namespace unicycle_reference_trajectory {
 namespace {
@@ -214,7 +214,8 @@ void TargetReplannerNode::reloadLiveParams() {
         shuttle_accel_ = 1.0;
     }
     if (prev_shuttle != shuttle_mode_ || std::fabs(prev_x - shuttle_x_) > 1.0e-6 ||
-        std::fabs(prev_lo - shuttle_y_min_) > 1.0e-6 || std::fabs(prev_hi - shuttle_y_max_) > 1.0e-6 ||
+        std::fabs(prev_lo - shuttle_y_min_) > 1.0e-6 ||
+        std::fabs(prev_hi - shuttle_y_max_) > 1.0e-6 ||
         std::fabs(prev_speed - shuttle_speed_) > 1.0e-6) {
         have_shuttle_goal_ = false;
         shuttle_plan_until_ = ros::Time();
@@ -224,19 +225,18 @@ void TargetReplannerNode::reloadLiveParams() {
 bool TargetReplannerNode::handleShuttle(const ros::Time& now) {
     const double lo = std::min(shuttle_y_min_, shuttle_y_max_);
     const double hi = std::max(shuttle_y_min_, shuttle_y_max_);
-    const double tol =
-        std::isfinite(shuttle_arrive_tol_) && shuttle_arrive_tol_ > 0.0 ? shuttle_arrive_tol_
-                                                                        : 0.35;
+    const double tol = std::isfinite(shuttle_arrive_tol_) && shuttle_arrive_tol_ > 0.0
+                           ? shuttle_arrive_tol_
+                           : 0.35;
     const bool arrived =
-        have_shuttle_goal_ &&
-        shuttleArrived(state_.x, state_.y, shuttle_x_, shuttle_goal_y_, tol);
+        have_shuttle_goal_ && shuttleArrived(state_.x, state_.y, shuttle_x_, shuttle_goal_y_, tol);
     const bool plan_alive = !shuttle_plan_until_.isZero() && now < shuttle_plan_until_;
     const ShuttleReplanReason reason = shuttleReplanReason(have_shuttle_goal_, arrived, plan_alive);
     if (reason == ShuttleReplanReason::Keep) {
         return true;
     }
-    const double y_goal = shuttleGoalYForReplan(have_shuttle_goal_, arrived, state_.y, lo, hi,
-                                                shuttle_goal_y_);
+    const double y_goal =
+        shuttleGoalYForReplan(have_shuttle_goal_, arrived, state_.y, lo, hi, shuttle_goal_y_);
     const bool on_x = shuttleOnRailX(state_.x, shuttle_x_, tol);
     const bool on_yaw = shuttleYawAlongRail(state_.yaw, shuttle_yaw_tol_);
 
@@ -295,8 +295,8 @@ bool TargetReplannerNode::handleShuttle(const ros::Time& now) {
     const double delay = start_delay_ > 0.0 ? start_delay_ : 0.0;
     shuttle_plan_until_ = now + ros::Duration(delay + hold + 0.3);
     if (reason == ShuttleReplanReason::TimedOut) {
-        ROS_WARN(
-            "[TargetReplannerNode] Shuttle timeout fallback; replanned same end y=%.2f", y_goal);
+        ROS_WARN("[TargetReplannerNode] Shuttle timeout fallback; replanned same end y=%.2f",
+                 y_goal);
     }
     return true;
 }
@@ -308,8 +308,7 @@ bool TargetReplannerNode::publishShuttleLeg(double y_goal) {
     request.y_goal = y_goal;
     request.desired_speed = shuttle_speed_;
     request.max_acceleration = shuttle_accel_;
-    request.sample_dt =
-        planner_options_.sample_dt > 1.0e-4 ? planner_options_.sample_dt : 0.02;
+    request.sample_dt = planner_options_.sample_dt > 1.0e-4 ? planner_options_.sample_dt : 0.02;
     request.hold_duration =
         planner_options_.hold_duration >= 0.0 ? planner_options_.hold_duration : 0.3;
 
@@ -324,7 +323,8 @@ bool TargetReplannerNode::publishShuttleLeg(double y_goal) {
     msg.header.frame_id = frame_id_;
     msg.trajectory_id = trajectory_id_++;
     msg.revision = revision_++;
-    msg.flags = unicycle_reference_trajectory_msgs::SampledReference::FLAG_EXPLICIT_PLANAR_KINEMATICS;
+    msg.flags =
+        unicycle_reference_trajectory_msgs::SampledReference::FLAG_EXPLICIT_PLANAR_KINEMATICS;
     msg.start_time = msg.header.stamp + ros::Duration(start_delay_);
     msg.sample_dt = request.sample_dt;
     msg.points.reserve(samples.size());

@@ -44,15 +44,16 @@ inline bool buildShuttleLeg(const ShuttleLegRequest& request, std::vector<Shuttl
     }
     const double dt =
         std::isfinite(request.sample_dt) && request.sample_dt > 1.0e-4 ? request.sample_dt : 0.02;
-    const double accel = std::isfinite(request.max_acceleration) && request.max_acceleration > 1.0e-3
-                             ? request.max_acceleration
-                             : 1.0;
-    const double v_des =
-        std::isfinite(request.desired_speed) && request.desired_speed > 1.0e-3 ? request.desired_speed
-                                                                              : 0.5;
-    const double hold =
-        std::isfinite(request.hold_duration) && request.hold_duration >= 0.0 ? request.hold_duration
-                                                                            : 0.0;
+    const double accel =
+        std::isfinite(request.max_acceleration) && request.max_acceleration > 1.0e-3
+            ? request.max_acceleration
+            : 1.0;
+    const double v_des = std::isfinite(request.desired_speed) && request.desired_speed > 1.0e-3
+                             ? request.desired_speed
+                             : 0.5;
+    const double hold = std::isfinite(request.hold_duration) && request.hold_duration >= 0.0
+                            ? request.hold_duration
+                            : 0.0;
     const double yaw = shuttleYawAlongPlusY();
     const double dist = request.y_goal - request.start_y;
     const double dir = dist >= 0.0 ? 1.0 : -1.0;
@@ -151,14 +152,12 @@ inline bool buildDirectApproach(double start_x, double start_y, double start_yaw
         !std::isfinite(goal_y)) {
         return false;
     }
-    const double dt =
-        std::isfinite(sample_dt) && sample_dt > 1.0e-4 ? sample_dt : 0.02;
+    const double dt = std::isfinite(sample_dt) && sample_dt > 1.0e-4 ? sample_dt : 0.02;
     const double accel =
         std::isfinite(max_acceleration) && max_acceleration > 1.0e-3 ? max_acceleration : 1.0;
     const double v_des =
         std::isfinite(desired_speed) && desired_speed > 1.0e-3 ? desired_speed : 0.5;
-    const double hold =
-        std::isfinite(hold_duration) && hold_duration >= 0.0 ? hold_duration : 0.0;
+    const double hold = std::isfinite(hold_duration) && hold_duration >= 0.0 ? hold_duration : 0.0;
     const double dx = goal_x - start_x;
     const double dy = goal_y - start_y;
     const double abs_dist = std::hypot(dx, dy);
@@ -245,8 +244,8 @@ inline double shuttleHeadingTowardRail(double x, double rail_x) {
 // Arrival is planar hypot(Δx, Δy), not |Δy| alone. Off-rail still uses MINCO.
 inline bool shuttleArrived(double x, double y, double rail_x, double goal_y, double tol) {
     const double limit = std::isfinite(tol) && tol > 0.0 ? tol : 0.35;
-    return std::isfinite(x) && std::isfinite(y) && std::isfinite(rail_x) &&
-           std::isfinite(goal_y) && std::hypot(x - rail_x, y - goal_y) <= limit;
+    return std::isfinite(x) && std::isfinite(y) && std::isfinite(rail_x) && std::isfinite(goal_y) &&
+           std::hypot(x - rail_x, y - goal_y) <= limit;
 }
 
 // Off-rail or heading not +Y → Se2MincoTargetPlanner2. On-rail +Y → reverse shuttle.
