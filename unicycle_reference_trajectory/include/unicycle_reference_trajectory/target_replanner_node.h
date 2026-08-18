@@ -40,6 +40,9 @@ class TargetReplannerNode {
     bool chooseTarget(TargetPose& target);
     bool chooseRandomTarget(TargetPose& target);
     bool loadTargetSequence();
+    void reloadLiveParams();
+    bool handleShuttle(const ros::Time& now);
+    bool publishShuttleLeg(double y_goal);
     bool publishPlan(const xgc2_math::trajectory::Se2TargetState2& start,
                      const xgc2_math::trajectory::Se2TargetState2& target);
 
@@ -70,6 +73,18 @@ class TargetReplannerNode {
     double random_fixed_yaw_{0.0};
     std::string random_yaw_mode_{"heading"};
     uint32_t random_seed_{0U};
+    bool shuttle_mode_{false};
+    double shuttle_x_{0.0};
+    double shuttle_y_min_{-2.0};
+    double shuttle_y_max_{2.0};
+    double shuttle_speed_{0.5};
+    double shuttle_accel_{1.0};
+    double shuttle_arrive_tol_{0.35};
+    double shuttle_yaw_tol_{0.7};
+    bool have_shuttle_goal_{false};
+    double shuttle_goal_y_{0.0};
+    ros::Time shuttle_plan_until_;
+    double last_plan_duration_{0.0};
 
     xgc2_math::trajectory::Se2TargetTrajectoryOptions2 planner_options_{};
     std::vector<TargetPose> target_sequence_;

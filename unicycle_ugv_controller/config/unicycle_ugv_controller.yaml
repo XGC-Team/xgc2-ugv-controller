@@ -27,3 +27,4 @@ limits:
   max_linear_speed: 3.0
   max_angular_speed: 2.5
   max_linear_acceleration: 2.0
+  # Shuttle rail uses signed v (reverse). Do not raise min_linear_speed to 0.

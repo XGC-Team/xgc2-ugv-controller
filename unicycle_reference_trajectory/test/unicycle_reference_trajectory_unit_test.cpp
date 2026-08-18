@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <unicycle_reference_trajectory/shuttle_leg.h>
 #include <xgc2_math/trajectory.hpp>
 
 namespace {
@@ -65,6 +66,117 @@ TEST(UnicycleReferenceTrajectoryCore, ExplicitYawPreservesReverseSpeed) {
     ASSERT_TRUE(evaluator.evaluate(0.5, output));
     EXPECT_NEAR(output.speed, -1.0, 1e-12);
     EXPECT_NEAR(output.yaw, 0.0, 1e-12);
+}
+
+TEST(ShuttleLeg, PlusYKeepsYawAndUsesForwardSpeed) {
+    unicycle_reference_trajectory::ShuttleLegRequest request;
+    request.start_y = -2.0;
+    request.x_fixed = 1.25;
+    request.y_goal = 2.0;
+    request.desired_speed = 0.8;
+    request.max_acceleration = 1.0;
+    request.sample_dt = 0.05;
+    request.hold_duration = 0.2;
+    std::vector<unicycle_reference_trajectory::ShuttleSample> samples;
+    ASSERT_TRUE(unicycle_reference_trajectory::buildShuttleLeg(request, samples));
+    ASSERT_GT(samples.size(), 8U);
+    EXPECT_NEAR(samples.front().y, -2.0, 1e-6);
+    EXPECT_NEAR(samples.back().y, 2.0, 1e-6);
+    EXPECT_NEAR(samples.back().speed, 0.0, 1e-9);
+    double max_speed = 0.0;
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        EXPECT_NEAR(samples[i].x, 1.25, 1e-12);
+        EXPECT_NEAR(samples[i].yaw, unicycle_reference_trajectory::shuttleYawAlongPlusY(), 1e-12);
+        EXPECT_NEAR(samples[i].vx, 0.0, 1e-12);
+        EXPECT_GE(samples[i].speed, -1e-9);
+        max_speed = std::max(max_speed, samples[i].speed);
+        if (i > 0) {
+            EXPECT_GE(samples[i].y + 1e-9, samples[i - 1].y);
+        }
+    }
+    EXPECT_GT(max_speed, 0.3);
+}
+
+TEST(ShuttleLeg, MinusYUsesReverseWithoutChangingYaw) {
+    unicycle_reference_trajectory::ShuttleLegRequest request;
+    request.start_y = 2.0;
+    request.x_fixed = 0.0;
+    request.y_goal = -2.0;
+    request.desired_speed = 0.6;
+    request.max_acceleration = 1.2;
+    request.sample_dt = 0.05;
+    request.hold_duration = 0.0;
+    std::vector<unicycle_reference_trajectory::ShuttleSample> samples;
+    ASSERT_TRUE(unicycle_reference_trajectory::buildShuttleLeg(request, samples));
+    ASSERT_GT(samples.size(), 8U);
+    double min_speed = 0.0;
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        EXPECT_NEAR(samples[i].yaw, unicycle_reference_trajectory::shuttleYawAlongPlusY(), 1e-12);
+        EXPECT_LE(samples[i].speed, 1e-9);
+        min_speed = std::min(min_speed, samples[i].speed);
+    }
+    EXPECT_LT(min_speed, -0.3);
+    EXPECT_NEAR(samples.back().y, -2.0, 1e-6);
+}
+
+TEST(ShuttleLeg, OnRailRequiresXAndPlusYYaw) {
+    const double rail = 1.0;
+    const double yaw = unicycle_reference_trajectory::shuttleYawAlongPlusY();
+    EXPECT_TRUE(unicycle_reference_trajectory::shuttleOnRail(1.0, yaw, rail, 0.25, 0.4));
+    EXPECT_FALSE(unicycle_reference_trajectory::shuttleOnRail(2.0, yaw, rail, 0.25, 0.4));
+    EXPECT_FALSE(unicycle_reference_trajectory::shuttleOnRail(1.0, 0.0, rail, 0.25, 0.4));
+    EXPECT_TRUE(unicycle_reference_trajectory::shuttleOnRailX(1.1, rail, 0.25));
+    EXPECT_FALSE(unicycle_reference_trajectory::shuttleOnRailX(2.0, rail, 0.25));
+    EXPECT_NEAR(unicycle_reference_trajectory::shuttleHeadingTowardRail(2.0, 1.0), 3.141592653589793,
+                1e-9);
+    EXPECT_NEAR(unicycle_reference_trajectory::shuttleHeadingTowardRail(0.0, 1.0), 0.0, 1e-9);
+}
+
+TEST(ShuttleLeg, NextGoalTogglesRailEnds) {
+    EXPECT_NEAR(unicycle_reference_trajectory::nextShuttleGoalY(0.0, -3.0, 3.0, false, 0.0), 3.0,
+                1e-12);
+    EXPECT_NEAR(unicycle_reference_trajectory::nextShuttleGoalY(2.0, -3.0, 3.0, true, 3.0), -3.0,
+                1e-12);
+}
+
+TEST(ShuttleLeg, ReplanOnArrivalOrTimeoutOnly) {
+    using unicycle_reference_trajectory::ShuttleReplanReason;
+    EXPECT_EQ(unicycle_reference_trajectory::shuttleReplanReason(false, false, false),
+              ShuttleReplanReason::FirstPlan);
+    EXPECT_EQ(unicycle_reference_trajectory::shuttleReplanReason(true, true, true),
+              ShuttleReplanReason::Arrived);
+    EXPECT_EQ(unicycle_reference_trajectory::shuttleReplanReason(true, false, false),
+              ShuttleReplanReason::TimedOut);
+    EXPECT_EQ(unicycle_reference_trajectory::shuttleReplanReason(true, false, true),
+              ShuttleReplanReason::Keep);
+}
+
+TEST(ShuttleLeg, ReplanKeepsSameEndUntilArrival) {
+    EXPECT_NEAR(unicycle_reference_trajectory::shuttleGoalYForReplan(true, false, 0.0, -2.0, 2.0,
+                                                                     2.0),
+                2.0, 1e-12);
+    EXPECT_NEAR(unicycle_reference_trajectory::shuttleGoalYForReplan(true, true, 2.0, -2.0, 2.0, 2.0),
+                -2.0, 1e-12);
+}
+
+TEST(ShuttleLeg, ArrivalUsesPlanarHypotNotJustY) {
+    const double tol = 0.35;
+    // Field robots routinely sit ~20 cm off the setpoint; that must still count.
+    EXPECT_TRUE(unicycle_reference_trajectory::shuttleArrived(1.20, 2.00, 1.0, 2.0, tol));
+    // Same Y as the goal but still far off the rail in X must not flip ends.
+    EXPECT_FALSE(unicycle_reference_trajectory::shuttleArrived(1.80, 2.0, 1.0, 2.0, tol));
+    EXPECT_TRUE(unicycle_reference_trajectory::shuttleArrived(1.10, 2.10, 1.0, 2.0, tol));
+}
+
+TEST(ShuttleLeg, OffRailOrBadYawUsesMincoOnRailUsesReverse) {
+    const double rail = 1.0;
+    const double plus_y = unicycle_reference_trajectory::shuttleYawAlongPlusY();
+    EXPECT_EQ(unicycle_reference_trajectory::shuttleTrackMode(2.0, plus_y, rail, 0.25, 0.4),
+              unicycle_reference_trajectory::ShuttleTrackMode::MincoApproach);
+    EXPECT_EQ(unicycle_reference_trajectory::shuttleTrackMode(1.0, 0.0, rail, 0.25, 0.4),
+              unicycle_reference_trajectory::ShuttleTrackMode::MincoApproach);
+    EXPECT_EQ(unicycle_reference_trajectory::shuttleTrackMode(1.0, plus_y, rail, 0.25, 0.4),
+              unicycle_reference_trajectory::ShuttleTrackMode::ReverseRail);
 }
 
 TEST(UnicycleReferenceTrajectoryCore, HoldReportsLowSpeedSingularity) {

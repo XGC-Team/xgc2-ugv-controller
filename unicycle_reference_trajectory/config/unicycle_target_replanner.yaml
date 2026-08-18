@@ -17,6 +17,16 @@ random_yaw_mode: heading
 random_fixed_yaw: 0.0
 random_seed: 0
 
+# Fixed-X / shuttle-Y rail. Yaw stays +Y; reverse covers -Y (no U-turn).
+shuttle_mode: false
+shuttle_x: 0.0
+shuttle_y_min: -2.0
+shuttle_y_max: 2.0
+shuttle_speed: 0.5
+shuttle_accel: 1.0
+shuttle_arrive_tol: 0.35
+shuttle_yaw_tol: 0.7
+
 piece_count: 4
 sample_dt: 0.01
 desired_speed: 1.0

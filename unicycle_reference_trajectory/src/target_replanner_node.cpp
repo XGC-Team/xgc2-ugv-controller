@@ -1,5 +1,7 @@
 #include "unicycle_reference_trajectory/target_replanner_node.h"
 
+#include "unicycle_reference_trajectory/shuttle_leg.h"
+
 #include <XmlRpcValue.h>
 
 #include <algorithm>
@@ -47,9 +49,10 @@ TargetReplannerNode::TargetReplannerNode(ros::NodeHandle& nh) : nh_(nh), private
                                     &TargetReplannerNode::timerCallback, this, false, true);
     ROS_INFO(
         "[TargetReplannerNode] Initialized: state=%s target=%s sampled=%s period=%.2fs "
-        "random=%s targets=%zu",
+        "random=%s shuttle=%s x=%.2f y=[%.2f, %.2f] targets=%zu",
         state_topic_.c_str(), target_topic_.c_str(), sampled_topic_.c_str(), replan_period_,
-        random_targets_ ? "true" : "false", target_sequence_.size());
+        random_targets_ ? "true" : "false", shuttle_mode_ ? "true" : "false", shuttle_x_,
+        shuttle_y_min_, shuttle_y_max_, target_sequence_.size());
 }
 
 void TargetReplannerNode::loadParams() {
@@ -74,6 +77,14 @@ void TargetReplannerNode::loadParams() {
     int random_seed = static_cast<int>(random_seed_);
     private_nh_.param("random_seed", random_seed, random_seed);
     random_seed_ = static_cast<uint32_t>(std::max(0, random_seed));
+    private_nh_.param("shuttle_mode", shuttle_mode_, shuttle_mode_);
+    private_nh_.param("shuttle_x", shuttle_x_, shuttle_x_);
+    private_nh_.param("shuttle_y_min", shuttle_y_min_, shuttle_y_min_);
+    private_nh_.param("shuttle_y_max", shuttle_y_max_, shuttle_y_max_);
+    private_nh_.param("shuttle_speed", shuttle_speed_, shuttle_speed_);
+    private_nh_.param("shuttle_accel", shuttle_accel_, shuttle_accel_);
+    private_nh_.param("shuttle_arrive_tol", shuttle_arrive_tol_, shuttle_arrive_tol_);
+    private_nh_.param("shuttle_yaw_tol", shuttle_yaw_tol_, shuttle_yaw_tol_);
     replan_period_ = std::isfinite(replan_period_) && replan_period_ > 0.0 ? replan_period_ : 5.0;
     state_timeout_ = std::isfinite(state_timeout_) && state_timeout_ > 0.0 ? state_timeout_ : 0.5;
     start_delay_ = std::isfinite(start_delay_) && start_delay_ >= 0.0 ? start_delay_ : 0.2;
@@ -173,10 +184,189 @@ void TargetReplannerNode::targetCallback(const geometry_msgs::PoseStamped::Const
                         std::isfinite(topic_target_.yaw);
 }
 
+void TargetReplannerNode::reloadLiveParams() {
+    const bool prev_shuttle = shuttle_mode_;
+    const double prev_x = shuttle_x_;
+    const double prev_lo = shuttle_y_min_;
+    const double prev_hi = shuttle_y_max_;
+    const double prev_speed = shuttle_speed_;
+    private_nh_.getParam("shuttle_mode", shuttle_mode_);
+    private_nh_.getParam("shuttle_x", shuttle_x_);
+    private_nh_.getParam("shuttle_y_min", shuttle_y_min_);
+    private_nh_.getParam("shuttle_y_max", shuttle_y_max_);
+    private_nh_.getParam("shuttle_speed", shuttle_speed_);
+    private_nh_.getParam("shuttle_accel", shuttle_accel_);
+    private_nh_.getParam("shuttle_arrive_tol", shuttle_arrive_tol_);
+    private_nh_.getParam("shuttle_yaw_tol", shuttle_yaw_tol_);
+    private_nh_.getParam("desired_speed", planner_options_.desired_speed);
+    if (!std::isfinite(shuttle_x_)) {
+        shuttle_x_ = 0.0;
+    }
+    if (!std::isfinite(shuttle_y_min_) || !std::isfinite(shuttle_y_max_) ||
+        shuttle_y_min_ == shuttle_y_max_) {
+        shuttle_y_min_ = -2.0;
+        shuttle_y_max_ = 2.0;
+    }
+    if (!std::isfinite(shuttle_speed_) || shuttle_speed_ <= 0.0) {
+        shuttle_speed_ = 0.5;
+    }
+    if (!std::isfinite(shuttle_accel_) || shuttle_accel_ <= 0.0) {
+        shuttle_accel_ = 1.0;
+    }
+    if (prev_shuttle != shuttle_mode_ || std::fabs(prev_x - shuttle_x_) > 1.0e-6 ||
+        std::fabs(prev_lo - shuttle_y_min_) > 1.0e-6 || std::fabs(prev_hi - shuttle_y_max_) > 1.0e-6 ||
+        std::fabs(prev_speed - shuttle_speed_) > 1.0e-6) {
+        have_shuttle_goal_ = false;
+        shuttle_plan_until_ = ros::Time();
+    }
+}
+
+bool TargetReplannerNode::handleShuttle(const ros::Time& now) {
+    const double lo = std::min(shuttle_y_min_, shuttle_y_max_);
+    const double hi = std::max(shuttle_y_min_, shuttle_y_max_);
+    const double tol =
+        std::isfinite(shuttle_arrive_tol_) && shuttle_arrive_tol_ > 0.0 ? shuttle_arrive_tol_
+                                                                        : 0.35;
+    const bool arrived =
+        have_shuttle_goal_ &&
+        shuttleArrived(state_.x, state_.y, shuttle_x_, shuttle_goal_y_, tol);
+    const bool plan_alive = !shuttle_plan_until_.isZero() && now < shuttle_plan_until_;
+    const ShuttleReplanReason reason = shuttleReplanReason(have_shuttle_goal_, arrived, plan_alive);
+    if (reason == ShuttleReplanReason::Keep) {
+        return true;
+    }
+    const double y_goal = shuttleGoalYForReplan(have_shuttle_goal_, arrived, state_.y, lo, hi,
+                                                shuttle_goal_y_);
+    const bool on_x = shuttleOnRailX(state_.x, shuttle_x_, tol);
+    const bool on_yaw = shuttleYawAlongRail(state_.yaw, shuttle_yaw_tol_);
+
+    xgc2_math::trajectory::Se2TargetState2 start;
+    start.position = Eigen::Vector2d(state_.x, state_.y);
+    start.yaw = state_.yaw;
+    start.speed = state_.speed;
+
+    planner_options_.desired_speed = shuttle_speed_;
+    planner_options_.approach_speed = shuttle_speed_;
+    planner_options_.min_boundary_speed = std::min(shuttle_speed_, 0.3);
+    planner_options_.hold_duration = 0.1;
+    planner_options_.max_yaw_rate = std::max(planner_options_.max_yaw_rate, 3.0);
+    planner_options_.max_acceleration = std::max(planner_options_.max_acceleration, 3.0);
+    planner_options_.max_duration = std::max(planner_options_.max_duration, 60.0);
+    if (planner_options_.max_velocity < shuttle_speed_) {
+        planner_options_.max_velocity = shuttle_speed_;
+    }
+
+    bool ok = false;
+    if (on_x && on_yaw) {
+        ok = publishShuttleLeg(y_goal);
+    } else if (!on_x) {
+        // Get onto the rail along X at cruise speed. Do not force +Y yet:
+        // a 90° heading change on a short lateral hop makes MINCO crawl.
+        xgc2_math::trajectory::Se2TargetState2 goal;
+        goal.position = Eigen::Vector2d(shuttle_x_, state_.y);
+        goal.yaw = shuttleHeadingTowardRail(state_.x, shuttle_x_);
+        goal.speed = shuttle_speed_;
+        ok = publishPlan(start, goal);
+        if (ok) {
+            ROS_INFO(
+                "[TargetReplannerNode] Shuttle rail approach via Se2MincoTargetPlanner2 "
+                "from=(%.2f, %.2f, %.2f) to=(%.2f, %.2f) along X speed=%.2f",
+                state_.x, state_.y, state_.yaw, shuttle_x_, state_.y, shuttle_speed_);
+        }
+    } else {
+        xgc2_math::trajectory::Se2TargetState2 goal;
+        goal.position = Eigen::Vector2d(shuttle_x_, state_.y);
+        goal.yaw = shuttleYawAlongPlusY();
+        goal.speed = 0.0;
+        ok = publishPlan(start, goal);
+        if (ok) {
+            ROS_INFO(
+                "[TargetReplannerNode] Shuttle yaw align via Se2MincoTargetPlanner2 "
+                "from=%.2f to +Y at x=%.2f",
+                state_.yaw, shuttle_x_);
+        }
+    }
+    if (!ok) {
+        return false;
+    }
+    have_shuttle_goal_ = true;
+    shuttle_goal_y_ = y_goal;
+    const double hold = last_plan_duration_ > 0.0 ? last_plan_duration_ : 1.0;
+    const double delay = start_delay_ > 0.0 ? start_delay_ : 0.0;
+    shuttle_plan_until_ = now + ros::Duration(delay + hold + 0.3);
+    if (reason == ShuttleReplanReason::TimedOut) {
+        ROS_WARN(
+            "[TargetReplannerNode] Shuttle timeout fallback; replanned same end y=%.2f", y_goal);
+    }
+    return true;
+}
+
+bool TargetReplannerNode::publishShuttleLeg(double y_goal) {
+    ShuttleLegRequest request;
+    request.start_y = state_.y;
+    request.x_fixed = shuttle_x_;
+    request.y_goal = y_goal;
+    request.desired_speed = shuttle_speed_;
+    request.max_acceleration = shuttle_accel_;
+    request.sample_dt =
+        planner_options_.sample_dt > 1.0e-4 ? planner_options_.sample_dt : 0.02;
+    request.hold_duration =
+        planner_options_.hold_duration >= 0.0 ? planner_options_.hold_duration : 0.3;
+
+    std::vector<ShuttleSample> samples;
+    if (!buildShuttleLeg(request, samples) || samples.empty()) {
+        ROS_WARN("[TargetReplannerNode] Shuttle leg failed y=%.2f -> %.2f", state_.y, y_goal);
+        return false;
+    }
+
+    unicycle_reference_trajectory_msgs::SampledReference msg;
+    msg.header.stamp = ros::Time::now();
+    msg.header.frame_id = frame_id_;
+    msg.trajectory_id = trajectory_id_++;
+    msg.revision = revision_++;
+    msg.flags = unicycle_reference_trajectory_msgs::SampledReference::FLAG_EXPLICIT_PLANAR_KINEMATICS;
+    msg.start_time = msg.header.stamp + ros::Duration(start_delay_);
+    msg.sample_dt = request.sample_dt;
+    msg.points.reserve(samples.size());
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        const ShuttleSample& sample = samples[i];
+        unicycle_reference_trajectory_msgs::PlanarReferencePoint point;
+        point.t_from_start = sample.t;
+        point.x = sample.x;
+        point.y = sample.y;
+        point.yaw = sample.yaw;
+        point.speed = sample.speed;
+        point.linear_acceleration = sample.linear_acceleration;
+        point.yaw_rate = sample.yaw_rate;
+        point.yaw_acceleration = 0.0;
+        point.curvature = 0.0;
+        point.vx = sample.vx;
+        point.vy = sample.vy;
+        point.ax = sample.ax;
+        point.ay = sample.ay;
+        point.jx = 0.0;
+        point.jy = 0.0;
+        msg.points.push_back(point);
+    }
+    sampled_pub_.publish(msg);
+    last_plan_duration_ = samples.back().t;
+    ROS_INFO(
+        "[TargetReplannerNode] Published shuttle leg id=%u samples=%zu x=%.2f y=%.2f->%.2f "
+        "speed=%.2f yaw=+Y no-uturn",
+        msg.trajectory_id, msg.points.size(), shuttle_x_, state_.y, y_goal, shuttle_speed_);
+    return true;
+}
+
 void TargetReplannerNode::timerCallback(const ros::TimerEvent&) {
     const ros::Time now = ros::Time::now();
+    reloadLiveParams();
     if (!state_.received || (now - state_.stamp).toSec() > state_timeout_) {
         ROS_WARN_THROTTLE(2.0, "[TargetReplannerNode] Waiting for fresh state estimate");
+        return;
+    }
+
+    if (shuttle_mode_) {
+        (void)handleShuttle(now);
         return;
     }
 
@@ -303,6 +493,7 @@ bool TargetReplannerNode::publishPlan(const xgc2_math::trajectory::Se2TargetStat
         msg.points.push_back(point);
     }
     sampled_pub_.publish(msg);
+    last_plan_duration_ = result.duration;
     ROS_INFO(
         "[TargetReplannerNode] Published %s target plan id=%u samples=%zu duration=%.2fs "
         "target=(%.2f, %.2f, %.2f) flags=0x%08x",

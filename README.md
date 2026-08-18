@@ -24,6 +24,17 @@ roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajector
 roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch
 ```
 
+## Shuttle rail (no U-turn)
+
+`unicycle_target_replanner` can hold a fixed `X` and shuttle along `Y`.
+Yaw stays `+Y`; negative speed covers `-Y`.
+
+```bash
+roslaunch unicycle_reference_trajectory ugv_unicycle_target_replanner.launch \
+  ns:=ugv1 random_targets:=false shuttle_mode:=true \
+  shuttle_x:=0.0 shuttle_y_min:=-2.0 shuttle_y_max:=2.0 shuttle_speed:=0.5
+```
+
 ## Control-state modes
 
 The same controller executable supports both state providers:
