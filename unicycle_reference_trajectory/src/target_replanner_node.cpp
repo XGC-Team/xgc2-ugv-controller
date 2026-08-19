@@ -219,6 +219,7 @@ void TargetReplannerNode::reloadLiveParams() {
         std::fabs(prev_hi - shuttle_y_max_) > 1.0e-6 ||
         std::fabs(prev_speed - shuttle_speed_) > 1.0e-6) {
         have_shuttle_goal_ = false;
+        shuttle_approaching_ = false;
         shuttle_plan_until_ = ros::Time();
     }
 }
@@ -229,6 +230,7 @@ bool TargetReplannerNode::handleShuttle(const ros::Time& now) {
     const double tol = std::isfinite(shuttle_arrive_tol_) && shuttle_arrive_tol_ > 0.0
                            ? shuttle_arrive_tol_
                            : 0.35;
+    const bool on_rail = shuttleOnRail(state_.x, state_.yaw, shuttle_x_, tol, shuttle_yaw_tol_);
     const bool arrived =
         have_shuttle_goal_ && shuttleArrived(state_.x, state_.y, shuttle_x_, shuttle_goal_y_, tol);
     const bool plan_alive = !shuttle_plan_until_.isZero() && now < shuttle_plan_until_;
@@ -236,10 +238,6 @@ bool TargetReplannerNode::handleShuttle(const ros::Time& now) {
     if (reason == ShuttleReplanReason::Keep) {
         return true;
     }
-    const double y_goal =
-        shuttleGoalYForReplan(have_shuttle_goal_, arrived, state_.y, lo, hi, shuttle_goal_y_);
-    const bool on_x = shuttleOnRailX(state_.x, shuttle_x_, tol);
-    const bool on_yaw = shuttleYawAlongRail(state_.yaw, shuttle_yaw_tol_);
 
     xgc2_math::trajectory::Se2TargetState2 start;
     start.position = Eigen::Vector2d(state_.x, state_.y);
@@ -257,48 +255,51 @@ bool TargetReplannerNode::handleShuttle(const ros::Time& now) {
         planner_options_.max_velocity = shuttle_speed_;
     }
 
+    const bool start_reverse = shuttleBeginReverseMotion(
+        on_rail, have_shuttle_goal_, shuttle_approaching_, reason);
     bool ok = false;
-    if (on_x && on_yaw) {
+    if (start_reverse) {
+        if (shuttle_approaching_ && reason == ShuttleReplanReason::TimedOut) {
+            ROS_WARN(
+                "[TargetReplannerNode] Shuttle approach timeout; starting rail motion from "
+                "(%.2f, %.2f)",
+                state_.x, state_.y);
+        }
+        const double y_goal =
+            shuttleGoalYForReplan(have_shuttle_goal_ && !shuttle_approaching_,
+                                  reason == ShuttleReplanReason::Arrived && !shuttle_approaching_,
+                                  state_.y, lo, hi, shuttle_goal_y_);
         ok = publishShuttleLeg(y_goal);
-    } else if (!on_x) {
-        // Get onto the rail along X at cruise speed. Do not force +Y yet:
-        // a 90° heading change on a short lateral hop makes MINCO crawl.
-        xgc2_math::trajectory::Se2TargetState2 goal;
-        goal.position = Eigen::Vector2d(shuttle_x_, state_.y);
-        goal.yaw = shuttleHeadingTowardRail(state_.x, shuttle_x_);
-        goal.speed = shuttle_speed_;
-        ok = publishPlan(start, goal);
         if (ok) {
-            ROS_INFO(
-                "[TargetReplannerNode] Shuttle rail approach via Se2MincoTargetPlanner2 "
-                "from=(%.2f, %.2f, %.2f) to=(%.2f, %.2f) along X speed=%.2f",
-                state_.x, state_.y, state_.yaw, shuttle_x_, state_.y, shuttle_speed_);
+            shuttle_approaching_ = false;
+            have_shuttle_goal_ = true;
+            shuttle_goal_y_ = y_goal;
         }
     } else {
+        double entry_x = shuttle_x_;
+        double entry_y = state_.y;
+        shuttleEntryPose(state_.x, state_.y, shuttle_x_, lo, hi, entry_x, entry_y);
         xgc2_math::trajectory::Se2TargetState2 goal;
-        goal.position = Eigen::Vector2d(shuttle_x_, state_.y);
+        goal.position = Eigen::Vector2d(entry_x, entry_y);
         goal.yaw = shuttleYawAlongPlusY();
         goal.speed = 0.0;
         ok = publishPlan(start, goal);
         if (ok) {
+            shuttle_approaching_ = true;
+            have_shuttle_goal_ = true;
+            shuttle_goal_y_ = entry_y;
             ROS_INFO(
-                "[TargetReplannerNode] Shuttle yaw align via Se2MincoTargetPlanner2 "
-                "from=%.2f to +Y at x=%.2f",
-                state_.yaw, shuttle_x_);
+                "[TargetReplannerNode] Shuttle entry pose via feasible SE2 plan "
+                "from=(%.2f, %.2f, %.2f) to=(%.2f, %.2f, +Y)",
+                state_.x, state_.y, state_.yaw, entry_x, entry_y);
         }
     }
     if (!ok) {
         return false;
     }
-    have_shuttle_goal_ = true;
-    shuttle_goal_y_ = y_goal;
     const double hold = last_plan_duration_ > 0.0 ? last_plan_duration_ : 1.0;
     const double delay = start_delay_ > 0.0 ? start_delay_ : 0.0;
     shuttle_plan_until_ = now + ros::Duration(delay + hold + 0.3);
-    if (reason == ShuttleReplanReason::TimedOut) {
-        ROS_WARN("[TargetReplannerNode] Shuttle timeout fallback; replanned same end y=%.2f",
-                 y_goal);
-    }
     return true;
 }
 
@@ -498,8 +499,8 @@ bool TargetReplannerNode::publishPlan(const xgc2_math::trajectory::Se2TargetStat
     ROS_INFO(
         "[TargetReplannerNode] Published %s target plan id=%u samples=%zu duration=%.2fs "
         "target=(%.2f, %.2f, %.2f) flags=0x%08x",
-        "optimized", msg.trajectory_id, msg.points.size(), result.duration, target.position.x(),
-        target.position.y(), target.yaw, msg.flags);
+        result.optimized ? "optimized" : "feasible", msg.trajectory_id, msg.points.size(),
+        result.duration, target.position.x(), target.position.y(), target.yaw, msg.flags);
     return true;
 }
 

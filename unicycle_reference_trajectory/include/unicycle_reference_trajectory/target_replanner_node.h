@@ -82,6 +82,7 @@ class TargetReplannerNode {
     double shuttle_arrive_tol_{0.35};
     double shuttle_yaw_tol_{0.7};
     bool have_shuttle_goal_{false};
+    bool shuttle_approaching_{false};
     double shuttle_goal_y_{0.0};
     ros::Time shuttle_plan_until_;
     double last_plan_duration_{0.0};

@@ -169,15 +169,32 @@ TEST(ShuttleLeg, ArrivalUsesPlanarHypotNotJustY) {
     EXPECT_TRUE(unicycle_reference_trajectory::shuttleArrived(1.10, 2.10, 1.0, 2.0, tol));
 }
 
-TEST(ShuttleLeg, OffRailOrBadYawUsesMincoOnRailUsesReverse) {
+TEST(ShuttleLeg, OffRailUsesFeasibleApproachOnRailUsesReverse) {
     const double rail = 1.0;
     const double plus_y = unicycle_reference_trajectory::shuttleYawAlongPlusY();
     EXPECT_EQ(unicycle_reference_trajectory::shuttleTrackMode(2.0, plus_y, rail, 0.25, 0.4),
-              unicycle_reference_trajectory::ShuttleTrackMode::MincoApproach);
+              unicycle_reference_trajectory::ShuttleTrackMode::FeasibleApproach);
     EXPECT_EQ(unicycle_reference_trajectory::shuttleTrackMode(1.0, 0.0, rail, 0.25, 0.4),
-              unicycle_reference_trajectory::ShuttleTrackMode::MincoApproach);
+              unicycle_reference_trajectory::ShuttleTrackMode::FeasibleApproach);
     EXPECT_EQ(unicycle_reference_trajectory::shuttleTrackMode(1.0, plus_y, rail, 0.25, 0.4),
               unicycle_reference_trajectory::ShuttleTrackMode::ReverseRail);
+}
+
+TEST(ShuttleLeg, EntryPoseClampsOntoRailSegment) {
+    double ex = 0.0;
+    double ey = 0.0;
+    unicycle_reference_trajectory::shuttleEntryPose(-12.47, 7.60, -13.0, -5.0, 5.0, ex, ey);
+    EXPECT_NEAR(ex, -13.0, 1e-12);
+    EXPECT_NEAR(ey, 5.0, 1e-12);
+    unicycle_reference_trajectory::shuttleEntryPose(-12.47, 1.2, -13.0, -5.0, 5.0, ex, ey);
+    EXPECT_NEAR(ey, 1.2, 1e-12);
+}
+
+TEST(ShuttleLeg, ApproachTimeoutStartsReverseMotion) {
+    EXPECT_TRUE(unicycle_reference_trajectory::shuttleBeginReverseMotion(
+        false, true, true, unicycle_reference_trajectory::ShuttleReplanReason::TimedOut));
+    EXPECT_FALSE(unicycle_reference_trajectory::shuttleBeginReverseMotion(
+        false, false, false, unicycle_reference_trajectory::ShuttleReplanReason::FirstPlan));
 }
 
 TEST(UnicycleReferenceTrajectoryCore, HoldReportsLowSpeedSingularity) {

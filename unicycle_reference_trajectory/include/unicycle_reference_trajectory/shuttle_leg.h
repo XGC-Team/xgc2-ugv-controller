@@ -7,7 +7,7 @@
 
 namespace unicycle_reference_trajectory {
 
-// On-rail reverse shuttle only. Off-rail approach uses Se2MincoTargetPlanner2.
+// On-rail reverse shuttle only. Off-rail: feasible SE2 plan to a rail entry pose.
 struct ShuttleSample {
     double t{0.0};
     double x{0.0};
@@ -241,20 +241,34 @@ inline double shuttleHeadingTowardRail(double x, double rail_x) {
     return dx > 0.0 ? 0.0 : 3.141592653589793;
 }
 
-// Arrival is planar hypot(Δx, Δy), not |Δy| alone. Off-rail still uses MINCO.
+inline void shuttleEntryPose(double /*start_x*/, double start_y, double rail_x, double y_min,
+                             double y_max, double& entry_x, double& entry_y) {
+    const double lo = std::min(y_min, y_max);
+    const double hi = std::max(y_min, y_max);
+    entry_x = rail_x;
+    if (start_y < lo) {
+        entry_y = lo;
+    } else if (start_y > hi) {
+        entry_y = hi;
+    } else {
+        entry_y = start_y;
+    }
+}
+
+// Arrival is planar hypot(Δx, Δy), not |Δy| alone. Entry target is a point on the rail.
 inline bool shuttleArrived(double x, double y, double rail_x, double goal_y, double tol) {
     const double limit = std::isfinite(tol) && tol > 0.0 ? tol : 0.35;
     return std::isfinite(x) && std::isfinite(y) && std::isfinite(rail_x) && std::isfinite(goal_y) &&
            std::hypot(x - rail_x, y - goal_y) <= limit;
 }
 
-// Off-rail or heading not +Y → Se2MincoTargetPlanner2. On-rail +Y → reverse shuttle.
-enum class ShuttleTrackMode { MincoApproach, ReverseRail };
+// Off-rail → feasible SE2 pose-to-entry. On-rail +Y → reverse shuttle.
+enum class ShuttleTrackMode { FeasibleApproach, ReverseRail };
 
 inline ShuttleTrackMode shuttleTrackMode(double x, double yaw, double rail_x, double pos_tol,
                                          double yaw_tol) {
     return shuttleOnRail(x, yaw, rail_x, pos_tol, yaw_tol) ? ShuttleTrackMode::ReverseRail
-                                                           : ShuttleTrackMode::MincoApproach;
+                                                           : ShuttleTrackMode::FeasibleApproach;
 }
 
 inline double nextShuttleGoalY(double current_y, double y_min, double y_max, bool have_goal,
@@ -269,7 +283,8 @@ inline double nextShuttleGoalY(double current_y, double y_min, double y_max, boo
     return current_y <= mid ? hi : lo;
 }
 
-// Keep the same end while approaching; only flip after planar arrival.
+// Keep the same end while on-rail. Flip after planar arrival. Approach timeout
+// starts reverse motion instead of replanning a failed entry.
 inline double shuttleGoalYForReplan(bool have_goal, bool arrived, double current_y, double y_min,
                                     double y_max, double current_goal_y) {
     if (have_goal && !arrived) {
@@ -278,9 +293,20 @@ inline double shuttleGoalYForReplan(bool have_goal, bool arrived, double current
     return nextShuttleGoalY(current_y, y_min, y_max, have_goal, current_goal_y);
 }
 
-// Replan on arrival. If the current reference expires before arrival, replan
-// the same end (timeout fallback). Do not interrupt a live plan.
+// Replan on arrival. Approach timeout starts rail motion. A live plan is not interrupted.
 enum class ShuttleReplanReason { Keep, FirstPlan, Arrived, TimedOut };
+
+inline bool shuttleBeginReverseMotion(bool on_rail, bool have_goal, bool approaching,
+                                      ShuttleReplanReason reason) {
+    if (on_rail) {
+        return true;
+    }
+    if (have_goal && !approaching) {
+        return true;
+    }
+    return approaching && (reason == ShuttleReplanReason::Arrived ||
+                           reason == ShuttleReplanReason::TimedOut);
+}
 
 inline ShuttleReplanReason shuttleReplanReason(bool have_goal, bool arrived, bool plan_alive) {
     if (!have_goal) {
