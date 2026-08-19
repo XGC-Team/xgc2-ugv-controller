@@ -1,8 +1,9 @@
 #pragma once
 
+#include <rigid_state_estimator_msgs/RigidStateEstimate.h>
+
 #include <cmath>
 #include <cstdint>
-#include <rigid_state_estimator_msgs/RigidStateEstimate.h>
 
 namespace unicycle_ugv_controller {
 namespace rigid_to_unicycle_detail {
@@ -32,8 +33,8 @@ inline UnicycleProjection projectRigidToUnicycle(
     UnicycleProjection out;
     out.x = msg.position.x;
     out.y = msg.position.y;
-    out.yaw = rigid_to_unicycle_detail::yawFromQuaternion(
-        msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w);
+    out.yaw = rigid_to_unicycle_detail::yawFromQuaternion(msg.orientation.x, msg.orientation.y,
+                                                          msg.orientation.z, msg.orientation.w);
     out.speed = std::cos(out.yaw) * msg.velocity.x + std::sin(out.yaw) * msg.velocity.y;
     out.yaw_rate = msg.angular_velocity.z;
     return out;

@@ -2,12 +2,11 @@
 
 #include <ros/console.h>
 
-#include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
-
 #include <cmath>
 #include <stdexcept>
 #include <utility>
 
+#include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
 #include "unicycle_ugv_controller/state_machine/health_monitor_state.h"
 #include "unicycle_ugv_controller/state_machine/hold_state.h"
 #include "unicycle_ugv_controller/state_machine/ready_state.h"

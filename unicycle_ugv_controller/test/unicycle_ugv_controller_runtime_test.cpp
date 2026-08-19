@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 #include <rigid_state_estimator_msgs/RigidStateEstimate.h>
-
-#include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
 #include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
 #include <unicycle_reference_trajectory_msgs/SampledReference.h>
 
@@ -10,6 +8,7 @@
 #include <utility>
 
 #include "unicycle_ugv_controller/common/reference_cache.h"
+#include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
 #include "unicycle_ugv_controller/common/types.h"
 #include "unicycle_ugv_controller/nmpc/unicycle_nmpc_solver.h"
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
@@ -147,7 +146,8 @@ TEST(UnicycleUgvControllerRuntime, ProjectsRigidEstimateToForwardSpeed) {
     EXPECT_NEAR(planar.yaw, 0.0, 1.0e-12);
     EXPECT_NEAR(planar.speed, 0.3, 1.0e-12);
     EXPECT_NEAR(planar.yaw_rate, -0.1, 1.0e-12);
-    EXPECT_TRUE(rigidEstimateHealthy(rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING, 0U));
+    EXPECT_TRUE(
+        rigidEstimateHealthy(rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING, 0U));
     EXPECT_FALSE(rigidEstimateHealthy(2U, 0U));
 }
 
