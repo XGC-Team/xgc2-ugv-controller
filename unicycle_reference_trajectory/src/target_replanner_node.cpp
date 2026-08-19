@@ -7,6 +7,7 @@
 #include <random>
 
 #include "unicycle_reference_trajectory/shuttle_leg.h"
+#include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
 
 namespace unicycle_reference_trajectory {
 namespace {
@@ -157,17 +158,17 @@ bool TargetReplannerNode::loadTargetSequence() {
 }
 
 void TargetReplannerNode::stateCallback(
-    const rigid_state_estimator_msgs::PlanarStateEstimate::ConstPtr& msg) {
+    const rigid_state_estimator_msgs::RigidStateEstimate::ConstPtr& msg) {
     if (!msg) {
         return;
     }
-    const double yaw = yawFromQuaternion(msg->orientation.x, msg->orientation.y, msg->orientation.z,
-                                         msg->orientation.w);
+    const unicycle_ugv_controller::UnicycleProjection planar =
+        unicycle_ugv_controller::projectRigidToUnicycle(*msg);
     state_.stamp = msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
-    state_.x = msg->position.x;
-    state_.y = msg->position.y;
-    state_.yaw = yaw;
-    state_.speed = std::cos(yaw) * msg->velocity.x + std::sin(yaw) * msg->velocity.y;
+    state_.x = planar.x;
+    state_.y = planar.y;
+    state_.yaw = planar.yaw;
+    state_.speed = planar.speed;
     state_.received = std::isfinite(state_.x) && std::isfinite(state_.y) &&
                       std::isfinite(state_.yaw) && std::isfinite(state_.speed);
 }

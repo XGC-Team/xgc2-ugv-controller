@@ -1,7 +1,8 @@
 #include "unicycle_ugv_controller/input/state_input_producer.h"
 
-#include <cmath>
 #include <utility>
+
+#include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
 
 namespace unicycle_ugv_controller {
 
@@ -23,20 +24,18 @@ StateInputProducer::StateInputProducer(ros::NodeHandle& nh, UgvState& state,
 }
 
 void StateInputProducer::stateCallback(
-    const rigid_state_estimator_msgs::PlanarStateEstimate::ConstPtr& msg) {
+    const rigid_state_estimator_msgs::RigidStateEstimate::ConstPtr& msg) {
     if (!msg) {
         ROS_ERROR("[UgvStateInputProducer] Received null state estimate");
         return;
     }
-    const double yaw = yawFromQuaternion(msg->orientation.x, msg->orientation.y, msg->orientation.z,
-                                         msg->orientation.w);
-    const double forward_speed = std::cos(yaw) * msg->velocity.x + std::sin(yaw) * msg->velocity.y;
+    const UnicycleProjection planar = projectRigidToUnicycle(*msg);
     state_.stamp = msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
-    state_.x = msg->position.x;
-    state_.y = msg->position.y;
-    state_.yaw = yaw;
-    state_.speed = forward_speed;
-    state_.yaw_rate = msg->angular_velocity.z;
+    state_.x = planar.x;
+    state_.y = planar.y;
+    state_.yaw = planar.yaw;
+    state_.speed = planar.speed;
+    state_.yaw_rate = planar.yaw_rate;
     state_.estimator_state = msg->estimator_state;
     state_.estimator_flags = msg->flags;
     state_.received = true;

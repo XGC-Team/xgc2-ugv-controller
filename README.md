@@ -39,7 +39,10 @@ roslaunch unicycle_reference_trajectory ugv_unicycle_target_replanner.launch \
 
 The same controller executable supports both state providers:
 
-- `state_source:=state_estimator` consumes `PlanarStateEstimate`.
+- `state_source:=state_estimator` consumes `RigidStateEstimate` and projects
+  to SE2 (`x, y, yaw, speed, yaw_rate`) at the control boundary.
+  Healthy means `estimator_state == STATE_RUNNING` (**3**, not the planar 2)
+  and no `FLAG_FAULT`.
 - `state_source:=vrpn_direct` consumes trusted VRPN pose and twist directly,
   without launching an estimator. The product NMPC remains the sole
   `cmd_vel` publisher for the nonholonomic vehicle.

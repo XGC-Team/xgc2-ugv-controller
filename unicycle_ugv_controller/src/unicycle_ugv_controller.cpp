@@ -1,7 +1,8 @@
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
 
-#include <rigid_state_estimator_msgs/PlanarStateEstimate.h>
 #include <ros/console.h>
+
+#include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
 
 #include <cmath>
 #include <stdexcept>
@@ -60,10 +61,7 @@ bool UnicycleUgvController::healthReady() const {
     if (cfg.state_source == StateSource::VRPN_DIRECT) {
         return finiteState(state_);
     }
-    return state_.estimator_state ==
-               rigid_state_estimator_msgs::PlanarStateEstimate::STATE_RUNNING &&
-           (state_.estimator_flags & rigid_state_estimator_msgs::PlanarStateEstimate::FLAG_FAULT) ==
-               0U;
+    return rigidEstimateHealthy(state_.estimator_state, state_.estimator_flags);
 }
 
 bool UnicycleUgvController::referenceReady() const {

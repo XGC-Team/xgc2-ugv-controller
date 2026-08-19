@@ -2,7 +2,7 @@
 
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
-#include <rigid_state_estimator_msgs/PlanarStateEstimate.h>
+#include <rigid_state_estimator_msgs/RigidStateEstimate.h>
 #include <ros/ros.h>
 
 #include <functional>
@@ -22,7 +22,7 @@ class StateInputProducer {
                        uint32_t queue_size);
 
    private:
-    void stateCallback(const rigid_state_estimator_msgs::PlanarStateEstimate::ConstPtr& msg);
+    void stateCallback(const rigid_state_estimator_msgs::RigidStateEstimate::ConstPtr& msg);
     void vrpnPoseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg);
     void vrpnTwistCallback(const geometry_msgs::TwistStamped::ConstPtr& msg);
     void updateVrpnState(const ros::Time& update_stamp);

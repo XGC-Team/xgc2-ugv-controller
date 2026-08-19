@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
-#include <rigid_state_estimator_msgs/PlanarStateEstimate.h>
+#include <rigid_state_estimator_msgs/RigidStateEstimate.h>
+
+#include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
 #include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
 #include <unicycle_reference_trajectory_msgs/SampledReference.h>
 
@@ -24,7 +26,7 @@ bool hasOutputEvent(UnicycleUgvController& controller, ::state_machine::EventId 
 void makeTrackingReady(UnicycleUgvController& controller, UgvState& state) {
     state.received = true;
     state.stamp = ros::Time(1.0);
-    state.estimator_state = rigid_state_estimator_msgs::PlanarStateEstimate::STATE_RUNNING;
+    state.estimator_state = rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING;
     state.estimator_flags = 0U;
 
     unicycle_reference_trajectory_msgs::AnalyticReference reference;
@@ -61,7 +63,7 @@ TEST(UnicycleUgvControllerRuntime, RunningEstimatorMovesSelfCheckToReady) {
     UgvState state;
     state.received = true;
     state.stamp = ros::Time(1.0);
-    state.estimator_state = rigid_state_estimator_msgs::PlanarStateEstimate::STATE_RUNNING;
+    state.estimator_state = rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING;
     state.estimator_flags = 0U;
 
     UnicycleUgvController controller(state);
@@ -81,7 +83,7 @@ TEST(UnicycleUgvControllerRuntime, VrpnDirectDoesNotRequireEstimatorFlags) {
     state.speed = 0.2;
     state.yaw_rate = -0.1;
     state.estimator_state = 0U;
-    state.estimator_flags = rigid_state_estimator_msgs::PlanarStateEstimate::FLAG_FAULT;
+    state.estimator_flags = rigid_state_estimator_msgs::RigidStateEstimate::FLAG_FAULT;
 
     UnicycleUgvController controller(state);
     auto config = controller.config();
@@ -112,12 +114,49 @@ TEST(UnicycleUgvControllerRuntime, VrpnQuaternionValidationRejectsZeroAndNonFini
         tryYawFromQuaternion(std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0, 1.0, yaw));
 }
 
+TEST(UnicycleUgvControllerRuntime, PlanarRunningValueIsNotEstimatorReady) {
+    ros::Time::init();
+    UgvState state;
+    state.received = true;
+    state.stamp = ros::Time(1.0);
+    state.estimator_state = 2U;
+    state.estimator_flags = 0U;
+
+    UnicycleUgvController controller(state);
+    controller.update(1.0);
+    EXPECT_FALSE(controller.healthReady());
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+
+    state.estimator_state = rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING;
+    controller.update(1.01);
+    EXPECT_TRUE(controller.healthReady());
+    EXPECT_EQ(rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING, 3U);
+}
+
+TEST(UnicycleUgvControllerRuntime, ProjectsRigidEstimateToForwardSpeed) {
+    rigid_state_estimator_msgs::RigidStateEstimate msg;
+    msg.position.x = 1.0;
+    msg.position.y = -2.0;
+    msg.orientation.w = 1.0;
+    msg.velocity.x = 0.3;
+    msg.velocity.y = 0.4;
+    msg.angular_velocity.z = -0.1;
+    const UnicycleProjection planar = projectRigidToUnicycle(msg);
+    EXPECT_NEAR(planar.x, 1.0, 1.0e-12);
+    EXPECT_NEAR(planar.y, -2.0, 1.0e-12);
+    EXPECT_NEAR(planar.yaw, 0.0, 1.0e-12);
+    EXPECT_NEAR(planar.speed, 0.3, 1.0e-12);
+    EXPECT_NEAR(planar.yaw_rate, -0.1, 1.0e-12);
+    EXPECT_TRUE(rigidEstimateHealthy(rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING, 0U));
+    EXPECT_FALSE(rigidEstimateHealthy(2U, 0U));
+}
+
 TEST(UnicycleUgvControllerRuntime, FaultFlagReturnsToSelfCheck) {
     ros::Time::init();
     UgvState state;
     state.received = true;
     state.stamp = ros::Time(1.0);
-    state.estimator_state = rigid_state_estimator_msgs::PlanarStateEstimate::STATE_RUNNING;
+    state.estimator_state = rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING;
     state.estimator_flags = 0U;
 
     UnicycleUgvController controller(state);
@@ -125,7 +164,7 @@ TEST(UnicycleUgvControllerRuntime, FaultFlagReturnsToSelfCheck) {
     controller.update(1.01);
     ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
 
-    state.estimator_flags = rigid_state_estimator_msgs::PlanarStateEstimate::FLAG_FAULT;
+    state.estimator_flags = rigid_state_estimator_msgs::RigidStateEstimate::FLAG_FAULT;
     controller.update(1.02);
     controller.update(1.03);
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
@@ -136,7 +175,7 @@ TEST(UnicycleUgvControllerRuntime, AutoStartTrackingWhenStateAndReferenceAreRead
     UgvState state;
     state.received = true;
     state.stamp = ros::Time(1.0);
-    state.estimator_state = rigid_state_estimator_msgs::PlanarStateEstimate::STATE_RUNNING;
+    state.estimator_state = rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING;
     state.estimator_flags = 0U;
 
     UnicycleUgvController controller(state);

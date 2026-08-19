@@ -1,7 +1,7 @@
 #pragma once
 
 #include <geometry_msgs/PoseStamped.h>
-#include <rigid_state_estimator_msgs/PlanarStateEstimate.h>
+#include <rigid_state_estimator_msgs/RigidStateEstimate.h>
 #include <ros/ros.h>
 #include <unicycle_reference_trajectory_msgs/SampledReference.h>
 
@@ -34,7 +34,7 @@ class TargetReplannerNode {
     };
 
     void loadParams();
-    void stateCallback(const rigid_state_estimator_msgs::PlanarStateEstimate::ConstPtr& msg);
+    void stateCallback(const rigid_state_estimator_msgs::RigidStateEstimate::ConstPtr& msg);
     void targetCallback(const geometry_msgs::PoseStamped::ConstPtr& msg);
     void timerCallback(const ros::TimerEvent& event);
     bool chooseTarget(TargetPose& target);
