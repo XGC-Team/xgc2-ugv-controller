@@ -26,6 +26,8 @@ shuttle_speed: 0.5
 shuttle_accel: 1.0
 shuttle_arrive_tol: 0.35
 shuttle_yaw_tol: 0.7
+# Off-rail poses farther than this from the finite rail segment are refused.
+shuttle_capture_radius: 30.0
 
 piece_count: 4
 sample_dt: 0.01

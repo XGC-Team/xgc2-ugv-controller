@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <vector>
 
 namespace unicycle_reference_trajectory {
@@ -255,6 +256,50 @@ inline void shuttleEntryPose(double /*start_x*/, double start_y, double rail_x, 
     }
 }
 
+inline double shuttleDefaultCaptureRadius() {
+    return 30.0;
+}
+
+// Planar distance to the finite rail segment x=rail_x, y in [y_min, y_max].
+inline double shuttleDistanceToRail(double x, double y, double rail_x, double y_min, double y_max) {
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(rail_x) || !std::isfinite(y_min) ||
+        !std::isfinite(y_max)) {
+        return std::numeric_limits<double>::infinity();
+    }
+    const double lo = std::min(y_min, y_max);
+    const double hi = std::max(y_min, y_max);
+    if (y < lo) {
+        return std::hypot(x - rail_x, y - lo);
+    }
+    if (y > hi) {
+        return std::hypot(x - rail_x, y - hi);
+    }
+    return std::fabs(x - rail_x);
+}
+
+inline bool shuttleWithinCapture(double x, double y, double rail_x, double y_min, double y_max,
+                                 double radius) {
+    const double limit =
+        std::isfinite(radius) && radius > 0.0 ? radius : shuttleDefaultCaptureRadius();
+    return shuttleDistanceToRail(x, y, rail_x, y_min, y_max) <= limit;
+}
+
+// Geometric SE2 entry: always succeeds for finite poses inside the capture disk.
+inline bool planShuttleEntry(double start_x, double start_y, double start_yaw, double rail_x,
+                             double y_min, double y_max, double desired_speed,
+                             double max_acceleration, double sample_dt, double hold_duration,
+                             double capture_radius, std::vector<ShuttleSample>& samples,
+                             double& entry_x, double& entry_y) {
+    samples.clear();
+    if (!shuttleWithinCapture(start_x, start_y, rail_x, y_min, y_max, capture_radius)) {
+        return false;
+    }
+    shuttleEntryPose(start_x, start_y, rail_x, y_min, y_max, entry_x, entry_y);
+    return buildDirectApproach(start_x, start_y, start_yaw, entry_x, entry_y,
+                               shuttleYawAlongPlusY(), desired_speed, max_acceleration, sample_dt,
+                               hold_duration, samples);
+}
+
 // Arrival is planar hypot(Δx, Δy), not |Δy| alone. Entry target is a point on the rail.
 inline bool shuttleArrived(double x, double y, double rail_x, double goal_y, double tol) {
     const double limit = std::isfinite(tol) && tol > 0.0 ? tol : 0.35;
@@ -283,8 +328,8 @@ inline double nextShuttleGoalY(double current_y, double y_min, double y_max, boo
     return current_y <= mid ? hi : lo;
 }
 
-// Keep the same end while on-rail. Flip after planar arrival. Approach timeout
-// starts reverse motion instead of replanning a failed entry.
+// Keep the same end while on-rail. Flip after planar arrival. Off-rail timeout
+// replans the entry; reverse motion is only for an on-rail pose.
 inline double shuttleGoalYForReplan(bool have_goal, bool arrived, double current_y, double y_min,
                                     double y_max, double current_goal_y) {
     if (have_goal && !arrived) {
@@ -296,16 +341,9 @@ inline double shuttleGoalYForReplan(bool have_goal, bool arrived, double current
 // Replan on arrival. Approach timeout starts rail motion. A live plan is not interrupted.
 enum class ShuttleReplanReason { Keep, FirstPlan, Arrived, TimedOut };
 
-inline bool shuttleBeginReverseMotion(bool on_rail, bool have_goal, bool approaching,
-                                      ShuttleReplanReason reason) {
-    if (on_rail) {
-        return true;
-    }
-    if (have_goal && !approaching) {
-        return true;
-    }
-    return approaching && (reason == ShuttleReplanReason::Arrived ||
-                           reason == ShuttleReplanReason::TimedOut);
+inline bool shuttleBeginReverseMotion(bool on_rail, bool /*have_goal*/, bool /*approaching*/,
+                                      ShuttleReplanReason /*reason*/) {
+    return on_rail;
 }
 
 inline ShuttleReplanReason shuttleReplanReason(bool have_goal, bool arrived, bool plan_alive) {

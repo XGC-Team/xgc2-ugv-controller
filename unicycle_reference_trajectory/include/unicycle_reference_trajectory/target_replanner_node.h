@@ -11,6 +11,8 @@
 #include <vector>
 #include <xgc2_math/trajectory.hpp>
 
+#include "unicycle_reference_trajectory/shuttle_leg.h"
+
 namespace unicycle_reference_trajectory {
 
 class TargetReplannerNode {
@@ -43,6 +45,7 @@ class TargetReplannerNode {
     void reloadLiveParams();
     bool handleShuttle(const ros::Time& now);
     bool publishShuttleLeg(double y_goal);
+    bool publishShuttleEntry(const std::vector<ShuttleSample>& samples);
     bool publishPlan(const xgc2_math::trajectory::Se2TargetState2& start,
                      const xgc2_math::trajectory::Se2TargetState2& target);
 
@@ -81,6 +84,7 @@ class TargetReplannerNode {
     double shuttle_accel_{1.0};
     double shuttle_arrive_tol_{0.35};
     double shuttle_yaw_tol_{0.7};
+    double shuttle_capture_radius_{30.0};
     bool have_shuttle_goal_{false};
     bool shuttle_approaching_{false};
     double shuttle_goal_y_{0.0};

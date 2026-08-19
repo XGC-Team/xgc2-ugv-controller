@@ -27,7 +27,11 @@ roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch
 ## Shuttle rail (no U-turn)
 
 `unicycle_target_replanner` can hold a fixed `X` and shuttle along `Y`.
-Yaw stays `+Y`; negative speed covers `-Y`.
+Yaw stays `+Y`; negative speed covers `-Y`. Off-rail poses within
+`shuttle_capture_radius` (default 30 m of the finite rail segment) get a
+geometric SE2 plan onto a rail entry pose if MINCO fails. Reverse Y-legs
+are published only after the robot is on the rail (X and +Y yaw). Poses
+farther than the capture radius are refused.
 
 ```bash
 roslaunch unicycle_reference_trajectory ugv_unicycle_target_replanner.launch \

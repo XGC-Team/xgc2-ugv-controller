@@ -2,6 +2,7 @@
 #include <unicycle_reference_trajectory/shuttle_leg.h>
 
 #include <cmath>
+#include <vector>
 #include <xgc2_math/trajectory.hpp>
 
 namespace {
@@ -190,11 +191,112 @@ TEST(ShuttleLeg, EntryPoseClampsOntoRailSegment) {
     EXPECT_NEAR(ey, 1.2, 1e-12);
 }
 
-TEST(ShuttleLeg, ApproachTimeoutStartsReverseMotion) {
-    EXPECT_TRUE(unicycle_reference_trajectory::shuttleBeginReverseMotion(
-        false, true, true, unicycle_reference_trajectory::ShuttleReplanReason::TimedOut));
+TEST(ShuttleLeg, ReverseMotionOnlyWhenOnRail) {
+    using unicycle_reference_trajectory::ShuttleReplanReason;
     EXPECT_FALSE(unicycle_reference_trajectory::shuttleBeginReverseMotion(
-        false, false, false, unicycle_reference_trajectory::ShuttleReplanReason::FirstPlan));
+        false, true, true, ShuttleReplanReason::TimedOut));
+    EXPECT_FALSE(unicycle_reference_trajectory::shuttleBeginReverseMotion(
+        false, true, false, ShuttleReplanReason::FirstPlan));
+    EXPECT_TRUE(unicycle_reference_trajectory::shuttleBeginReverseMotion(
+        true, true, false, ShuttleReplanReason::FirstPlan));
+    EXPECT_TRUE(unicycle_reference_trajectory::shuttleBeginReverseMotion(
+        true, true, false, ShuttleReplanReason::Arrived));
+}
+
+TEST(ShuttleLeg, CaptureRadiusIsThirtyMetresToTheRailSegment) {
+    const double rail = -13.0;
+    const double lo = -5.0;
+    const double hi = 5.0;
+    const double radius = unicycle_reference_trajectory::shuttleDefaultCaptureRadius();
+    EXPECT_NEAR(radius, 30.0, 1e-12);
+    EXPECT_NEAR(unicycle_reference_trajectory::shuttleDistanceToRail(-13.0, 0.0, rail, lo, hi), 0.0,
+                1e-12);
+    EXPECT_NEAR(unicycle_reference_trajectory::shuttleDistanceToRail(-43.0, 0.0, rail, lo, hi),
+                30.0, 1e-12);
+    EXPECT_TRUE(
+        unicycle_reference_trajectory::shuttleWithinCapture(-43.0, 0.0, rail, lo, hi, radius));
+    EXPECT_FALSE(
+        unicycle_reference_trajectory::shuttleWithinCapture(-43.01, 0.0, rail, lo, hi, radius));
+    // Past the +Y end of the corridor: distance is to the endpoint (-13, 5).
+    EXPECT_NEAR(unicycle_reference_trajectory::shuttleDistanceToRail(-12.47, 7.60, rail, lo, hi),
+                std::hypot(0.53, 2.60), 1e-9);
+    EXPECT_TRUE(
+        unicycle_reference_trajectory::shuttleWithinCapture(-12.47, 7.60, rail, lo, hi, radius));
+}
+
+TEST(ShuttleLeg, AnyPoseWithinThirtyMetresPlansOntoTheRail) {
+    const double rail = -13.0;
+    const double lo = -5.0;
+    const double hi = 5.0;
+    const double radius = 30.0;
+    const double yaws[] = {
+        0.0, 1.5707963267948966, 3.141592653589793, -1.5707963267948966, 0.05, 1.19, -1.56, 2.8};
+    const double xs[] = {-43.0, -33.0, -23.0, -15.75, -13.5, -13.0, -12.47, -3.0, 7.0, 17.0};
+    const double ys[] = {-35.0, -15.0, -5.0, 0.0, 1.2, 5.0, 7.49, 7.60, 15.0, 35.0};
+    int planned = 0;
+    int refused = 0;
+    for (double x : xs) {
+        for (double y : ys) {
+            const bool inside =
+                unicycle_reference_trajectory::shuttleWithinCapture(x, y, rail, lo, hi, radius);
+            for (double yaw : yaws) {
+                std::vector<unicycle_reference_trajectory::ShuttleSample> samples;
+                double entry_x = 0.0;
+                double entry_y = 0.0;
+                const bool ok = unicycle_reference_trajectory::planShuttleEntry(
+                    x, y, yaw, rail, lo, hi, 0.5, 1.0, 0.05, 0.1, radius, samples, entry_x,
+                    entry_y);
+                if (!inside) {
+                    EXPECT_FALSE(ok) << "x=" << x << " y=" << y;
+                    ++refused;
+                    continue;
+                }
+                ASSERT_TRUE(ok) << "x=" << x << " y=" << y << " yaw=" << yaw;
+                ASSERT_FALSE(samples.empty());
+                EXPECT_NEAR(samples.front().x, x, 1e-6);
+                EXPECT_NEAR(samples.front().y, y, 1e-6);
+                EXPECT_NEAR(samples.back().x, rail, 1e-6);
+                EXPECT_NEAR(samples.back().y, entry_y, 1e-6);
+                EXPECT_NEAR(samples.back().yaw,
+                            unicycle_reference_trajectory::shuttleYawAlongPlusY(), 1e-9);
+                EXPECT_NEAR(samples.back().speed, 0.0, 1e-9);
+                EXPECT_GT(samples.back().t, 0.0);
+                EXPECT_LE(samples.back().t, 90.0);
+                EXPECT_LE(std::hypot(entry_x - x, entry_y - y), radius + 1e-9);
+                ++planned;
+            }
+        }
+    }
+    EXPECT_GE(planned, 200);
+    EXPECT_GE(refused, 8);
+}
+
+TEST(ShuttleLeg, FieldOffRailPosesMeetEntryGates) {
+    struct Case {
+        double x;
+        double y;
+        double yaw;
+        double entry_y;
+    };
+    const Case cases[] = {
+        {-12.47, 7.60, 0.05, 5.0},
+        {-15.75, 7.49, 1.19, 5.0},
+        {-13.00, 1.20, 0.05, 1.2},
+    };
+    for (const Case& c : cases) {
+        std::vector<unicycle_reference_trajectory::ShuttleSample> samples;
+        double entry_x = 0.0;
+        double entry_y = 0.0;
+        ASSERT_TRUE(unicycle_reference_trajectory::planShuttleEntry(c.x, c.y, c.yaw, -13.0, -5.0,
+                                                                    5.0, 0.5, 1.0, 0.02, 0.1, 30.0,
+                                                                    samples, entry_x, entry_y));
+        EXPECT_NEAR(entry_x, -13.0, 1e-12);
+        EXPECT_NEAR(entry_y, c.entry_y, 1e-12);
+        EXPECT_NEAR(samples.back().x, -13.0, 1e-6);
+        EXPECT_NEAR(samples.back().y, c.entry_y, 1e-6);
+        EXPECT_NEAR(samples.back().yaw, unicycle_reference_trajectory::shuttleYawAlongPlusY(),
+                    1e-9);
+    }
 }
 
 TEST(UnicycleReferenceTrajectoryCore, HoldReportsLowSpeedSingularity) {
