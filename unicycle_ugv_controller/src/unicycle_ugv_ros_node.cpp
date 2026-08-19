@@ -160,7 +160,7 @@ void UnicycleUgvRosNode::loadParams() {
     config_.nmpc_weights.yaw = finitePositiveOr(config_.nmpc_weights.yaw, 8.0);
     config_.nmpc_weights.speed = finitePositiveOr(config_.nmpc_weights.speed, 4.0);
     config_.nmpc_weights.accel = finitePositiveOr(config_.nmpc_weights.accel, 0.4);
-    config_.nmpc_weights.omega = finitePositiveOr(config_.nmpc_weights.omega, 4.0);
+    config_.nmpc_weights.omega = finitePositiveOr(config_.nmpc_weights.omega, 10.0);
     config_.nmpc_weights.terminal_position_x =
         finitePositiveOr(config_.nmpc_weights.terminal_position_x, 60.0);
     config_.nmpc_weights.terminal_position_y =

@@ -60,13 +60,13 @@ rosparam get /ugv1/unicycle_ugv_controller/nmpc/weights
 | `nmpc/weights/yaw` | `nmpc_weight_yaw` | 8 |
 | `nmpc/weights/speed` | `nmpc_weight_speed` | 4 |
 | `nmpc/weights/accel` | `nmpc_weight_accel` | 0.4 |
-| `nmpc/weights/omega` | `nmpc_weight_omega` | 4 |
+| `nmpc/weights/omega` | `nmpc_weight_omega` | 10 |
 | `nmpc/weights/terminal_position_x` | `nmpc_weight_terminal_position_x` | 60 |
 | `nmpc/weights/terminal_position_y` | `nmpc_weight_terminal_position_y` | 60 |
 | `nmpc/weights/terminal_yaw` | `nmpc_weight_terminal_yaw` | 20 |
 | `nmpc/weights/terminal_speed` | `nmpc_weight_terminal_speed` | 10 |
 
-Default `ω` is `4.0` (was `0.08`). The old ratio made a saturated
+Default `ω` is `10.0` (was `0.08`, then `4.0`). The old ratio made a saturated
 yaw-rate cheaper than a few centimeters of cross-track.
 
 ## Control-state modes

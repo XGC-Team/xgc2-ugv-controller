@@ -38,7 +38,7 @@
     <arg name="nmpc_weight_yaw" default="8.0"/>
     <arg name="nmpc_weight_speed" default="4.0"/>
     <arg name="nmpc_weight_accel" default="0.4"/>
-    <arg name="nmpc_weight_omega" default="4.0"/>
+    <arg name="nmpc_weight_omega" default="10.0"/>
     <arg name="nmpc_weight_terminal_position_x" default="60.0"/>
     <arg name="nmpc_weight_terminal_position_y" default="60.0"/>
     <arg name="nmpc_weight_terminal_yaw" default="20.0"/>

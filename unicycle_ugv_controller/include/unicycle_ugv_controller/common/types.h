@@ -20,7 +20,7 @@ struct NmpcCostWeights {
     double yaw{8.0};
     double speed{4.0};
     double accel{0.4};
-    double omega{4.0};
+    double omega{10.0};
     double terminal_position_x{60.0};
     double terminal_position_y{60.0};
     double terminal_yaw{20.0};

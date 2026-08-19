@@ -30,7 +30,7 @@ nmpc:
     yaw: 8.0
     speed: 4.0
     accel: 0.4
-    omega: 4.0
+    omega: 10.0
     terminal_position_x: 60.0
     terminal_position_y: 60.0
     terminal_yaw: 20.0
