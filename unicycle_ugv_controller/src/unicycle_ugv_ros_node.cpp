@@ -121,6 +121,22 @@ void UnicycleUgvRosNode::loadParams() {
                       config_.max_angular_speed);
     private_nh_.param("limits/max_linear_acceleration", config_.max_linear_acceleration,
                       config_.max_linear_acceleration);
+    private_nh_.param("nmpc/weights/position_x", config_.nmpc_weights.position_x,
+                      config_.nmpc_weights.position_x);
+    private_nh_.param("nmpc/weights/position_y", config_.nmpc_weights.position_y,
+                      config_.nmpc_weights.position_y);
+    private_nh_.param("nmpc/weights/yaw", config_.nmpc_weights.yaw, config_.nmpc_weights.yaw);
+    private_nh_.param("nmpc/weights/speed", config_.nmpc_weights.speed, config_.nmpc_weights.speed);
+    private_nh_.param("nmpc/weights/accel", config_.nmpc_weights.accel, config_.nmpc_weights.accel);
+    private_nh_.param("nmpc/weights/omega", config_.nmpc_weights.omega, config_.nmpc_weights.omega);
+    private_nh_.param("nmpc/weights/terminal_position_x", config_.nmpc_weights.terminal_position_x,
+                      config_.nmpc_weights.terminal_position_x);
+    private_nh_.param("nmpc/weights/terminal_position_y", config_.nmpc_weights.terminal_position_y,
+                      config_.nmpc_weights.terminal_position_y);
+    private_nh_.param("nmpc/weights/terminal_yaw", config_.nmpc_weights.terminal_yaw,
+                      config_.nmpc_weights.terminal_yaw);
+    private_nh_.param("nmpc/weights/terminal_speed", config_.nmpc_weights.terminal_speed,
+                      config_.nmpc_weights.terminal_speed);
 
     config_.control_rate_hz = finitePositiveOr(config_.control_rate_hz, 100.0);
     config_.control_period = finitePositiveOr(config_.control_period, 0.1);
@@ -139,7 +155,27 @@ void UnicycleUgvRosNode::loadParams() {
     }
     config_.max_angular_speed = finitePositiveOr(config_.max_angular_speed, 2.5);
     config_.max_linear_acceleration = finitePositiveOr(config_.max_linear_acceleration, 2.0);
+    config_.nmpc_weights.position_x = finitePositiveOr(config_.nmpc_weights.position_x, 20.0);
+    config_.nmpc_weights.position_y = finitePositiveOr(config_.nmpc_weights.position_y, 20.0);
+    config_.nmpc_weights.yaw = finitePositiveOr(config_.nmpc_weights.yaw, 8.0);
+    config_.nmpc_weights.speed = finitePositiveOr(config_.nmpc_weights.speed, 4.0);
+    config_.nmpc_weights.accel = finitePositiveOr(config_.nmpc_weights.accel, 0.4);
+    config_.nmpc_weights.omega = finitePositiveOr(config_.nmpc_weights.omega, 4.0);
+    config_.nmpc_weights.terminal_position_x =
+        finitePositiveOr(config_.nmpc_weights.terminal_position_x, 60.0);
+    config_.nmpc_weights.terminal_position_y =
+        finitePositiveOr(config_.nmpc_weights.terminal_position_y, 60.0);
+    config_.nmpc_weights.terminal_yaw = finitePositiveOr(config_.nmpc_weights.terminal_yaw, 20.0);
+    config_.nmpc_weights.terminal_speed =
+        finitePositiveOr(config_.nmpc_weights.terminal_speed, 10.0);
     status_publish_rate_hz_ = finitePositiveOr(status_publish_rate_hz_, 10.0);
+    ROS_INFO(
+        "[UnicycleUgvRosNode] NMPC weights pos=[%.3f, %.3f] yaw=%.3f speed=%.3f "
+        "u=[%.3f, %.3f] terminal_pos=[%.3f, %.3f] terminal_yaw=%.3f terminal_speed=%.3f",
+        config_.nmpc_weights.position_x, config_.nmpc_weights.position_y, config_.nmpc_weights.yaw,
+        config_.nmpc_weights.speed, config_.nmpc_weights.accel, config_.nmpc_weights.omega,
+        config_.nmpc_weights.terminal_position_x, config_.nmpc_weights.terminal_position_y,
+        config_.nmpc_weights.terminal_yaw, config_.nmpc_weights.terminal_speed);
 }
 
 void UnicycleUgvRosNode::updateOnce() {

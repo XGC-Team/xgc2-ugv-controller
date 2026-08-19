@@ -31,10 +31,31 @@ struct ShuttleLegRequest {
     double max_acceleration{1.0};
     double sample_dt{0.02};
     double hold_duration{0.3};
+    double rail_yaw{1.5707963267948966};
 };
 
 inline double shuttleYawAlongPlusY() {
     return 1.5707963267948966;
+}
+
+inline double shuttleYawAlongMinusY() {
+    return -1.5707963267948966;
+}
+
+inline double shuttleWrapAngle(double value) {
+    return std::atan2(std::sin(value), std::cos(value));
+}
+
+// Rail axis is ±Y. Pick the heading that needs the smaller yaw change.
+inline double shuttleNearestRailYaw(double yaw) {
+    const double plus = shuttleYawAlongPlusY();
+    const double minus = shuttleYawAlongMinusY();
+    if (!std::isfinite(yaw)) {
+        return plus;
+    }
+    const double d_plus = std::fabs(shuttleWrapAngle(yaw - plus));
+    const double d_minus = std::fabs(shuttleWrapAngle(yaw - minus));
+    return d_minus < d_plus ? minus : plus;
 }
 
 inline bool buildShuttleLeg(const ShuttleLegRequest& request, std::vector<ShuttleSample>& samples) {
@@ -55,7 +76,8 @@ inline bool buildShuttleLeg(const ShuttleLegRequest& request, std::vector<Shuttl
     const double hold = std::isfinite(request.hold_duration) && request.hold_duration >= 0.0
                             ? request.hold_duration
                             : 0.0;
-    const double yaw = shuttleYawAlongPlusY();
+    const double yaw = std::isfinite(request.rail_yaw) ? request.rail_yaw : shuttleYawAlongPlusY();
+    const double body_from_world_y = std::sin(yaw);
     const double dist = request.y_goal - request.start_y;
     const double dir = dist >= 0.0 ? 1.0 : -1.0;
     const double abs_dist = std::fabs(dist);
@@ -108,8 +130,8 @@ inline bool buildShuttleLeg(const ShuttleLegRequest& request, std::vector<Shuttl
         sample.vy = vy;
         sample.ax = 0.0;
         sample.ay = ay;
-        sample.speed = vy;
-        sample.linear_acceleration = ay;
+        sample.speed = vy * body_from_world_y;
+        sample.linear_acceleration = ay * body_from_world_y;
         sample.yaw_rate = 0.0;
         samples.push_back(sample);
     }
@@ -134,10 +156,13 @@ inline bool shuttleOnRailX(double x, double rail_x, double pos_tol) {
 }
 
 inline bool shuttleYawAlongRail(double yaw, double yaw_tol) {
-    const double rail_yaw = shuttleYawAlongPlusY();
-    const double dyaw = std::atan2(std::sin(yaw - rail_yaw), std::cos(yaw - rail_yaw));
     const double py = std::isfinite(yaw_tol) && yaw_tol > 0.0 ? yaw_tol : 0.7;
-    return std::isfinite(yaw) && std::fabs(dyaw) <= py;
+    if (!std::isfinite(yaw)) {
+        return false;
+    }
+    const double rail_yaw = shuttleNearestRailYaw(yaw);
+    const double dyaw = shuttleWrapAngle(yaw - rail_yaw);
+    return std::fabs(dyaw) <= py;
 }
 
 inline bool shuttleOnRail(double x, double yaw, double rail_x, double pos_tol, double yaw_tol) {
@@ -296,8 +321,8 @@ inline bool planShuttleEntry(double start_x, double start_y, double start_yaw, d
     }
     shuttleEntryPose(start_x, start_y, rail_x, y_min, y_max, entry_x, entry_y);
     return buildDirectApproach(start_x, start_y, start_yaw, entry_x, entry_y,
-                               shuttleYawAlongPlusY(), desired_speed, max_acceleration, sample_dt,
-                               hold_duration, samples);
+                               shuttleNearestRailYaw(start_yaw), desired_speed, max_acceleration,
+                               sample_dt, hold_duration, samples);
 }
 
 // Arrival is planar hypot(Δx, Δy), not |Δy| alone. Entry target is a point on the rail.

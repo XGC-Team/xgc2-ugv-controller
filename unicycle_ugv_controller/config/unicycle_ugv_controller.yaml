@@ -21,6 +21,20 @@ nmpc:
   request_rate_hz: 100.0
   solve_timeout: 0.05
   result_timeout: 0.1
+  # Nonlinear LS weights. Read once at node start from this yaml / launch
+  # args / rosparam. Change a value, restart the controller, then freeze
+  # the keepers back into this file and the launch defaults.
+  weights:
+    position_x: 20.0
+    position_y: 20.0
+    yaw: 8.0
+    speed: 4.0
+    accel: 0.4
+    omega: 4.0
+    terminal_position_x: 60.0
+    terminal_position_y: 60.0
+    terminal_yaw: 20.0
+    terminal_speed: 10.0
 
 limits:
   min_linear_speed: -1.5

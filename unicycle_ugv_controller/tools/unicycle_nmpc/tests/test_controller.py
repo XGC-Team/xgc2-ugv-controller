@@ -12,6 +12,7 @@ class UnicycleNmpcConfigTests(unittest.TestCase):
         self.assertTrue(np.isclose(cfg.dt, 0.1))
         self.assertGreater(Bounds().v_max, 0.0)
         self.assertEqual(CostWeights().control.shape, (2,))
+        self.assertGreater(CostWeights().control[1], 1.0)
 
     def test_unicycle_model_dimensions(self) -> None:
         nx = 4

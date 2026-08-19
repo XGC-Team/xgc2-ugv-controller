@@ -17,7 +17,8 @@ random_yaw_mode: heading
 random_fixed_yaw: 0.0
 random_seed: 0
 
-# Fixed-X / shuttle-Y rail. Yaw stays +Y; reverse covers -Y (no U-turn).
+# Fixed-X / shuttle-Y rail. Heading is the nearer of ±Y; body speed is
+# vy*sin(yaw) so an already-aligned nose does not spin 180°.
 shuttle_mode: false
 shuttle_x: 0.0
 shuttle_y_min: -2.0

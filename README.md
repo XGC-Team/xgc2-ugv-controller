@@ -27,17 +27,47 @@ roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch
 ## Shuttle rail (no U-turn)
 
 `unicycle_target_replanner` can hold a fixed `X` and shuttle along `Y`.
-Yaw stays `+Y`; negative speed covers `-Y`. Off-rail poses within
+Rail heading is the nearer of `+Y` / `-Y` to the current body yaw. Body
+speed is `vy * sin(yaw)`, so a nose already on `-Y` goes forward toward
+`-Y` instead of spinning 180° onto `+Y`. Off-rail poses within
 `shuttle_capture_radius` (default 30 m of the finite rail segment) get a
 geometric SE2 plan onto a rail entry pose if MINCO fails. Reverse Y-legs
-are published only after the robot is on the rail (X and +Y yaw). Poses
-farther than the capture radius are refused.
+are published only after the robot is on the rail (X and a rail-axis yaw).
+Poses farther than the capture radius are refused.
 
 ```bash
 roslaunch unicycle_reference_trajectory ugv_unicycle_target_replanner.launch \
   ns:=ugv1 random_targets:=false shuttle_mode:=true \
   shuttle_x:=0.0 shuttle_y_min:=-2.0 shuttle_y_max:=2.0 shuttle_speed:=0.5
 ```
+
+NMPC stage cost is nonlinear LS. All ten weights are ROS params and
+`roslaunch` args (`nmpc_weight_omega:=6` and so on). They are read
+once when the node starts. Tune with launch args or `rosparam`, restart
+the controller, then freeze the keepers into yaml and the launch defaults.
+
+```bash
+# ns:=ugv1  — set, restart NMPC, then dump
+rosparam set /ugv1/unicycle_ugv_controller/nmpc/weights/omega 6.0
+# restart unicycle_ugv_controller
+rosparam get /ugv1/unicycle_ugv_controller/nmpc/weights
+```
+
+| param | launch arg | default |
+| --- | --- | ---: |
+| `nmpc/weights/position_x` | `nmpc_weight_position_x` | 20 |
+| `nmpc/weights/position_y` | `nmpc_weight_position_y` | 20 |
+| `nmpc/weights/yaw` | `nmpc_weight_yaw` | 8 |
+| `nmpc/weights/speed` | `nmpc_weight_speed` | 4 |
+| `nmpc/weights/accel` | `nmpc_weight_accel` | 0.4 |
+| `nmpc/weights/omega` | `nmpc_weight_omega` | 4 |
+| `nmpc/weights/terminal_position_x` | `nmpc_weight_terminal_position_x` | 60 |
+| `nmpc/weights/terminal_position_y` | `nmpc_weight_terminal_position_y` | 60 |
+| `nmpc/weights/terminal_yaw` | `nmpc_weight_terminal_yaw` | 20 |
+| `nmpc/weights/terminal_speed` | `nmpc_weight_terminal_speed` | 10 |
+
+Default `ω` is `4.0` (was `0.08`). The old ratio made a saturated
+yaw-rate cheaper than a few centimeters of cross-track.
 
 ## Control-state modes
 

@@ -341,5 +341,49 @@ TEST(UnicycleUgvControllerRuntime, NmpcSolverRejectsInvalidBounds) {
     EXPECT_FALSE(solver.configureBounds(-1.5, 1.5, 2.0, 0.0));
 }
 
+TEST(UnicycleUgvControllerRuntime, NmpcSolverHeavierOmegaWeightReducesRailYawRate) {
+    const double rail_yaw = 1.5707963267948966;
+    auto make_refs = [rail_yaw]() {
+        std::vector<Se2Reference> refs(static_cast<size_t>(UnicycleNmpcSolver::horizonSteps() + 1));
+        for (int i = 0; i <= UnicycleNmpcSolver::horizonSteps(); ++i) {
+            refs[static_cast<size_t>(i)].state.position << -13.0, 0.05 * static_cast<double>(i);
+            refs[static_cast<size_t>(i)].state.yaw = rail_yaw;
+            refs[static_cast<size_t>(i)].state.linear_speed = 0.5;
+        }
+        return refs;
+    };
+    // On-rail, almost aligned: the field limit-cycle lives on this residual.
+    Se2StateVector x0;
+    x0 << -12.97, 0.0, 1.610, 0.5;
+
+    NmpcCostWeights cheap;
+    cheap.accel = 0.05;
+    cheap.omega = 0.08;
+
+    UnicycleNmpcSolver cheap_solver;
+    ASSERT_TRUE(cheap_solver.configureBounds(-0.5, 0.5, 2.0, 0.8));
+    ASSERT_TRUE(cheap_solver.configureWeights(cheap));
+    ASSERT_TRUE(cheap_solver.initialize());
+    ASSERT_TRUE(cheap_solver.solve(x0, make_refs()));
+    const double w_cheap = cheap_solver.optimalControl()(1);
+
+    UnicycleNmpcSolver heavy_solver;
+    ASSERT_TRUE(heavy_solver.configureBounds(-0.5, 0.5, 2.0, 0.8));
+    ASSERT_TRUE(heavy_solver.configureWeights(NmpcCostWeights{}));
+    ASSERT_TRUE(heavy_solver.initialize());
+    ASSERT_TRUE(heavy_solver.solve(x0, make_refs()));
+    const double w_heavy = heavy_solver.optimalControl()(1);
+
+    EXPECT_LT(std::abs(w_heavy), 0.35);
+    EXPECT_LT(std::abs(w_heavy), std::abs(w_cheap));
+}
+
+TEST(UnicycleUgvControllerRuntime, NmpcSolverRejectsInvalidWeights) {
+    UnicycleNmpcSolver solver;
+    NmpcCostWeights weights;
+    weights.omega = 0.0;
+    EXPECT_FALSE(solver.configureWeights(weights));
+}
+
 }  // namespace
 }  // namespace unicycle_ugv_controller

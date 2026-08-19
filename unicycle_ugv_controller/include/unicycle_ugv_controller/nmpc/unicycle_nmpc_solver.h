@@ -5,6 +5,8 @@
 #include <vector>
 #include <xgc2_math/control.hpp>
 
+#include "unicycle_ugv_controller/common/types.h"
+
 extern "C" {
 #include "acados_c/ocp_nlp_interface.h"
 #include "acados_solver_unicycle_nmpc.h"
@@ -28,6 +30,7 @@ class UnicycleNmpcSolver {
     bool initialize();
     bool configureBounds(double min_linear_speed, double max_linear_speed,
                          double max_linear_acceleration, double max_angular_speed);
+    bool configureWeights(const NmpcCostWeights& weights);
     void resetWarmStart();
     bool solve(const Se2StateVector& x0, const std::vector<Se2Reference>& refs);
 
@@ -55,6 +58,7 @@ class UnicycleNmpcSolver {
 
    private:
     bool applyRuntimeBounds();
+    bool applyRuntimeWeights();
     bool setInitialState(const Se2StateVector& x0);
     bool setReference(int stage, const Se2Reference& ref);
     void setGuesses(const Se2StateVector& x0, const std::vector<Se2Reference>& refs);
@@ -75,6 +79,7 @@ class UnicycleNmpcSolver {
     std::array<double, UNICYCLE_NMPC_NU> input_upper_bounds_{{2.0, 2.5}};
     std::array<double, 1> speed_lower_bound_{{-1.5}};
     std::array<double, 1> speed_upper_bound_{{3.0}};
+    NmpcCostWeights weights_{};
     Se2ControlVector optimal_control_{Se2ControlVector::Zero()};
     double predicted_speed_{0.0};
 };

@@ -24,7 +24,7 @@ class CostWeights:
     position: np.ndarray = field(default_factory=lambda: np.array([20.0, 20.0]))
     yaw: float = 8.0
     speed: float = 4.0
-    control: np.ndarray = field(default_factory=lambda: np.array([0.05, 0.08]))
+    control: np.ndarray = field(default_factory=lambda: np.array([0.4, 4.0]))
     terminal_position: np.ndarray = field(default_factory=lambda: np.array([60.0, 60.0]))
     terminal_yaw: float = 20.0
     terminal_speed: float = 10.0

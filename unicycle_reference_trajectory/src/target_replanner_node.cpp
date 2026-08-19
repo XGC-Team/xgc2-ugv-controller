@@ -297,7 +297,7 @@ bool TargetReplannerNode::handleShuttle(const ros::Time& now) {
         shuttleEntryPose(state_.x, state_.y, shuttle_x_, lo, hi, entry_x, entry_y);
         xgc2_math::trajectory::Se2TargetState2 goal;
         goal.position = Eigen::Vector2d(entry_x, entry_y);
-        goal.yaw = shuttleYawAlongPlusY();
+        goal.yaw = shuttleNearestRailYaw(state_.yaw);
         goal.speed = 0.0;
         ok = publishPlan(start, goal);
         if (!ok) {
@@ -317,8 +317,8 @@ bool TargetReplannerNode::handleShuttle(const ros::Time& now) {
             shuttle_goal_y_ = entry_y;
             ROS_INFO(
                 "[TargetReplannerNode] Shuttle entry pose "
-                "from=(%.2f, %.2f, %.2f) to=(%.2f, %.2f, +Y)",
-                state_.x, state_.y, state_.yaw, entry_x, entry_y);
+                "from=(%.2f, %.2f, %.2f) to=(%.2f, %.2f, yaw=%.2f)",
+                state_.x, state_.y, state_.yaw, entry_x, entry_y, goal.yaw);
         }
     }
     if (!ok) {
@@ -340,6 +340,7 @@ bool TargetReplannerNode::publishShuttleLeg(double y_goal) {
     request.sample_dt = planner_options_.sample_dt > 1.0e-4 ? planner_options_.sample_dt : 0.02;
     request.hold_duration =
         planner_options_.hold_duration >= 0.0 ? planner_options_.hold_duration : 0.3;
+    request.rail_yaw = shuttleNearestRailYaw(state_.yaw);
 
     std::vector<ShuttleSample> samples;
     if (!buildShuttleLeg(request, samples) || samples.empty()) {
@@ -381,8 +382,9 @@ bool TargetReplannerNode::publishShuttleLeg(double y_goal) {
     last_plan_duration_ = samples.back().t;
     ROS_INFO(
         "[TargetReplannerNode] Published shuttle leg id=%u samples=%zu x=%.2f y=%.2f->%.2f "
-        "speed=%.2f yaw=+Y no-uturn",
-        msg.trajectory_id, msg.points.size(), shuttle_x_, state_.y, y_goal, shuttle_speed_);
+        "speed=%.2f rail_yaw=%.2f",
+        msg.trajectory_id, msg.points.size(), shuttle_x_, state_.y, y_goal, shuttle_speed_,
+        request.rail_yaw);
     return true;
 }
 

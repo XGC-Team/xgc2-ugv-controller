@@ -33,6 +33,17 @@
     <arg name="max_angular_speed" default="2.5"/>
     <arg name="max_linear_acceleration" default="2.0"/>
 
+    <arg name="nmpc_weight_position_x" default="20.0"/>
+    <arg name="nmpc_weight_position_y" default="20.0"/>
+    <arg name="nmpc_weight_yaw" default="8.0"/>
+    <arg name="nmpc_weight_speed" default="4.0"/>
+    <arg name="nmpc_weight_accel" default="0.4"/>
+    <arg name="nmpc_weight_omega" default="4.0"/>
+    <arg name="nmpc_weight_terminal_position_x" default="60.0"/>
+    <arg name="nmpc_weight_terminal_position_y" default="60.0"/>
+    <arg name="nmpc_weight_terminal_yaw" default="20.0"/>
+    <arg name="nmpc_weight_terminal_speed" default="10.0"/>
+
     <group ns="$(arg ns)">
         <node pkg="unicycle_ugv_controller"
               type="unicycle_ugv_controller_node"
@@ -63,6 +74,16 @@
             <param name="limits/max_linear_speed" value="$(arg max_linear_speed)"/>
             <param name="limits/max_angular_speed" value="$(arg max_angular_speed)"/>
             <param name="limits/max_linear_acceleration" value="$(arg max_linear_acceleration)"/>
+            <param name="nmpc/weights/position_x" value="$(arg nmpc_weight_position_x)"/>
+            <param name="nmpc/weights/position_y" value="$(arg nmpc_weight_position_y)"/>
+            <param name="nmpc/weights/yaw" value="$(arg nmpc_weight_yaw)"/>
+            <param name="nmpc/weights/speed" value="$(arg nmpc_weight_speed)"/>
+            <param name="nmpc/weights/accel" value="$(arg nmpc_weight_accel)"/>
+            <param name="nmpc/weights/omega" value="$(arg nmpc_weight_omega)"/>
+            <param name="nmpc/weights/terminal_position_x" value="$(arg nmpc_weight_terminal_position_x)"/>
+            <param name="nmpc/weights/terminal_position_y" value="$(arg nmpc_weight_terminal_position_y)"/>
+            <param name="nmpc/weights/terminal_yaw" value="$(arg nmpc_weight_terminal_yaw)"/>
+            <param name="nmpc/weights/terminal_speed" value="$(arg nmpc_weight_terminal_speed)"/>
         </node>
     </group>
 </launch>

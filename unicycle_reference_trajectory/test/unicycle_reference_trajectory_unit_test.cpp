@@ -120,11 +120,44 @@ TEST(ShuttleLeg, MinusYUsesReverseWithoutChangingYaw) {
     EXPECT_NEAR(samples.back().y, -2.0, 1e-6);
 }
 
-TEST(ShuttleLeg, OnRailRequiresXAndPlusYYaw) {
+TEST(ShuttleLeg, FacingMinusYGoesForwardTowardMinusY) {
+    unicycle_reference_trajectory::ShuttleLegRequest request;
+    request.start_y = 2.0;
+    request.x_fixed = 0.0;
+    request.y_goal = -2.0;
+    request.desired_speed = 0.6;
+    request.max_acceleration = 1.2;
+    request.sample_dt = 0.05;
+    request.hold_duration = 0.0;
+    request.rail_yaw = unicycle_reference_trajectory::shuttleYawAlongMinusY();
+    std::vector<unicycle_reference_trajectory::ShuttleSample> samples;
+    ASSERT_TRUE(unicycle_reference_trajectory::buildShuttleLeg(request, samples));
+    ASSERT_GT(samples.size(), 8U);
+    double max_speed = 0.0;
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        EXPECT_NEAR(samples[i].yaw, request.rail_yaw, 1e-12);
+        EXPECT_GE(samples[i].speed, -1e-9);
+        max_speed = std::max(max_speed, samples[i].speed);
+    }
+    EXPECT_GT(max_speed, 0.3);
+    EXPECT_NEAR(samples.back().y, -2.0, 1e-6);
+}
+
+TEST(ShuttleLeg, NearestRailYawPicksShorterTurn) {
+    const double plus = unicycle_reference_trajectory::shuttleYawAlongPlusY();
+    const double minus = unicycle_reference_trajectory::shuttleYawAlongMinusY();
+    EXPECT_NEAR(unicycle_reference_trajectory::shuttleNearestRailYaw(-1.62), minus, 1e-12);
+    EXPECT_NEAR(unicycle_reference_trajectory::shuttleNearestRailYaw(1.20), plus, 1e-12);
+    EXPECT_NEAR(unicycle_reference_trajectory::shuttleNearestRailYaw(0.0), plus, 1e-12);
+}
+
+TEST(ShuttleLeg, OnRailRequiresXAndRailAxisYaw) {
     const double rail = 1.0;
-    const double yaw = unicycle_reference_trajectory::shuttleYawAlongPlusY();
-    EXPECT_TRUE(unicycle_reference_trajectory::shuttleOnRail(1.0, yaw, rail, 0.25, 0.4));
-    EXPECT_FALSE(unicycle_reference_trajectory::shuttleOnRail(2.0, yaw, rail, 0.25, 0.4));
+    const double plus = unicycle_reference_trajectory::shuttleYawAlongPlusY();
+    const double minus = unicycle_reference_trajectory::shuttleYawAlongMinusY();
+    EXPECT_TRUE(unicycle_reference_trajectory::shuttleOnRail(1.0, plus, rail, 0.25, 0.4));
+    EXPECT_TRUE(unicycle_reference_trajectory::shuttleOnRail(1.0, minus, rail, 0.25, 0.4));
+    EXPECT_FALSE(unicycle_reference_trajectory::shuttleOnRail(2.0, plus, rail, 0.25, 0.4));
     EXPECT_FALSE(unicycle_reference_trajectory::shuttleOnRail(1.0, 0.0, rail, 0.25, 0.4));
     EXPECT_TRUE(unicycle_reference_trajectory::shuttleOnRailX(1.1, rail, 0.25));
     EXPECT_FALSE(unicycle_reference_trajectory::shuttleOnRailX(2.0, rail, 0.25));
@@ -178,6 +211,9 @@ TEST(ShuttleLeg, OffRailUsesFeasibleApproachOnRailUsesReverse) {
     EXPECT_EQ(unicycle_reference_trajectory::shuttleTrackMode(1.0, 0.0, rail, 0.25, 0.4),
               unicycle_reference_trajectory::ShuttleTrackMode::FeasibleApproach);
     EXPECT_EQ(unicycle_reference_trajectory::shuttleTrackMode(1.0, plus_y, rail, 0.25, 0.4),
+              unicycle_reference_trajectory::ShuttleTrackMode::ReverseRail);
+    EXPECT_EQ(unicycle_reference_trajectory::shuttleTrackMode(
+                  1.0, unicycle_reference_trajectory::shuttleYawAlongMinusY(), rail, 0.25, 0.4),
               unicycle_reference_trajectory::ShuttleTrackMode::ReverseRail);
 }
 
@@ -258,7 +294,7 @@ TEST(ShuttleLeg, AnyPoseWithinThirtyMetresPlansOntoTheRail) {
                 EXPECT_NEAR(samples.back().x, rail, 1e-6);
                 EXPECT_NEAR(samples.back().y, entry_y, 1e-6);
                 EXPECT_NEAR(samples.back().yaw,
-                            unicycle_reference_trajectory::shuttleYawAlongPlusY(), 1e-9);
+                            unicycle_reference_trajectory::shuttleNearestRailYaw(yaw), 1e-9);
                 EXPECT_NEAR(samples.back().speed, 0.0, 1e-9);
                 EXPECT_GT(samples.back().t, 0.0);
                 EXPECT_LE(samples.back().t, 90.0);
@@ -282,6 +318,7 @@ TEST(ShuttleLeg, FieldOffRailPosesMeetEntryGates) {
         {-12.47, 7.60, 0.05, 5.0},
         {-15.75, 7.49, 1.19, 5.0},
         {-13.00, 1.20, 0.05, 1.2},
+        {-13.56, 6.92, -1.62, 5.0},
     };
     for (const Case& c : cases) {
         std::vector<unicycle_reference_trajectory::ShuttleSample> samples;
@@ -294,7 +331,7 @@ TEST(ShuttleLeg, FieldOffRailPosesMeetEntryGates) {
         EXPECT_NEAR(entry_y, c.entry_y, 1e-12);
         EXPECT_NEAR(samples.back().x, -13.0, 1e-6);
         EXPECT_NEAR(samples.back().y, c.entry_y, 1e-6);
-        EXPECT_NEAR(samples.back().yaw, unicycle_reference_trajectory::shuttleYawAlongPlusY(),
+        EXPECT_NEAR(samples.back().yaw, unicycle_reference_trajectory::shuttleNearestRailYaw(c.yaw),
                     1e-9);
     }
 }

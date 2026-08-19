@@ -38,7 +38,8 @@ void NmpcTrackingBackend::configure(const ControllerConfig& config) {
     config_ = config;
     bounds_configured_ =
         solver_.configureBounds(config_.min_linear_speed, config_.max_linear_speed,
-                                config_.max_linear_acceleration, config_.max_angular_speed);
+                                config_.max_linear_acceleration, config_.max_angular_speed) &&
+        solver_.configureWeights(config_.nmpc_weights);
     if (!bounds_configured_) {
         status_ = -103;
     }

@@ -43,7 +43,7 @@ bool UnicycleNmpcSolver::initialize() {
         return false;
     }
     initialized_ = true;
-    if (!applyRuntimeBounds()) {
+    if (!applyRuntimeBounds() || !applyRuntimeWeights()) {
         cleanup();
         return false;
     }
@@ -80,6 +80,33 @@ bool UnicycleNmpcSolver::configureBounds(double min_linear_speed, double max_lin
     }
     resetWarmStart();
     return applyRuntimeBounds();
+}
+
+bool UnicycleNmpcSolver::configureWeights(const NmpcCostWeights& weights) {
+    if (!std::isfinite(weights.position_x) || weights.position_x <= 0.0 ||
+        !std::isfinite(weights.position_y) || weights.position_y <= 0.0 ||
+        !std::isfinite(weights.yaw) || weights.yaw <= 0.0 || !std::isfinite(weights.speed) ||
+        weights.speed <= 0.0 || !std::isfinite(weights.accel) || weights.accel <= 0.0 ||
+        !std::isfinite(weights.omega) || weights.omega <= 0.0 ||
+        !std::isfinite(weights.terminal_position_x) || weights.terminal_position_x <= 0.0 ||
+        !std::isfinite(weights.terminal_position_y) || weights.terminal_position_y <= 0.0 ||
+        !std::isfinite(weights.terminal_yaw) || weights.terminal_yaw <= 0.0 ||
+        !std::isfinite(weights.terminal_speed) || weights.terminal_speed <= 0.0) {
+        ROS_ERROR(
+            "[UnicycleNmpcSolver] Invalid NMPC weights pos=[%.3f, %.3f] yaw=%.3f speed=%.3f "
+            "u=[%.3f, %.3f] terminal_pos=[%.3f, %.3f] terminal_yaw=%.3f terminal_speed=%.3f",
+            weights.position_x, weights.position_y, weights.yaw, weights.speed, weights.accel,
+            weights.omega, weights.terminal_position_x, weights.terminal_position_y,
+            weights.terminal_yaw, weights.terminal_speed);
+        return false;
+    }
+    const bool changed = weights_ != weights;
+    weights_ = weights;
+    if (!changed || !capsule_) {
+        return true;
+    }
+    resetWarmStart();
+    return applyRuntimeWeights();
 }
 
 void UnicycleNmpcSolver::resetWarmStart() {
@@ -162,6 +189,46 @@ bool UnicycleNmpcSolver::applyRuntimeBounds() {
     ROS_INFO("[UnicycleNmpcSolver] Runtime bounds speed=[%.3f, %.3f] accel=%.3f omega=%.3f",
              speed_lower_bound_[0], speed_upper_bound_[0], input_upper_bounds_[0],
              input_upper_bounds_[1]);
+    return true;
+}
+
+bool UnicycleNmpcSolver::applyRuntimeWeights() {
+    if (!capsule_) {
+        return false;
+    }
+    ocp_nlp_config* config = unicycle_nmpc_acados_get_nlp_config(capsule_);
+    ocp_nlp_dims* dims = unicycle_nmpc_acados_get_nlp_dims(capsule_);
+    ocp_nlp_in* in = unicycle_nmpc_acados_get_nlp_in(capsule_);
+
+    std::array<double, UNICYCLE_NMPC_NY * UNICYCLE_NMPC_NY> stage_w{};
+    stage_w[0 + UNICYCLE_NMPC_NY * 0] = weights_.position_x;
+    stage_w[1 + UNICYCLE_NMPC_NY * 1] = weights_.position_y;
+    stage_w[2 + UNICYCLE_NMPC_NY * 2] = weights_.yaw;
+    stage_w[3 + UNICYCLE_NMPC_NY * 3] = weights_.speed;
+    stage_w[4 + UNICYCLE_NMPC_NY * 4] = weights_.accel;
+    stage_w[5 + UNICYCLE_NMPC_NY * 5] = weights_.omega;
+
+    std::array<double, UNICYCLE_NMPC_NYN * UNICYCLE_NMPC_NYN> terminal_w{};
+    terminal_w[0 + UNICYCLE_NMPC_NYN * 0] = weights_.terminal_position_x;
+    terminal_w[1 + UNICYCLE_NMPC_NYN * 1] = weights_.terminal_position_y;
+    terminal_w[2 + UNICYCLE_NMPC_NYN * 2] = weights_.terminal_yaw;
+    terminal_w[3 + UNICYCLE_NMPC_NYN * 3] = weights_.terminal_speed;
+
+    int status = 0;
+    for (int i = 0; i < UNICYCLE_NMPC_N; ++i) {
+        status |= ocp_nlp_cost_model_set(config, dims, in, i, "W", stage_w.data());
+    }
+    status |= ocp_nlp_cost_model_set(config, dims, in, UNICYCLE_NMPC_N, "W", terminal_w.data());
+    if (status != 0) {
+        ROS_ERROR("[UnicycleNmpcSolver] Failed to apply runtime NMPC weights");
+        return false;
+    }
+    ROS_INFO(
+        "[UnicycleNmpcSolver] Runtime weights pos=[%.3f, %.3f] yaw=%.3f speed=%.3f "
+        "u=[%.3f, %.3f] terminal_pos=[%.3f, %.3f] terminal_yaw=%.3f terminal_speed=%.3f",
+        weights_.position_x, weights_.position_y, weights_.yaw, weights_.speed, weights_.accel,
+        weights_.omega, weights_.terminal_position_x, weights_.terminal_position_y,
+        weights_.terminal_yaw, weights_.terminal_speed);
     return true;
 }
 
