@@ -31,6 +31,7 @@ nmpc:
     speed: 4.0
     accel: 0.4
     omega: 10.0
+    angular_accel: 1.0
     terminal_position_x: 60.0
     terminal_position_y: 60.0
     terminal_yaw: 20.0
@@ -41,4 +42,6 @@ limits:
   max_linear_speed: 3.0
   max_angular_speed: 2.5
   max_linear_acceleration: 2.0
+  # 2026-08-21 Scout bag: realized 0.1 s yaw acceleration p95 was about 2.94 rad/s^2.
+  max_angular_acceleration: 3.0
   # Shuttle rail uses signed v (reverse). Do not raise min_linear_speed to 0.

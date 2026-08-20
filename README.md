@@ -41,7 +41,18 @@ roslaunch unicycle_reference_trajectory ugv_unicycle_target_replanner.launch \
   shuttle_x:=0.0 shuttle_y_min:=-2.0 shuttle_y_max:=2.0 shuttle_speed:=0.5
 ```
 
-NMPC stage cost is nonlinear LS. All ten weights are ROS params and
+The runtime model keeps yaw rate as a state and commands angular acceleration:
+
+```text
+x = [x, y, yaw, speed, omega]
+u = [linear_accel, angular_accel]
+```
+
+This makes `omega` continuous between shooting stages. Both its magnitude and
+its rate of change are part of the optimization; `max_angular_acceleration`
+also prevents a one-stage full-lock sign flip.
+
+NMPC stage cost is nonlinear LS. All eleven weights are ROS params and
 `roslaunch` args (`nmpc_weight_omega:=6` and so on). They are read
 once when the node starts. Tune with launch args or `rosparam`, restart
 the controller, then freeze the keepers into yaml and the launch defaults.
@@ -61,6 +72,7 @@ rosparam get /ugv1/unicycle_ugv_controller/nmpc/weights
 | `nmpc/weights/speed` | `nmpc_weight_speed` | 4 |
 | `nmpc/weights/accel` | `nmpc_weight_accel` | 0.4 |
 | `nmpc/weights/omega` | `nmpc_weight_omega` | 10 |
+| `nmpc/weights/angular_accel` | `nmpc_weight_angular_accel` | 1 |
 | `nmpc/weights/terminal_position_x` | `nmpc_weight_terminal_position_x` | 60 |
 | `nmpc/weights/terminal_position_y` | `nmpc_weight_terminal_position_y` | 60 |
 | `nmpc/weights/terminal_yaw` | `nmpc_weight_terminal_yaw` | 20 |
@@ -68,6 +80,9 @@ rosparam get /ugv1/unicycle_ugv_controller/nmpc/weights
 
 Default `ω` is `10.0` (was `0.08`, then `4.0`). The old ratio made a saturated
 yaw-rate cheaper than a few centimeters of cross-track.
+Default `max_angular_acceleration` is `3.0 rad/s²`; it is an engineering value
+selected from the 2026-08-21 Scout field bag, whose realized 0.1 s yaw-rate
+finite-difference p95 was about `2.94 rad/s²`.
 
 ## Control-state modes
 

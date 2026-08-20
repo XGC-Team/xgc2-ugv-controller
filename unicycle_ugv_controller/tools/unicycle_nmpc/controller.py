@@ -13,6 +13,8 @@ import numpy as np
 class Bounds:
     a_min: float = -2.0
     a_max: float = 2.0
+    alpha_min: float = -3.0
+    alpha_max: float = 3.0
     omega_min: float = -2.5
     omega_max: float = 2.5
     v_min: float = -1.5
@@ -24,7 +26,8 @@ class CostWeights:
     position: np.ndarray = field(default_factory=lambda: np.array([20.0, 20.0]))
     yaw: float = 8.0
     speed: float = 4.0
-    control: np.ndarray = field(default_factory=lambda: np.array([0.4, 4.0]))
+    omega: float = 10.0
+    control: np.ndarray = field(default_factory=lambda: np.array([0.4, 1.0]))
     terminal_position: np.ndarray = field(default_factory=lambda: np.array([60.0, 60.0]))
     terminal_yaw: float = 20.0
     terminal_speed: float = 10.0
@@ -116,7 +119,7 @@ class AcadosUnicycleNMPC:
         import casadi as ca
         from acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
 
-        nx = 4
+        nx = 5
         nu = 2
         np_param = nx + nu
         x = ca.SX.sym("x", nx)
@@ -124,14 +127,23 @@ class AcadosUnicycleNMPC:
         u = ca.SX.sym("u", nu)
         p = ca.SX.sym("p", np_param)
 
-        px, py, yaw, speed = x[0], x[1], x[2], x[3]
-        accel, omega = u[0], u[1]
-        f_expl = ca.vertcat(speed * ca.cos(yaw), speed * ca.sin(yaw), omega, accel)
+        px, py, yaw, speed, omega = x[0], x[1], x[2], x[3], x[4]
+        accel, angular_accel = u[0], u[1]
+        f_expl = ca.vertcat(
+            speed * ca.cos(yaw), speed * ca.sin(yaw), omega, accel, angular_accel
+        )
 
-        xref = p[0:4]
-        uref = p[4:6]
+        xref = p[0:5]
+        uref = p[5:7]
         yaw_error = ca.atan2(ca.sin(x[2] - xref[2]), ca.cos(x[2] - xref[2]))
-        y_expr = ca.vertcat(x[0] - xref[0], x[1] - xref[1], yaw_error, x[3] - xref[3], u - uref)
+        y_expr = ca.vertcat(
+            x[0] - xref[0],
+            x[1] - xref[1],
+            yaw_error,
+            x[3] - xref[3],
+            x[4] - xref[4],
+            u - uref,
+        )
         y_expr_e = ca.vertcat(x[0] - xref[0], x[1] - xref[1], yaw_error, x[3] - xref[3])
 
         model = AcadosModel()
@@ -164,23 +176,29 @@ class AcadosUnicycleNMPC:
         ocp.cost.cost_type = "NONLINEAR_LS"
         ocp.cost.cost_type_e = "NONLINEAR_LS"
         ocp.cost.W = np.diag(
-            np.concatenate((self.weights.position, [self.weights.yaw, self.weights.speed], self.weights.control))
+            np.concatenate(
+                (
+                    self.weights.position,
+                    [self.weights.yaw, self.weights.speed, self.weights.omega],
+                    self.weights.control,
+                )
+            )
         )
         ocp.cost.W_e = np.diag(
             np.concatenate((self.weights.terminal_position, [self.weights.terminal_yaw, self.weights.terminal_speed]))
         )
-        ocp.cost.yref = np.zeros(6)
+        ocp.cost.yref = np.zeros(7)
         ocp.cost.yref_e = np.zeros(4)
         ocp.constraints.x0 = np.zeros(nx)
-        ocp.constraints.lbu = np.array([self.bounds.a_min, self.bounds.omega_min])
-        ocp.constraints.ubu = np.array([self.bounds.a_max, self.bounds.omega_max])
+        ocp.constraints.lbu = np.array([self.bounds.a_min, self.bounds.alpha_min])
+        ocp.constraints.ubu = np.array([self.bounds.a_max, self.bounds.alpha_max])
         ocp.constraints.idxbu = np.array([0, 1])
-        ocp.constraints.idxbx = np.array([3])
-        ocp.constraints.lbx = np.array([self.bounds.v_min])
-        ocp.constraints.ubx = np.array([self.bounds.v_max])
-        ocp.constraints.idxbx_e = np.array([3])
-        ocp.constraints.lbx_e = np.array([self.bounds.v_min])
-        ocp.constraints.ubx_e = np.array([self.bounds.v_max])
+        ocp.constraints.idxbx = np.array([3, 4])
+        ocp.constraints.lbx = np.array([self.bounds.v_min, self.bounds.omega_min])
+        ocp.constraints.ubx = np.array([self.bounds.v_max, self.bounds.omega_max])
+        ocp.constraints.idxbx_e = np.array([3, 4])
+        ocp.constraints.lbx_e = np.array([self.bounds.v_min, self.bounds.omega_min])
+        ocp.constraints.ubx_e = np.array([self.bounds.v_max, self.bounds.omega_max])
         ocp.parameter_values = np.zeros(np_param)
         ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_HPIPM"
         ocp.solver_options.qp_solver_cond_N = min(5, self.config.steps)

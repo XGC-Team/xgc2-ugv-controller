@@ -36,13 +36,13 @@
 #include "acados_c/ocp_nlp_interface.h"
 #include "acados_c/external_function_interface.h"
 
-#define UNICYCLE_NMPC_NX     4
+#define UNICYCLE_NMPC_NX     5
 #define UNICYCLE_NMPC_NZ     0
 #define UNICYCLE_NMPC_NU     2
-#define UNICYCLE_NMPC_NP     6
+#define UNICYCLE_NMPC_NP     7
 #define UNICYCLE_NMPC_NP_GLOBAL     0
-#define UNICYCLE_NMPC_NBX    1
-#define UNICYCLE_NMPC_NBX0   4
+#define UNICYCLE_NMPC_NBX    2
+#define UNICYCLE_NMPC_NBX0   5
 #define UNICYCLE_NMPC_NBU    2
 #define UNICYCLE_NMPC_NSBX   0
 #define UNICYCLE_NMPC_NSBU   0
@@ -59,10 +59,10 @@
 #define UNICYCLE_NMPC_NS0    0
 #define UNICYCLE_NMPC_NSN    0
 #define UNICYCLE_NMPC_NG     0
-#define UNICYCLE_NMPC_NBXN   1
+#define UNICYCLE_NMPC_NBXN   2
 #define UNICYCLE_NMPC_NGN    0
-#define UNICYCLE_NMPC_NY0    6
-#define UNICYCLE_NMPC_NY     6
+#define UNICYCLE_NMPC_NY0    7
+#define UNICYCLE_NMPC_NY     7
 #define UNICYCLE_NMPC_NYN    4
 #define UNICYCLE_NMPC_N      10
 #define UNICYCLE_NMPC_NH     0
@@ -99,7 +99,6 @@ typedef struct unicycle_nmpc_solver_capsule
     // dynamics
 
     external_function_external_param_casadi *expl_vde_forw;
-    external_function_external_param_casadi *expl_vde_forw_p;
     external_function_external_param_casadi *expl_ode_fun;
     external_function_external_param_casadi *expl_vde_adj;
 
@@ -166,6 +165,7 @@ ACADOS_SYMBOL_EXPORT int unicycle_nmpc_acados_setup_qp_matrices_and_factorize(un
 ACADOS_SYMBOL_EXPORT int unicycle_nmpc_acados_free(unicycle_nmpc_solver_capsule * capsule);
 ACADOS_SYMBOL_EXPORT void unicycle_nmpc_acados_print_stats(unicycle_nmpc_solver_capsule * capsule);
 ACADOS_SYMBOL_EXPORT int unicycle_nmpc_acados_custom_update(unicycle_nmpc_solver_capsule* capsule, double* data, int data_len);
+
 
 ACADOS_SYMBOL_EXPORT ocp_nlp_in *unicycle_nmpc_acados_get_nlp_in(unicycle_nmpc_solver_capsule * capsule);
 ACADOS_SYMBOL_EXPORT ocp_nlp_out *unicycle_nmpc_acados_get_nlp_out(unicycle_nmpc_solver_capsule * capsule);

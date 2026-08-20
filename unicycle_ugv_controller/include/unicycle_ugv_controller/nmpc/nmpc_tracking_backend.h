@@ -23,7 +23,7 @@ class NmpcTrackingBackend {
     double solveTimeMs() const {
         return solve_time_ms_;
     }
-    const std::array<Se2StateVector, UNICYCLE_NMPC_N + 1>& predictedStates() const {
+    const std::array<NmpcStateVector, UNICYCLE_NMPC_N + 1>& predictedStates() const {
         return solver_.predictedStates();
     }
     size_t predictedStateCount() const {

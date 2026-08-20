@@ -10,7 +10,7 @@
 namespace unicycle_ugv_controller {
 namespace {
 
-geometry_msgs::Pose poseFromState(const Se2StateVector& state) {
+geometry_msgs::Pose poseFromState(const NmpcStateVector& state) {
     geometry_msgs::Pose pose;
     pose.position.x = state(0);
     pose.position.y = state(1);

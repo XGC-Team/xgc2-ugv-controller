@@ -54,9 +54,6 @@ const int *unicycle_nmpc_expl_vde_forw_sparsity_out(int);
 int unicycle_nmpc_expl_vde_forw_n_in(void);
 int unicycle_nmpc_expl_vde_forw_n_out(void);
 
-// explicit param-direction forward VDE
-
-
 // explicit adjoint VDE
 int unicycle_nmpc_expl_vde_adj(const real_t** arg, real_t** res, int* iw, real_t* w, void *mem);
 int unicycle_nmpc_expl_vde_adj_work(int *, int *, int *, int *);

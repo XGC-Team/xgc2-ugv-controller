@@ -15,9 +15,9 @@ extern "C" {
 namespace unicycle_ugv_controller {
 
 namespace control = xgc2_math::control;
-using Se2ControlVector = control::Se2ControlVector;
+using NmpcControlVector = Eigen::Matrix<double, UNICYCLE_NMPC_NU, 1>;
+using NmpcStateVector = Eigen::Matrix<double, UNICYCLE_NMPC_NX, 1>;
 using Se2Reference = control::Se2Reference;
-using Se2StateVector = control::Se2StateVector;
 
 class UnicycleNmpcSolver {
    public:
@@ -29,16 +29,20 @@ class UnicycleNmpcSolver {
 
     bool initialize();
     bool configureBounds(double min_linear_speed, double max_linear_speed,
-                         double max_linear_acceleration, double max_angular_speed);
+                         double max_linear_acceleration, double max_angular_speed,
+                         double max_angular_acceleration);
     bool configureWeights(const NmpcCostWeights& weights);
     void resetWarmStart();
-    bool solve(const Se2StateVector& x0, const std::vector<Se2Reference>& refs);
+    bool solve(const NmpcStateVector& x0, const std::vector<Se2Reference>& refs);
 
-    Se2ControlVector optimalControl() const {
+    NmpcControlVector optimalControl() const {
         return optimal_control_;
     }
     double predictedSpeed() const {
         return predicted_speed_;
+    }
+    double predictedAngularSpeed() const {
+        return predicted_angular_speed_;
     }
     int status() const {
         return solver_status_;
@@ -46,7 +50,7 @@ class UnicycleNmpcSolver {
     double solveTimeMs() const {
         return solve_time_ms_;
     }
-    const std::array<Se2StateVector, UNICYCLE_NMPC_N + 1>& predictedStates() const {
+    const std::array<NmpcStateVector, UNICYCLE_NMPC_N + 1>& predictedStates() const {
         return x_solution_;
     }
     size_t predictedStateCount() const {
@@ -59,9 +63,9 @@ class UnicycleNmpcSolver {
    private:
     bool applyRuntimeBounds();
     bool applyRuntimeWeights();
-    bool setInitialState(const Se2StateVector& x0);
+    bool setInitialState(const NmpcStateVector& x0);
     bool setReference(int stage, const Se2Reference& ref);
-    void setGuesses(const Se2StateVector& x0, const std::vector<Se2Reference>& refs);
+    void setGuesses(const NmpcStateVector& x0, const std::vector<Se2Reference>& refs);
     void readSolution();
     void shiftWarmStart();
     void cleanup();
@@ -71,17 +75,18 @@ class UnicycleNmpcSolver {
     bool have_warm_start_{false};
     int solver_status_{-1};
     double solve_time_ms_{0.0};
-    std::array<Se2StateVector, UNICYCLE_NMPC_N + 1> x_guess_{};
-    std::array<Se2ControlVector, UNICYCLE_NMPC_N> u_guess_{};
-    std::array<Se2StateVector, UNICYCLE_NMPC_N + 1> x_solution_{};
-    std::array<Se2ControlVector, UNICYCLE_NMPC_N> u_solution_{};
-    std::array<double, UNICYCLE_NMPC_NU> input_lower_bounds_{{-2.0, -2.5}};
-    std::array<double, UNICYCLE_NMPC_NU> input_upper_bounds_{{2.0, 2.5}};
-    std::array<double, 1> speed_lower_bound_{{-1.5}};
-    std::array<double, 1> speed_upper_bound_{{3.0}};
+    std::array<NmpcStateVector, UNICYCLE_NMPC_N + 1> x_guess_{};
+    std::array<NmpcControlVector, UNICYCLE_NMPC_N> u_guess_{};
+    std::array<NmpcStateVector, UNICYCLE_NMPC_N + 1> x_solution_{};
+    std::array<NmpcControlVector, UNICYCLE_NMPC_N> u_solution_{};
+    std::array<double, UNICYCLE_NMPC_NU> input_lower_bounds_{{-2.0, -3.0}};
+    std::array<double, UNICYCLE_NMPC_NU> input_upper_bounds_{{2.0, 3.0}};
+    std::array<double, 2> state_lower_bounds_{{-1.5, -2.5}};
+    std::array<double, 2> state_upper_bounds_{{3.0, 2.5}};
     NmpcCostWeights weights_{};
-    Se2ControlVector optimal_control_{Se2ControlVector::Zero()};
+    NmpcControlVector optimal_control_{NmpcControlVector::Zero()};
     double predicted_speed_{0.0};
+    double predicted_angular_speed_{0.0};
 };
 
 }  // namespace unicycle_ugv_controller

@@ -243,7 +243,7 @@ static ocp_nlp_dims* unicycle_nmpc_acados_create_setup_dimensions(unicycle_nmpc_
     nsbx[0] = 0;
     ns[0] = NS0;
     
-    nbxe[0] = 4;
+    nbxe[0] = 5;
     
     ny[0] = NY0;
     nh[0] = NH0;
@@ -354,8 +354,6 @@ void unicycle_nmpc_acados_create_setup_functions(unicycle_nmpc_solver_capsule* c
         for (int i = 0; i < N; i++) {
             MAP_CASADI_FNC(expl_vde_forw[i], unicycle_nmpc_expl_vde_forw);
         }
-
-        
 
         capsule->expl_ode_fun = (external_function_external_param_casadi *) malloc(sizeof(external_function_external_param_casadi)*N);
         for (int i = 0; i < N; i++) {
@@ -470,7 +468,6 @@ void unicycle_nmpc_acados_setup_nlp_in(unicycle_nmpc_solver_capsule* capsule, co
     for (int i = 0; i < N; i++)
     {
         ocp_nlp_dynamics_model_set_external_param_fun(nlp_config, nlp_dims, nlp_in, i, "expl_vde_forw", &capsule->expl_vde_forw[i]);
-        
         ocp_nlp_dynamics_model_set_external_param_fun(nlp_config, nlp_dims, nlp_in, i, "expl_ode_fun", &capsule->expl_ode_fun[i]);
         ocp_nlp_dynamics_model_set_external_param_fun(nlp_config, nlp_dims, nlp_in, i, "expl_vde_adj", &capsule->expl_vde_adj[i]);
     }
@@ -487,8 +484,9 @@ void unicycle_nmpc_acados_setup_nlp_in(unicycle_nmpc_solver_capsule* capsule, co
     W_0[1+(NY0) * 1] = 20.0;
     W_0[2+(NY0) * 2] = 8.0;
     W_0[3+(NY0) * 3] = 4.0;
-    W_0[4+(NY0) * 4] = 0.05;
-    W_0[5+(NY0) * 5] = 0.08;
+    W_0[4+(NY0) * 4] = 10.0;
+    W_0[5+(NY0) * 5] = 0.4;
+    W_0[6+(NY0) * 6] = 1.0;
     ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, 0, "W", W_0);
     free(W_0);
     double* yref = calloc(NY, sizeof(double));
@@ -505,8 +503,9 @@ void unicycle_nmpc_acados_setup_nlp_in(unicycle_nmpc_solver_capsule* capsule, co
     W[1+(NY) * 1] = 20.0;
     W[2+(NY) * 2] = 8.0;
     W[3+(NY) * 3] = 4.0;
-    W[4+(NY) * 4] = 0.05;
-    W[5+(NY) * 5] = 0.08;
+    W[4+(NY) * 4] = 10.0;
+    W[5+(NY) * 5] = 0.4;
+    W[6+(NY) * 6] = 1.0;
 
     for (int i = 1; i < N; i++)
     {
@@ -551,6 +550,7 @@ void unicycle_nmpc_acados_setup_nlp_in(unicycle_nmpc_solver_capsule* capsule, co
     idxbx0[1] = 1;
     idxbx0[2] = 2;
     idxbx0[3] = 3;
+    idxbx0[4] = 4;
 
     double* lubx0 = calloc(2*NBX0, sizeof(double));
     double* lbx0 = lubx0;
@@ -563,11 +563,12 @@ void unicycle_nmpc_acados_setup_nlp_in(unicycle_nmpc_solver_capsule* capsule, co
     free(idxbx0);
     free(lubx0);
     // idxbxe_0
-    int* idxbxe_0 = malloc(4 * sizeof(int));
+    int* idxbxe_0 = malloc(5 * sizeof(int));
     idxbxe_0[0] = 0;
     idxbxe_0[1] = 1;
     idxbxe_0[2] = 2;
     idxbxe_0[3] = 3;
+    idxbxe_0[4] = 4;
     ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, nlp_out, 0, "idxbxe", idxbxe_0);
     free(idxbxe_0);
 
@@ -592,8 +593,8 @@ void unicycle_nmpc_acados_setup_nlp_in(unicycle_nmpc_solver_capsule* capsule, co
     double* ubu = lubu + NBU;
     lbu[0] = -2.0;
     ubu[0] = 2.0;
-    lbu[1] = -2.5;
-    ubu[1] = 2.5;
+    lbu[1] = -3.0;
+    ubu[1] = 3.0;
 
     for (int i = 0; i < N; i++)
     {
@@ -614,11 +615,14 @@ void unicycle_nmpc_acados_setup_nlp_in(unicycle_nmpc_solver_capsule* capsule, co
     // x
     int* idxbx = malloc(NBX * sizeof(int));
     idxbx[0] = 3;
+    idxbx[1] = 4;
     double* lubx = calloc(2*NBX, sizeof(double));
     double* lbx = lubx;
     double* ubx = lubx + NBX;
     lbx[0] = -1.5;
     ubx[0] = 3.0;
+    lbx[1] = -2.5;
+    ubx[1] = 2.5;
 
     for (int i = 1; i < N; i++)
     {
@@ -647,11 +651,14 @@ void unicycle_nmpc_acados_setup_nlp_in(unicycle_nmpc_solver_capsule* capsule, co
     // x
     int* idxbx_e = malloc(NBXN * sizeof(int));
     idxbx_e[0] = 3;
+    idxbx_e[1] = 4;
     double* lubx_e = calloc(2*NBXN, sizeof(double));
     double* lbx_e = lubx_e;
     double* ubx_e = lubx_e + NBXN;
     lbx_e[0] = -1.5;
     ubx_e[0] = 3.0;
+    lbx_e[1] = -2.5;
+    ubx_e[1] = 2.5;
     ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, nlp_out, N, "idxbx", idxbx_e);
     ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, nlp_out, N, "lbx", lbx_e);
     ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, nlp_out, N, "ubx", ubx_e);
@@ -973,7 +980,7 @@ int unicycle_nmpc_acados_update_params(unicycle_nmpc_solver_capsule* capsule, in
 {
     int solver_status = 0;
 
-    int casadi_np = 6;
+    int casadi_np = 7;
     if (casadi_np != np) {
         printf("acados_update_params: trying to set %i parameters for external functions."
             " External function has %i parameters. Exiting.\n", np, casadi_np);
@@ -1044,13 +1051,11 @@ int unicycle_nmpc_acados_free(unicycle_nmpc_solver_capsule* capsule)
     for (int i = 0; i < N; i++)
     {
         external_function_external_param_casadi_free(&capsule->expl_vde_forw[i]);
-        
         external_function_external_param_casadi_free(&capsule->expl_ode_fun[i]);
         external_function_external_param_casadi_free(&capsule->expl_vde_adj[i]);
     }
     free(capsule->expl_vde_adj);
     free(capsule->expl_vde_forw);
-    
     free(capsule->expl_ode_fun);
 
     // cost

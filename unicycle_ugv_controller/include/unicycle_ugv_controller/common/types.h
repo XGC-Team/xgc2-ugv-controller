@@ -21,6 +21,7 @@ struct NmpcCostWeights {
     double speed{4.0};
     double accel{0.4};
     double omega{10.0};
+    double angular_accel{1.0};
     double terminal_position_x{60.0};
     double terminal_position_y{60.0};
     double terminal_yaw{20.0};
@@ -30,7 +31,8 @@ struct NmpcCostWeights {
 inline bool operator==(const NmpcCostWeights& lhs, const NmpcCostWeights& rhs) {
     return lhs.position_x == rhs.position_x && lhs.position_y == rhs.position_y &&
            lhs.yaw == rhs.yaw && lhs.speed == rhs.speed && lhs.accel == rhs.accel &&
-           lhs.omega == rhs.omega && lhs.terminal_position_x == rhs.terminal_position_x &&
+           lhs.omega == rhs.omega && lhs.angular_accel == rhs.angular_accel &&
+           lhs.terminal_position_x == rhs.terminal_position_x &&
            lhs.terminal_position_y == rhs.terminal_position_y &&
            lhs.terminal_yaw == rhs.terminal_yaw && lhs.terminal_speed == rhs.terminal_speed;
 }
@@ -55,6 +57,7 @@ struct ControllerConfig {
     double min_linear_speed{-1.5};
     double max_angular_speed{2.5};
     double max_linear_acceleration{2.0};
+    double max_angular_acceleration{3.0};
     NmpcCostWeights nmpc_weights{};
 };
 
