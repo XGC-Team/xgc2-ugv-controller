@@ -444,7 +444,8 @@ TEST(UnicycleUgvControllerRuntime, ResetCommandMovesReadyToResetThenTimeoutRetur
     goal.valid = true;
     controller.setResetTarget(goal);
 
-    ::state_machine::Event reset(event_type::RESET_REQUESTED, ::state_machine::EventTimestamp{1.02});
+    ::state_machine::Event reset(event_type::RESET_REQUESTED,
+                                 ::state_machine::EventTimestamp{1.02});
     reset.source = "test";
     ASSERT_TRUE(controller.postEvent(std::move(reset)).ok());
     controller.update(1.02);
@@ -482,7 +483,8 @@ TEST(UnicycleUgvControllerRuntime, ResetArrivesWithLooseResidualThenReturnsReady
     goal.yaw = 0.0;
     goal.valid = true;
     controller.setResetTarget(goal);
-    ::state_machine::Event reset(event_type::RESET_REQUESTED, ::state_machine::EventTimestamp{1.02});
+    ::state_machine::Event reset(event_type::RESET_REQUESTED,
+                                 ::state_machine::EventTimestamp{1.02});
     reset.source = "test";
     ASSERT_TRUE(controller.postEvent(std::move(reset)).ok());
     controller.update(1.02);

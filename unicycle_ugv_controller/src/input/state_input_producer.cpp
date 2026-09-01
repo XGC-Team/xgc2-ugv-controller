@@ -11,8 +11,8 @@ StateInputProducer::StateInputProducer(ros::NodeHandle& nh, UgvState& state,
                                        const std::string& vrpn_pose_topic,
                                        const std::string& vrpn_twist_topic,
                                        const std::string& platform_pose_topic,
-                                       const std::string& platform_twist_topic, EventSink event_sink,
-                                       uint32_t queue_size)
+                                       const std::string& platform_twist_topic,
+                                       EventSink event_sink, uint32_t queue_size)
     : state_(state), state_source_(state_source), event_sink_(std::move(event_sink)) {
     if (state_source_ == StateSource::VRPN_DIRECT) {
         vrpn_pose_sub_ =

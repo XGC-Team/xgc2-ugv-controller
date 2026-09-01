@@ -13,7 +13,9 @@ class MecanumUgvController;
 class ResetState final : public ::state_machine::State {
    public:
     explicit ResetState(MecanumUgvController& controller);
-    std::string name() const override { return "Reset"; }
+    std::string name() const override {
+        return "Reset";
+    }
     ::state_machine::ActionResult onEnter(::state_machine::StateContext& ctx) override;
     ::state_machine::ActionResult onTick(::state_machine::StateContext& ctx) override;
     ::state_machine::ActionResult onExit(::state_machine::StateContext& ctx) override;

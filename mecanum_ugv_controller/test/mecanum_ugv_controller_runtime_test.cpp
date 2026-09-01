@@ -93,7 +93,8 @@ TEST(MecanumUgvControllerRuntime, ResetTimeoutReturnsReady) {
     goal.y = 0.0;
     goal.valid = true;
     controller.setResetTarget(goal);
-    ::state_machine::Event reset(event_type::RESET_REQUESTED, ::state_machine::EventTimestamp{1.02});
+    ::state_machine::Event reset(event_type::RESET_REQUESTED,
+                                 ::state_machine::EventTimestamp{1.02});
     reset.source = "test";
     ASSERT_TRUE(controller.postEvent(std::move(reset)).ok());
     controller.update(1.02);
@@ -126,7 +127,8 @@ TEST(MecanumUgvControllerRuntime, ResetArrivesWithLooseResidualThenReturnsReady)
     goal.yaw = 0.0;
     goal.valid = true;
     controller.setResetTarget(goal);
-    ::state_machine::Event reset(event_type::RESET_REQUESTED, ::state_machine::EventTimestamp{1.02});
+    ::state_machine::Event reset(event_type::RESET_REQUESTED,
+                                 ::state_machine::EventTimestamp{1.02});
     reset.source = "test";
     ASSERT_TRUE(controller.postEvent(std::move(reset)).ok());
     controller.update(1.02);
@@ -162,8 +164,8 @@ TEST(MecanumUgvControllerRuntime, TrackCommandRotatesWorldVelocityIntoBodyForwar
     const HolonomicTrackOutput output = computeHolonomicTrackCommand(state, reference, config);
     EXPECT_NEAR(output.linear_x, 0.0, 1.0e-6);
     EXPECT_NEAR(output.linear_y, -1.0, 1.0e-6);
-    EXPECT_NEAR(output.angular_z, headingRateToTarget(state.yaw, 0.0, config.track_kp_yaw,
-                                                      config.track_max_yaw_rate),
+    EXPECT_NEAR(output.angular_z,
+                headingRateToTarget(state.yaw, 0.0, config.track_kp_yaw, config.track_max_yaw_rate),
                 1.0e-6);
 }
 
@@ -182,7 +184,8 @@ TEST(MecanumUgvControllerRuntime, TrackingFollowsCustomThenHoldCommandReturnsHol
     reference.vx = 0.4;
     reference.stamp = ros::Time(1.0);
     controller.setWorldReference(reference);
-    ::state_machine::Event track(event_type::TRACKING_REQUESTED, ::state_machine::EventTimestamp{1.02});
+    ::state_machine::Event track(event_type::TRACKING_REQUESTED,
+                                 ::state_machine::EventTimestamp{1.02});
     track.source = "test";
     ASSERT_TRUE(controller.postEvent(std::move(track)).ok());
     state.stamp = ros::Time(1.02);

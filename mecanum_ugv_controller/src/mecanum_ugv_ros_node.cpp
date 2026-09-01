@@ -1,18 +1,19 @@
-#include "mecanum_ugv_controller/mecanum_ugv_controller.h"
-
-#include <algorithm>
-#include <cctype>
-#include <cmath>
 #include <geometry_msgs/Pose2D.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
 #include <geometry_msgs/TwistStamped.h>
-#include <memory>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
 #include <std_msgs/UInt32.h>
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <memory>
 #include <string>
 #include <utility>
+
+#include "mecanum_ugv_controller/mecanum_ugv_controller.h"
 
 namespace mecanum_ugv_controller {
 namespace {
@@ -46,8 +47,8 @@ class MecanumUgvRosNode {
         pose_sub_ = nh_.subscribe(pose_topic_, queue_size_, &MecanumUgvRosNode::poseCallback, this);
         twist_sub_ =
             nh_.subscribe(twist_topic_, queue_size_, &MecanumUgvRosNode::twistCallback, this);
-        reset_pose_sub_ =
-            nh_.subscribe(reset_pose_topic_, queue_size_, &MecanumUgvRosNode::resetPoseCallback, this);
+        reset_pose_sub_ = nh_.subscribe(reset_pose_topic_, queue_size_,
+                                        &MecanumUgvRosNode::resetPoseCallback, this);
         reference_twist_sub_ = nh_.subscribe(reference_twist_topic_, queue_size_,
                                              &MecanumUgvRosNode::referenceTwistCallback, this);
         ROS_INFO("[MecanumUgvRosNode] pose=%s twist=%s reset_pose=%s reference=%s cmd_vel=%s",
@@ -94,7 +95,8 @@ class MecanumUgvRosNode {
                           config_.placement_idle_silent);
         private_nh_.param("auto_start_tracking", config_.auto_start_tracking,
                           config_.auto_start_tracking);
-        private_nh_.param("reference_timeout", config_.reference_timeout, config_.reference_timeout);
+        private_nh_.param("reference_timeout", config_.reference_timeout,
+                          config_.reference_timeout);
         private_nh_.param("heading_target_yaw", config_.heading_target_yaw,
                           config_.heading_target_yaw);
         private_nh_.param("track/kp_yaw", config_.track_kp_yaw, config_.track_kp_yaw);
@@ -184,7 +186,8 @@ class MecanumUgvRosNode {
     }
 
     void resetPoseCallback(const geometry_msgs::Pose2D::ConstPtr& msg) {
-        if (!msg || !std::isfinite(msg->x) || !std::isfinite(msg->y) || !std::isfinite(msg->theta)) {
+        if (!msg || !std::isfinite(msg->x) || !std::isfinite(msg->y) ||
+            !std::isfinite(msg->theta)) {
             return;
         }
         ResetTarget target;

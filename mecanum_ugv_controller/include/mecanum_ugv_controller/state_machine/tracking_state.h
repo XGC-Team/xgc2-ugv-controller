@@ -13,7 +13,9 @@ class MecanumUgvController;
 class TrackingState final : public ::state_machine::State {
    public:
     explicit TrackingState(MecanumUgvController& controller);
-    std::string name() const override { return "Tracking"; }
+    std::string name() const override {
+        return "Tracking";
+    }
     ::state_machine::ActionResult onEnter(::state_machine::StateContext& ctx) override;
     ::state_machine::ActionResult onTick(::state_machine::StateContext& ctx) override;
     ::state_machine::ActionResult onExit(::state_machine::StateContext& ctx) override;

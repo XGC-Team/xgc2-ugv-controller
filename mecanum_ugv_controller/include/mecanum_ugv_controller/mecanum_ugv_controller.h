@@ -13,11 +13,17 @@ class MecanumUgvController {
     explicit MecanumUgvController(const UgvState& state);
     void update(double now_sec);
     ::state_machine::Status postEvent(::state_machine::Event event);
-    const UgvState& state() const { return state_; }
-    double currentTime() const { return current_time_sec_; }
+    const UgvState& state() const {
+        return state_;
+    }
+    double currentTime() const {
+        return current_time_sec_;
+    }
     ControllerConfig config() const;
     void setConfig(const ControllerConfig& config);
-    ::state_machine::StateMachine& stateMachine() { return *machine_; }
+    ::state_machine::StateMachine& stateMachine() {
+        return *machine_;
+    }
     bool healthReady() const;
     bool resetTargetReady() const;
     void setResetTarget(ResetTarget target);

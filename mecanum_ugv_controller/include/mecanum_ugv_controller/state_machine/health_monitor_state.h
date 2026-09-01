@@ -9,7 +9,9 @@ class MecanumUgvController;
 class HealthMonitorState final : public ::state_machine::State {
    public:
     explicit HealthMonitorState(MecanumUgvController& controller);
-    std::string name() const override { return "HealthMonitor"; }
+    std::string name() const override {
+        return "HealthMonitor";
+    }
     ::state_machine::ActionResult onTick(::state_machine::StateContext& ctx) override;
 
    private:

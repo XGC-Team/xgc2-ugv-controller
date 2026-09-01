@@ -73,14 +73,13 @@ UnicycleResetOutput computeUnicycleResetCommand(const UgvState& state, const Res
             speed = -speed;
         }
         output.linear_speed = clamp(speed, -config.reset_max_speed, config.reset_max_speed);
-        output.angular_speed =
-            clamp(config.reset_kp_heading * heading_err, -config.reset_max_yaw_rate,
-                  config.reset_max_yaw_rate);
+        output.angular_speed = clamp(config.reset_kp_heading * heading_err,
+                                     -config.reset_max_yaw_rate, config.reset_max_yaw_rate);
         return output;
     }
     output.linear_speed = 0.0;
-    output.angular_speed =
-        clamp(config.reset_kp_heading * yaw_err, -config.reset_max_yaw_rate, config.reset_max_yaw_rate);
+    output.angular_speed = clamp(config.reset_kp_heading * yaw_err, -config.reset_max_yaw_rate,
+                                 config.reset_max_yaw_rate);
     return output;
 }
 

@@ -67,8 +67,10 @@ HolonomicResetOutput computeHolonomicResetCommand(const UgvState& state, const R
     const double ey = goal.y - state.y;
     const double dist = std::hypot(ex, ey);
     const double yaw_err = wrapAngle(goal.yaw - state.yaw);
-    const double v_wx = clamp(config.reset_kp_xy * ex, -config.reset_max_speed, config.reset_max_speed);
-    const double v_wy = clamp(config.reset_kp_xy * ey, -config.reset_max_speed, config.reset_max_speed);
+    const double v_wx =
+        clamp(config.reset_kp_xy * ex, -config.reset_max_speed, config.reset_max_speed);
+    const double v_wy =
+        clamp(config.reset_kp_xy * ey, -config.reset_max_speed, config.reset_max_speed);
     worldVelocityToBody(state.yaw, v_wx, v_wy, output.linear_x, output.linear_y);
     output.angular_z =
         clamp(config.reset_kp_yaw * yaw_err, -config.reset_max_yaw_rate, config.reset_max_yaw_rate);
@@ -95,8 +97,8 @@ HolonomicTrackOutput computeHolonomicTrackCommand(const UgvState& state,
         output.linear_x *= scale;
         output.linear_y *= scale;
     }
-    output.angular_z = headingRateToTarget(state.yaw, config.heading_target_yaw, config.track_kp_yaw,
-                                           config.track_max_yaw_rate);
+    output.angular_z = headingRateToTarget(state.yaw, config.heading_target_yaw,
+                                           config.track_kp_yaw, config.track_max_yaw_rate);
     return output;
 }
 

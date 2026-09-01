@@ -61,8 +61,9 @@ void ResetState::emitCommand(::state_machine::StateContext& ctx, const ControlCo
         return;
     }
     controller_.setCommand(command);
-    ctx.emitOutput(::state_machine::Event(output_event_type::PUBLISH_CMD_VEL,
-                                          ::state_machine::EventTimestamp{controller_.currentTime()}));
+    ctx.emitOutput(
+        ::state_machine::Event(output_event_type::PUBLISH_CMD_VEL,
+                               ::state_machine::EventTimestamp{controller_.currentTime()}));
 }
 
 void ResetState::emitZero(::state_machine::StateContext& ctx) {

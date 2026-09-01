@@ -1,14 +1,13 @@
+#include <utility>
+
+#include "mecanum_ugv_controller/common/types.h"
+#include "mecanum_ugv_controller/mecanum_ugv_controller.h"
 #include "mecanum_ugv_controller/state_machine/health_monitor_state.h"
 #include "mecanum_ugv_controller/state_machine/hold_state.h"
 #include "mecanum_ugv_controller/state_machine/ready_state.h"
 #include "mecanum_ugv_controller/state_machine/reset_state.h"
 #include "mecanum_ugv_controller/state_machine/self_check_state.h"
 #include "mecanum_ugv_controller/state_machine/tracking_state.h"
-
-#include "mecanum_ugv_controller/common/types.h"
-#include "mecanum_ugv_controller/mecanum_ugv_controller.h"
-
-#include <utility>
 
 namespace mecanum_ugv_controller {
 namespace {
@@ -165,8 +164,9 @@ void ResetState::emitCommand(::state_machine::StateContext& ctx, const ControlCo
         return;
     }
     controller_.setCommand(command);
-    ctx.emitOutput(::state_machine::Event(output_event_type::PUBLISH_CMD_VEL,
-                                          ::state_machine::EventTimestamp{controller_.currentTime()}));
+    ctx.emitOutput(
+        ::state_machine::Event(output_event_type::PUBLISH_CMD_VEL,
+                               ::state_machine::EventTimestamp{controller_.currentTime()}));
 }
 
 void ResetState::emitZero(::state_machine::StateContext& ctx) {
@@ -227,8 +227,9 @@ void TrackingState::emitCommand(::state_machine::StateContext& ctx, const Contro
         return;
     }
     controller_.setCommand(command);
-    ctx.emitOutput(::state_machine::Event(output_event_type::PUBLISH_CMD_VEL,
-                                          ::state_machine::EventTimestamp{controller_.currentTime()}));
+    ctx.emitOutput(
+        ::state_machine::Event(output_event_type::PUBLISH_CMD_VEL,
+                               ::state_machine::EventTimestamp{controller_.currentTime()}));
 }
 
 void TrackingState::emitZero(::state_machine::StateContext& ctx) {
