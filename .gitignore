@@ -5,3 +5,4 @@ install/
 install-root/
 debs/
 *.deb
+__pycache__/
