@@ -21,6 +21,13 @@
     <arg name="reference_timeout" default="0.5"/>
     <arg name="command_publish_rate_hz" default="100.0"/>
     <arg name="auto_start_tracking" default="false"/>
+    <arg name="placement_idle_silent" default="false"/>
+    <arg name="platform_pose_topic" default="pose"/>
+    <arg name="platform_twist_topic" default="twist"/>
+    <arg name="reset_pose_topic" default="reset_pose"/>
+    <arg name="reset_timeout" default="45.0"/>
+    <arg name="reset_arrive_position" default="0.40"/>
+    <arg name="reset_arrive_yaw" default="0.60"/>
 
     <arg name="nmpc_control_period" default="0.1"/>
     <arg name="nmpc_prediction_horizon" default="1.0"/>
@@ -67,6 +74,13 @@
             <param name="reference_timeout" value="$(arg reference_timeout)"/>
             <param name="command_publish_rate_hz" value="$(arg command_publish_rate_hz)"/>
             <param name="auto_start_tracking" value="$(arg auto_start_tracking)"/>
+            <param name="placement_idle_silent" value="$(arg placement_idle_silent)"/>
+            <param name="platform_pose_topic" value="$(arg platform_pose_topic)"/>
+            <param name="platform_twist_topic" value="$(arg platform_twist_topic)"/>
+            <param name="reset_pose_topic" value="$(arg reset_pose_topic)"/>
+            <param name="reset/timeout" value="$(arg reset_timeout)"/>
+            <param name="reset/arrive_position" value="$(arg reset_arrive_position)"/>
+            <param name="reset/arrive_yaw" value="$(arg reset_arrive_yaw)"/>
             <param name="nmpc/control_period" value="$(arg nmpc_control_period)"/>
             <param name="nmpc/prediction_horizon" value="$(arg nmpc_prediction_horizon)"/>
             <param name="nmpc/request_rate_hz" value="$(arg nmpc_request_rate_hz)"/>

@@ -1,0 +1,31 @@
+#pragma once
+
+#include <state_machine/state_machine.hpp>
+#include <string>
+
+#include "mecanum_ugv_controller/common/types.h"
+#include "mecanum_ugv_controller/state_machine/periodic_gate.h"
+
+namespace mecanum_ugv_controller {
+
+class MecanumUgvController;
+
+class TrackingState final : public ::state_machine::State {
+   public:
+    explicit TrackingState(MecanumUgvController& controller);
+    std::string name() const override { return "Tracking"; }
+    ::state_machine::ActionResult onEnter(::state_machine::StateContext& ctx) override;
+    ::state_machine::ActionResult onTick(::state_machine::StateContext& ctx) override;
+    ::state_machine::ActionResult onExit(::state_machine::StateContext& ctx) override;
+
+   private:
+    void emitCommand(::state_machine::StateContext& ctx, const ControlCommand& command);
+    void emitZero(::state_machine::StateContext& ctx);
+    void postLost(::state_machine::StateContext& ctx);
+
+    MecanumUgvController& controller_;
+    PeriodicGate command_gate_;
+    bool had_reference_{false};
+};
+
+}  // namespace mecanum_ugv_controller

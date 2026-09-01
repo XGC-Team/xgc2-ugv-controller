@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="ns" default="ugv1"/>
+    <arg name="config_file" default="$(find mecanum_ugv_controller)/config/mecanum_ugv_controller.yaml"/>
+    <arg name="pose_topic" default="pose"/>
+    <arg name="twist_topic" default="twist"/>
+    <arg name="reset_pose_topic" default="reset_pose"/>
+    <arg name="reference_twist_topic" default="alg/reference/twist"/>
+    <arg name="cmd_vel_topic" default="cmd_vel"/>
+    <arg name="placement_idle_silent" default="true"/>
+    <arg name="heading_target_yaw" default="0.0"/>
+    <arg name="auto_start_tracking" default="false"/>
+    <group ns="$(arg ns)">
+        <node pkg="mecanum_ugv_controller"
+              type="mecanum_ugv_controller_node"
+              name="mecanum_ugv_controller"
+              output="screen">
+            <rosparam command="load" file="$(arg config_file)"/>
+            <param name="pose_topic" value="$(arg pose_topic)"/>
+            <param name="twist_topic" value="$(arg twist_topic)"/>
+            <param name="reset_pose_topic" value="$(arg reset_pose_topic)"/>
+            <param name="reference_twist_topic" value="$(arg reference_twist_topic)"/>
+            <param name="cmd_vel_topic" value="$(arg cmd_vel_topic)"/>
+            <param name="placement_idle_silent" value="$(arg placement_idle_silent)"/>
+            <param name="heading_target_yaw" value="$(arg heading_target_yaw)"/>
+            <param name="auto_start_tracking" value="$(arg auto_start_tracking)"/>
+        </node>
+    </group>
+</launch>

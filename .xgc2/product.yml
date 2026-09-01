@@ -10,6 +10,7 @@ ros:
   packages:
   - unicycle_reference_trajectory
   - unicycle_ugv_controller
+  - mecanum_ugv_controller
 apt:
   distribution: bionic,focal
   install:
@@ -46,6 +47,8 @@ usage:
 
     roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch
 
+    roslaunch --files mecanum_ugv_controller ugv_mecanum_reset_controller.launch
+
     '
 ownership:
   paths:
@@ -63,6 +66,12 @@ ownership:
   - /opt/ros/noetic/lib/unicycle_reference_trajectory
   - /opt/ros/noetic/lib/unicycle_ugv_controller
   - /opt/ros/noetic/lib/libunicycle_ugv_controller_nmpc_runtime.so
+  - /opt/ros/melodic/share/mecanum_ugv_controller
+  - /opt/ros/melodic/include/mecanum_ugv_controller
+  - /opt/ros/melodic/lib/mecanum_ugv_controller
+  - /opt/ros/noetic/share/mecanum_ugv_controller
+  - /opt/ros/noetic/include/mecanum_ugv_controller
+  - /opt/ros/noetic/lib/mecanum_ugv_controller
 release:
   dependency_policy:
     libxgc2-math-dev: rebuild

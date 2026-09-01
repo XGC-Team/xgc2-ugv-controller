@@ -12,6 +12,7 @@ namespace unicycle_ugv_controller {
 enum class StateSource {
     STATE_ESTIMATOR = 0,
     VRPN_DIRECT = 1,
+    PLATFORM_POSE = 2,
 };
 
 struct NmpcCostWeights {
@@ -52,7 +53,18 @@ struct ControllerConfig {
     double command_publish_rate_hz{100.0};
     double nmpc_request_rate_hz{100.0};
     bool auto_start_tracking{false};
+    bool placement_idle_silent{false};
     StateSource state_source{StateSource::STATE_ESTIMATOR};
+    double reset_timeout{45.0};
+    double reset_arrive_position{0.40};
+    double reset_arrive_yaw{0.60};
+    double reset_settle_speed{0.08};
+    double reset_settle_yaw_rate{0.12};
+    double reset_kp_along{0.8};
+    double reset_kp_heading{1.2};
+    double reset_max_speed{0.6};
+    double reset_max_yaw_rate{0.8};
+    int reset_settle_frames{8};
     double max_linear_speed{3.0};
     double min_linear_speed{-1.5};
     double max_angular_speed{2.5};
@@ -80,6 +92,24 @@ struct ControlCommand {
     bool valid{false};
 };
 
+struct ResetTarget {
+    double x{0.0};
+    double y{0.0};
+    double yaw{0.0};
+    bool valid{false};
+};
+
+struct UnicycleResetOutput {
+    double linear_speed{0.0};
+    double angular_speed{0.0};
+    bool position_ok{false};
+    bool yaw_ok{false};
+    bool settled{false};
+};
+
+UnicycleResetOutput computeUnicycleResetCommand(const UgvState& state, const ResetTarget& goal,
+                                                const ControllerConfig& config);
+
 struct NmpcSolveResult {
     uint64_t sequence{0U};
     ros::Time stamp;
@@ -95,6 +125,7 @@ constexpr uint32_t SelfCheck = 1;
 constexpr uint32_t Ready = 2;
 constexpr uint32_t Tracking = 3;
 constexpr uint32_t Hold = 4;
+constexpr uint32_t Reset = 5;
 }  // namespace state_type
 
 namespace region_type {
@@ -106,7 +137,10 @@ namespace event_type {
 constexpr uint32_t TRACKING_REQUESTED = 1;
 constexpr uint32_t HOLD_REQUESTED = 2;
 constexpr uint32_t RESET_REQUESTED = 3;
+constexpr uint32_t RESET_ARRIVED = 4;
+constexpr uint32_t RESET_TIMEOUT = 5;
 constexpr uint32_t INPUT_STATE_UPDATED = 20;
+constexpr uint32_t INPUT_RESET_TARGET_UPDATED = 25;
 constexpr uint32_t INPUT_REFERENCE_UPDATED = 21;
 constexpr uint32_t INPUT_REFERENCE_LOST = 22;
 constexpr uint32_t INPUT_NMPC_SOLVE_SUCCEEDED = 23;

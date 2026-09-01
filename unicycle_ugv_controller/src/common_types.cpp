@@ -1,6 +1,10 @@
 #include <algorithm>
 #include <cmath>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 #include "unicycle_ugv_controller/common/types.h"
 
 namespace unicycle_ugv_controller {
@@ -39,6 +43,45 @@ bool stateFresh(const UgvState& state, const ros::Time& now, double timeout) {
 
 double clamp(double value, double min_value, double max_value) {
     return std::max(min_value, std::min(max_value, value));
+}
+
+UnicycleResetOutput computeUnicycleResetCommand(const UgvState& state, const ResetTarget& goal,
+                                                const ControllerConfig& config) {
+    UnicycleResetOutput output;
+    if (!goal.valid || !finiteState(state)) {
+        return output;
+    }
+    const double ex = goal.x - state.x;
+    const double ey = goal.y - state.y;
+    const double dist = std::hypot(ex, ey);
+    const double path_yaw = std::atan2(ey, ex);
+    const double forward_err = wrapAngle(path_yaw - state.yaw);
+    const double reverse_err = wrapAngle(path_yaw + M_PI - state.yaw);
+    const bool reverse =
+        dist > config.reset_arrive_position && std::fabs(reverse_err) < std::fabs(forward_err);
+    const double heading_err = reverse ? reverse_err : forward_err;
+    const double yaw_err = wrapAngle(goal.yaw - state.yaw);
+    output.position_ok = dist <= config.reset_arrive_position;
+    output.yaw_ok = std::fabs(yaw_err) <= config.reset_arrive_yaw;
+    output.settled = output.position_ok && output.yaw_ok &&
+                     std::fabs(state.speed) <= config.reset_settle_speed &&
+                     std::fabs(state.yaw_rate) <= config.reset_settle_yaw_rate;
+    if (!output.position_ok) {
+        const double align = clamp(std::cos(heading_err), 0.0, 1.0);
+        double speed = config.reset_kp_along * dist * align;
+        if (reverse) {
+            speed = -speed;
+        }
+        output.linear_speed = clamp(speed, -config.reset_max_speed, config.reset_max_speed);
+        output.angular_speed =
+            clamp(config.reset_kp_heading * heading_err, -config.reset_max_yaw_rate,
+                  config.reset_max_yaw_rate);
+        return output;
+    }
+    output.linear_speed = 0.0;
+    output.angular_speed =
+        clamp(config.reset_kp_heading * yaw_err, -config.reset_max_yaw_rate, config.reset_max_yaw_rate);
+    return output;
 }
 
 }  // namespace unicycle_ugv_controller

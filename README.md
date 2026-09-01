@@ -7,7 +7,12 @@ Packages:
 - `unicycle_reference_trajectory`: planar reference trajectory messages,
   generation runtime, and ROS publishers.
 - `unicycle_ugv_controller`: unicycle-model UGV NMPC controller publishing
-  `geometry_msgs/Twist`.
+  `geometry_msgs/Twist`. Includes a `Reset` placement state that drives to an
+  Experiment `initialPose` using a unicycle rail approach.
+- `mecanum_ugv_controller`: holonomic chassis tracker. `Reset` drives to an
+  Experiment `initialPose`. `Tracking` holds heading on world X (`yaw=0`) and
+  converts a Custom-algorithm world-frame integrator velocity into body
+  `vx` (forward) / `vy` (left). The algorithm does not publish `cmd_vel`.
 
 ## Install
 
@@ -22,6 +27,7 @@ sudo apt install ros-noetic-xgc2-ugv-controller
 source /opt/ros/noetic/setup.bash
 roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch
 roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch
+roslaunch --files mecanum_ugv_controller ugv_mecanum_reset_controller.launch
 ```
 
 ## Shuttle rail (no U-turn)

@@ -167,12 +167,14 @@ add_executable(${PROJECT_NAME}_node
   src/unicycle_ugv_ros_node.cpp
   src/input/command_input_producer.cpp
   src/input/reference_input_producer.cpp
+  src/input/reset_target_input_producer.cpp
   src/input/state_input_producer.cpp
   src/output/cmd_vel_output_consumer.cpp
   src/output/nmpc_output_consumer.cpp
   src/state_machine/health_monitor_state.cpp
   src/state_machine/self_check_state.cpp
   src/state_machine/ready_state.cpp
+  src/state_machine/reset_state.cpp
   src/state_machine/tracking_state.cpp
   src/state_machine/hold_state.cpp)
 add_dependencies(${PROJECT_NAME}_node
@@ -214,6 +216,7 @@ if(CATKIN_ENABLE_TESTING)
     src/state_machine/health_monitor_state.cpp
     src/state_machine/self_check_state.cpp
     src/state_machine/ready_state.cpp
+    src/state_machine/reset_state.cpp
     src/state_machine/tracking_state.cpp
     src/state_machine/hold_state.cpp)
   if(TARGET unicycle_ugv_controller_runtime_test)

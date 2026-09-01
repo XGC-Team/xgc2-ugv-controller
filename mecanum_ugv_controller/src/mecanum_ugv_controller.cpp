@@ -1,20 +1,18 @@
-#include "unicycle_ugv_controller/unicycle_ugv_controller.h"
-
-#include <ros/console.h>
+#include "mecanum_ugv_controller/mecanum_ugv_controller.h"
 
 #include <cmath>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
-#include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
-#include "unicycle_ugv_controller/state_machine/health_monitor_state.h"
-#include "unicycle_ugv_controller/state_machine/hold_state.h"
-#include "unicycle_ugv_controller/state_machine/ready_state.h"
-#include "unicycle_ugv_controller/state_machine/reset_state.h"
-#include "unicycle_ugv_controller/state_machine/self_check_state.h"
-#include "unicycle_ugv_controller/state_machine/tracking_state.h"
+#include "mecanum_ugv_controller/state_machine/health_monitor_state.h"
+#include "mecanum_ugv_controller/state_machine/hold_state.h"
+#include "mecanum_ugv_controller/state_machine/ready_state.h"
+#include "mecanum_ugv_controller/state_machine/reset_state.h"
+#include "mecanum_ugv_controller/state_machine/self_check_state.h"
+#include "mecanum_ugv_controller/state_machine/tracking_state.h"
 
-namespace unicycle_ugv_controller {
+namespace mecanum_ugv_controller {
 namespace {
 
 namespace sm = ::state_machine;
@@ -27,92 +25,91 @@ void requireOk(const sm::Status& status, const char* operation) {
 
 }  // namespace
 
-UnicycleUgvController::UnicycleUgvController(const UgvState& state) : state_(state) {
+MecanumUgvController::MecanumUgvController(const UgvState& state) : state_(state) {
     setupMachine();
 }
 
-void UnicycleUgvController::update(double now_sec) {
+void MecanumUgvController::update(double now_sec) {
     current_time_sec_ = now_sec;
+    maybeAutoStartTracking();
     if (machine_) {
-        maybeAutoStartTracking();
         (void)machine_->update();
     }
 }
 
-::state_machine::Status UnicycleUgvController::postEvent(::state_machine::Event event) {
+::state_machine::Status MecanumUgvController::postEvent(::state_machine::Event event) {
     return machine_->postEvent(std::move(event));
 }
 
-ControllerConfig UnicycleUgvController::config() const {
+ControllerConfig MecanumUgvController::config() const {
     std::lock_guard<std::mutex> lock(config_mutex_);
     return config_;
 }
 
-void UnicycleUgvController::setConfig(const ControllerConfig& config) {
+void MecanumUgvController::setConfig(const ControllerConfig& config) {
     std::lock_guard<std::mutex> lock(config_mutex_);
     config_ = config;
 }
 
-bool UnicycleUgvController::healthReady() const {
-    const auto cfg = config();
-    if (!stateFresh(state_, ros::Time(current_time_sec_), cfg.state_timeout)) {
-        return false;
-    }
-    if (cfg.state_source == StateSource::VRPN_DIRECT ||
-        cfg.state_source == StateSource::PLATFORM_POSE) {
-        return finiteState(state_);
-    }
-    return rigidEstimateHealthy(state_.estimator_state, state_.estimator_flags);
+bool MecanumUgvController::healthReady() const {
+    return stateFresh(state_, ros::Time(current_time_sec_), config().state_timeout);
 }
 
-bool UnicycleUgvController::referenceReady() const {
-    const auto cfg = config();
-    return reference_cache_.valid(ros::Time(current_time_sec_), cfg.reference_timeout);
-}
-
-bool UnicycleUgvController::commandReady() const {
-    constexpr double kFutureStampTolerance = 0.05;
-    const auto cfg = config();
-    const auto current_command = command();
-    const double age = current_time_sec_ - current_command.stamp.toSec();
-    return current_command.valid && std::isfinite(current_command.linear_speed) &&
-           std::isfinite(current_command.angular_speed) && std::isfinite(age) &&
-           age >= -kFutureStampTolerance && age <= cfg.result_timeout;
-}
-
-void UnicycleUgvController::setCommand(ControlCommand command) {
-    std::lock_guard<std::mutex> lock(command_mutex_);
-    command_ = command;
-}
-
-ControlCommand UnicycleUgvController::command() const {
-    std::lock_guard<std::mutex> lock(command_mutex_);
-    return command_;
-}
-
-void UnicycleUgvController::clearCommand() {
-    std::lock_guard<std::mutex> lock(command_mutex_);
-    command_ = ControlCommand{};
-}
-
-bool UnicycleUgvController::resetTargetReady() const {
+bool MecanumUgvController::resetTargetReady() const {
     std::lock_guard<std::mutex> lock(reset_mutex_);
     return reset_target_.valid && std::isfinite(reset_target_.x) &&
            std::isfinite(reset_target_.y) && std::isfinite(reset_target_.yaw);
 }
 
-void UnicycleUgvController::setResetTarget(ResetTarget target) {
+void MecanumUgvController::setResetTarget(ResetTarget target) {
     std::lock_guard<std::mutex> lock(reset_mutex_);
     reset_target_ = target;
 }
 
-ResetTarget UnicycleUgvController::resetTarget() const {
+ResetTarget MecanumUgvController::resetTarget() const {
     std::lock_guard<std::mutex> lock(reset_mutex_);
     return reset_target_;
 }
 
-void UnicycleUgvController::setupMachine() {
-    auto builder = sm::StateMachine::builder("UnicycleUgvControllerStateMachine");
+bool MecanumUgvController::worldReferenceReady() const {
+    std::lock_guard<std::mutex> lock(reference_mutex_);
+    if (!world_reference_.valid || !std::isfinite(world_reference_.vx) ||
+        !std::isfinite(world_reference_.vy)) {
+        return false;
+    }
+    constexpr double kFutureStampTolerance = 0.05;
+    const double timeout = config().reference_timeout;
+    const double age = current_time_sec_ - world_reference_.stamp.toSec();
+    return timeout > 0.0 && std::isfinite(age) && age >= -kFutureStampTolerance && age <= timeout;
+}
+
+void MecanumUgvController::setWorldReference(WorldVelocityReference reference) {
+    std::lock_guard<std::mutex> lock(reference_mutex_);
+    world_reference_ = reference;
+}
+
+WorldVelocityReference MecanumUgvController::worldReference() const {
+    std::lock_guard<std::mutex> lock(reference_mutex_);
+    return world_reference_;
+}
+
+void MecanumUgvController::setCommand(ControlCommand command) {
+    std::lock_guard<std::mutex> lock(command_mutex_);
+    command_ = command;
+}
+
+ControlCommand MecanumUgvController::command() const {
+    std::lock_guard<std::mutex> lock(command_mutex_);
+    return command_;
+}
+
+void MecanumUgvController::clearCommand() {
+    std::lock_guard<std::mutex> lock(command_mutex_);
+    command_ = ControlCommand{};
+}
+
+void MecanumUgvController::setupMachine() {
+    auto builder = sm::StateMachine::builder("MecanumUgvControllerStateMachine");
     builder.region(region_type::HEALTH)
         .name("health")
         .order(0)
@@ -158,14 +155,34 @@ void UnicycleUgvController::setupMachine() {
         .on(event_type::HEALTH_UNHEALTHY)
         .priority(transition_priority::AUTOMATIC);
     builder.transition()
+        .from(state_type::Reset)
+        .to(state_type::SelfCheck)
+        .on(event_type::HEALTH_UNHEALTHY)
+        .priority(transition_priority::AUTOMATIC);
+    builder.transition()
         .from(state_type::Tracking)
         .to(state_type::SelfCheck)
         .on(event_type::HEALTH_UNHEALTHY)
         .priority(transition_priority::AUTOMATIC);
     builder.transition()
+        .from(state_type::Ready)
+        .to(state_type::Hold)
+        .on(event_type::HOLD_REQUESTED)
+        .priority(transition_priority::COMMAND);
+    builder.transition()
         .from(state_type::Reset)
-        .to(state_type::SelfCheck)
-        .on(event_type::HEALTH_UNHEALTHY)
+        .to(state_type::Hold)
+        .on(event_type::HOLD_REQUESTED)
+        .priority(transition_priority::COMMAND);
+    builder.transition()
+        .from(state_type::Tracking)
+        .to(state_type::Hold)
+        .on(event_type::HOLD_REQUESTED)
+        .priority(transition_priority::COMMAND);
+    builder.transition()
+        .from(state_type::Tracking)
+        .to(state_type::Hold)
+        .on(event_type::INPUT_REFERENCE_LOST)
         .priority(transition_priority::AUTOMATIC);
     builder.transition()
         .from(state_type::Ready)
@@ -178,20 +195,10 @@ void UnicycleUgvController::setupMachine() {
         .on(event_type::TRACKING_REQUESTED)
         .priority(transition_priority::COMMAND);
     builder.transition()
-        .from(state_type::Tracking)
-        .to(state_type::Hold)
-        .on(event_type::HOLD_REQUESTED)
+        .from(state_type::Reset)
+        .to(state_type::Tracking)
+        .on(event_type::TRACKING_REQUESTED)
         .priority(transition_priority::COMMAND);
-    builder.transition()
-        .from(state_type::Ready)
-        .to(state_type::Hold)
-        .on(event_type::HOLD_REQUESTED)
-        .priority(transition_priority::COMMAND);
-    builder.transition()
-        .from(state_type::Tracking)
-        .to(state_type::Hold)
-        .on(event_type::INPUT_REFERENCE_LOST)
-        .priority(transition_priority::AUTOMATIC);
     builder.transition()
         .from(state_type::Ready)
         .to(state_type::Reset)
@@ -217,20 +224,16 @@ void UnicycleUgvController::setupMachine() {
         .to(state_type::Ready)
         .on(event_type::RESET_TIMEOUT)
         .priority(transition_priority::AUTOMATIC);
-    builder.transition()
-        .from(state_type::Reset)
-        .to(state_type::Hold)
-        .on(event_type::HOLD_REQUESTED)
-        .priority(transition_priority::COMMAND);
+
     auto result = builder.build();
-    requireOk(result.status, "build UGV controller state machine");
+    requireOk(result.status, "build Mecanum controller state machine");
     machine_ = std::move(result.value);
-    requireOk(machine_->start(), "start UGV controller state machine");
+    requireOk(machine_->start(), "start Mecanum controller state machine");
 }
 
-void UnicycleUgvController::maybeAutoStartTracking() {
+void MecanumUgvController::maybeAutoStartTracking() {
     const auto cfg = config();
-    if (!cfg.auto_start_tracking || !healthReady() || !referenceReady()) {
+    if (!cfg.auto_start_tracking || !healthReady() || !worldReferenceReady() || !machine_) {
         return;
     }
     const auto control_state = machine_->currentState(region_type::CONTROL);
@@ -241,11 +244,7 @@ void UnicycleUgvController::maybeAutoStartTracking() {
                                  ::state_machine::EventTimestamp{current_time_sec_});
     event.source = "auto_start_tracking";
     event.category = ::state_machine::EventCategory::kInput;
-    const auto status = machine_->postEvent(std::move(event));
-    if (!status.ok()) {
-        ROS_WARN("[UnicycleUgvController] Failed to post auto tracking event: %s",
-                 status.message.c_str());
-    }
+    (void)machine_->postEvent(std::move(event));
 }
 
-}  // namespace unicycle_ugv_controller
+}  // namespace mecanum_ugv_controller

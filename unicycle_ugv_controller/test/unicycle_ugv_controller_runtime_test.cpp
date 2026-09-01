@@ -343,6 +343,157 @@ TEST(UnicycleUgvControllerRuntime, NmpcSolverRejectsInvalidBounds) {
     EXPECT_FALSE(solver.configureBounds(-1.5, 1.5, 2.0, 0.5235, 0.0));
 }
 
+TEST(UnicycleUgvControllerRuntime, ResetCommandDrivesForwardAlongRail) {
+    UgvState state;
+    state.x = 0.0;
+    state.y = 0.0;
+    state.yaw = 0.0;
+    state.speed = 0.0;
+    state.yaw_rate = 0.0;
+    ResetTarget goal;
+    goal.x = 2.0;
+    goal.y = 0.0;
+    goal.yaw = 0.0;
+    goal.valid = true;
+    ControllerConfig config;
+    const UnicycleResetOutput output = computeUnicycleResetCommand(state, goal, config);
+    EXPECT_FALSE(output.position_ok);
+    EXPECT_GT(output.linear_speed, 0.0);
+    EXPECT_NEAR(output.angular_speed, 0.0, 1.0e-6);
+}
+
+TEST(UnicycleUgvControllerRuntime, ResetCommandPrefersReverseWhenFacingAway) {
+    UgvState state;
+    state.x = 0.0;
+    state.y = 0.0;
+    state.yaw = 0.0;
+    state.speed = 0.0;
+    state.yaw_rate = 0.0;
+    ResetTarget goal;
+    goal.x = -2.0;
+    goal.y = 0.0;
+    goal.yaw = 0.0;
+    goal.valid = true;
+    ControllerConfig config;
+    const UnicycleResetOutput output = computeUnicycleResetCommand(state, goal, config);
+    EXPECT_LT(output.linear_speed, 0.0);
+}
+
+TEST(UnicycleUgvControllerRuntime, ResetCommandSettlesWithLoosePhysicalTolerance) {
+    UgvState state;
+    state.x = 1.25;
+    state.y = 0.10;
+    state.yaw = 0.40;
+    state.speed = 0.02;
+    state.yaw_rate = 0.01;
+    ResetTarget goal;
+    goal.x = 1.0;
+    goal.y = 0.0;
+    goal.yaw = 0.0;
+    goal.valid = true;
+    ControllerConfig config;
+    const UnicycleResetOutput output = computeUnicycleResetCommand(state, goal, config);
+    EXPECT_TRUE(output.position_ok);
+    EXPECT_TRUE(output.yaw_ok);
+    EXPECT_TRUE(output.settled);
+}
+
+TEST(UnicycleUgvControllerRuntime, PlatformPoseReadyAcceptsCanonicalTopics) {
+    ros::Time::init();
+    UgvState state;
+    state.received = true;
+    state.stamp = ros::Time(1.0);
+    state.x = 1.8;
+    state.y = 0.0;
+    state.yaw = 0.785;
+    state.speed = 0.0;
+    state.yaw_rate = 0.0;
+    UnicycleUgvController controller(state);
+    auto config = controller.config();
+    config.state_source = StateSource::PLATFORM_POSE;
+    controller.setConfig(config);
+    controller.update(1.0);
+    controller.update(1.01);
+    EXPECT_TRUE(controller.healthReady());
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+}
+
+TEST(UnicycleUgvControllerRuntime, ResetCommandMovesReadyToResetThenTimeoutReturnsReady) {
+    ros::Time::init();
+    UgvState state;
+    state.received = true;
+    state.stamp = ros::Time(1.0);
+    state.estimator_state = rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING;
+    state.estimator_flags = 0U;
+    state.x = 0.0;
+    state.y = 0.0;
+    state.yaw = 0.0;
+    UnicycleUgvController controller(state);
+    auto config = controller.config();
+    config.reset_timeout = 0.05;
+    config.placement_idle_silent = true;
+    controller.setConfig(config);
+    controller.update(1.0);
+    controller.update(1.01);
+    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+
+    ResetTarget goal;
+    goal.x = 3.0;
+    goal.y = 0.0;
+    goal.yaw = 0.0;
+    goal.valid = true;
+    controller.setResetTarget(goal);
+
+    ::state_machine::Event reset(event_type::RESET_REQUESTED, ::state_machine::EventTimestamp{1.02});
+    reset.source = "test";
+    ASSERT_TRUE(controller.postEvent(std::move(reset)).ok());
+    controller.update(1.02);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
+
+    state.stamp = ros::Time(1.10);
+    controller.update(1.10);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+}
+
+TEST(UnicycleUgvControllerRuntime, ResetArrivesWithLooseResidualThenReturnsReady) {
+    ros::Time::init();
+    UgvState state;
+    state.received = true;
+    state.stamp = ros::Time(1.0);
+    state.estimator_state = rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING;
+    state.estimator_flags = 0U;
+    state.x = 0.05;
+    state.y = -0.04;
+    state.yaw = 0.10;
+    state.speed = 0.0;
+    state.yaw_rate = 0.0;
+    UnicycleUgvController controller(state);
+    auto config = controller.config();
+    config.reset_settle_frames = 2;
+    config.command_publish_rate_hz = 100.0;
+    controller.setConfig(config);
+    controller.update(1.0);
+    controller.update(1.01);
+    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+
+    ResetTarget goal;
+    goal.x = 0.0;
+    goal.y = 0.0;
+    goal.yaw = 0.0;
+    goal.valid = true;
+    controller.setResetTarget(goal);
+    ::state_machine::Event reset(event_type::RESET_REQUESTED, ::state_machine::EventTimestamp{1.02});
+    reset.source = "test";
+    ASSERT_TRUE(controller.postEvent(std::move(reset)).ok());
+    controller.update(1.02);
+    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
+    state.stamp = ros::Time(1.03);
+    controller.update(1.03);
+    state.stamp = ros::Time(1.04);
+    controller.update(1.04);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+}
+
 TEST(UnicycleUgvControllerRuntime, NmpcSolverLimitsOneStageYawRateChange) {
     constexpr double kMaxAngularAcceleration = 0.6;
     constexpr double kStageDt = 0.1;

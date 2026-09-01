@@ -14,6 +14,22 @@ state_timeout: 0.2
 reference_timeout: 0.5
 command_publish_rate_hz: 100.0
 auto_start_tracking: false
+placement_idle_silent: false
+platform_pose_topic: "pose"
+platform_twist_topic: "twist"
+reset_pose_topic: "reset_pose"
+
+reset:
+  timeout: 45.0
+  arrive_position: 0.40
+  arrive_yaw: 0.60
+  settle_speed: 0.08
+  settle_yaw_rate: 0.12
+  kp_along: 0.8
+  kp_heading: 1.2
+  max_speed: 0.6
+  max_yaw_rate: 0.8
+  settle_frames: 8
 
 nmpc:
   control_period: 0.1

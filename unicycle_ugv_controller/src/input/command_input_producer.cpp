@@ -21,6 +21,8 @@ std::string normalize(std::string value) {
 CommandInputProducer::CommandInputProducer(ros::NodeHandle& nh, EventSink event_sink,
                                            uint32_t queue_size)
     : event_sink_(std::move(event_sink)) {
+    namespaced_command_sub_ =
+        nh.subscribe("command", queue_size, &CommandInputProducer::commandCallback, this);
     command_sub_ =
         nh.subscribe("/command", queue_size, &CommandInputProducer::commandCallback, this);
 }

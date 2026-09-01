@@ -9,13 +9,20 @@ namespace unicycle_ugv_controller {
 StateInputProducer::StateInputProducer(ros::NodeHandle& nh, UgvState& state,
                                        StateSource state_source, const std::string& state_topic,
                                        const std::string& vrpn_pose_topic,
-                                       const std::string& vrpn_twist_topic, EventSink event_sink,
+                                       const std::string& vrpn_twist_topic,
+                                       const std::string& platform_pose_topic,
+                                       const std::string& platform_twist_topic, EventSink event_sink,
                                        uint32_t queue_size)
     : state_(state), state_source_(state_source), event_sink_(std::move(event_sink)) {
     if (state_source_ == StateSource::VRPN_DIRECT) {
         vrpn_pose_sub_ =
             nh.subscribe(vrpn_pose_topic, queue_size, &StateInputProducer::vrpnPoseCallback, this);
         vrpn_twist_sub_ = nh.subscribe(vrpn_twist_topic, queue_size,
+                                       &StateInputProducer::vrpnTwistCallback, this);
+    } else if (state_source_ == StateSource::PLATFORM_POSE) {
+        vrpn_pose_sub_ = nh.subscribe(platform_pose_topic, queue_size,
+                                      &StateInputProducer::vrpnPoseCallback, this);
+        vrpn_twist_sub_ = nh.subscribe(platform_twist_topic, queue_size,
                                        &StateInputProducer::vrpnTwistCallback, this);
     } else {
         state_sub_ =
@@ -88,7 +95,9 @@ void StateInputProducer::updateVrpnState(const ros::Time& update_stamp) {
     state_.estimator_state = 0U;
     state_.estimator_flags = 0U;
     state_.received = true;
-    post(event_type::INPUT_STATE_UPDATED, "vrpn_direct", state_.stamp);
+    post(event_type::INPUT_STATE_UPDATED,
+         state_source_ == StateSource::PLATFORM_POSE ? "platform_pose" : "vrpn_direct",
+         state_.stamp);
 }
 
 void StateInputProducer::post(::state_machine::EventId id, const char* source,

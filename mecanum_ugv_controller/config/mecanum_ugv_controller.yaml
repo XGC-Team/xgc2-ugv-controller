@@ -1,0 +1,28 @@
+control_rate_hz: 50.0
+queue_size: 10
+pose_topic: "pose"
+twist_topic: "twist"
+reset_pose_topic: "reset_pose"
+cmd_vel_topic: "cmd_vel"
+state_timeout: 0.2
+command_publish_rate_hz: 50.0
+placement_idle_silent: true
+auto_start_tracking: false
+reference_timeout: 0.5
+reference_twist_topic: "alg/reference/twist"
+heading_target_yaw: 0.0
+track:
+  kp_yaw: 1.2
+  max_speed: 0.8
+  max_yaw_rate: 0.6
+reset:
+  timeout: 45.0
+  arrive_position: 0.40
+  arrive_yaw: 0.60
+  settle_speed: 0.08
+  settle_yaw_rate: 0.12
+  kp_xy: 0.8
+  kp_yaw: 1.2
+  max_speed: 0.5
+  max_yaw_rate: 0.6
+  settle_frames: 8

@@ -18,7 +18,8 @@ class StateInputProducer {
 
     StateInputProducer(ros::NodeHandle& nh, UgvState& state, StateSource state_source,
                        const std::string& state_topic, const std::string& vrpn_pose_topic,
-                       const std::string& vrpn_twist_topic, EventSink event_sink,
+                       const std::string& vrpn_twist_topic, const std::string& platform_pose_topic,
+                       const std::string& platform_twist_topic, EventSink event_sink,
                        uint32_t queue_size);
 
    private:

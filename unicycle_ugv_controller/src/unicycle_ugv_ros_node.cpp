@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "unicycle_ugv_controller/input/reset_target_input_producer.h"
 #include "unicycle_ugv_controller/output/cmd_vel_output_consumer.h"
 #include "unicycle_ugv_controller/output/nmpc_output_consumer.h"
 
@@ -41,18 +42,24 @@ UnicycleUgvRosNode::UnicycleUgvRosNode(ros::NodeHandle& nh)
     command_input_ = std::make_unique<CommandInputProducer>(nh_, post_input_event, queue_size_);
     state_input_ = std::make_unique<StateInputProducer>(
         nh_, state_, config_.state_source, state_topic_, vrpn_pose_topic_, vrpn_twist_topic_,
-        post_input_event, queue_size_);
+        platform_pose_topic_, platform_twist_topic_, post_input_event, queue_size_);
     reference_input_ = std::make_unique<ReferenceInputProducer>(
         nh_, controller_.referenceCache(), active_analytic_topic_, active_polynomial_topic_,
         active_sampled_topic_, post_input_event, queue_size_);
+    reset_target_input_ = std::make_unique<ResetTargetInputProducer>(
+        nh_, controller_, reset_pose_topic_, post_input_event, queue_size_);
 
     output_executor_.start();
     ROS_INFO(
         "[UnicycleUgvRosNode] Initialized: state_source=%s state=%s vrpn_pose=%s "
-        "vrpn_twist=%s cmd_vel=%s analytic=%s polynomial=%s "
-        "sampled=%s control_state=%s health_state=%s",
-        config_.state_source == StateSource::VRPN_DIRECT ? "vrpn_direct" : "state_estimator",
+        "vrpn_twist=%s platform_pose=%s platform_twist=%s reset_pose=%s cmd_vel=%s "
+        "analytic=%s polynomial=%s sampled=%s control_state=%s health_state=%s",
+        config_.state_source == StateSource::VRPN_DIRECT
+            ? "vrpn_direct"
+            : (config_.state_source == StateSource::PLATFORM_POSE ? "platform_pose"
+                                                                  : "state_estimator"),
         state_topic_.c_str(), vrpn_pose_topic_.c_str(), vrpn_twist_topic_.c_str(),
+        platform_pose_topic_.c_str(), platform_twist_topic_.c_str(), reset_pose_topic_.c_str(),
         cmd_vel_topic_.c_str(), active_analytic_topic_.c_str(), active_polynomial_topic_.c_str(),
         active_sampled_topic_.c_str(), control_state_topic_.c_str(), health_state_topic_.c_str());
 }
@@ -83,6 +90,8 @@ void UnicycleUgvRosNode::loadParams() {
     private_nh_.param("state_source", state_source, state_source);
     if (state_source == "vrpn_direct" || state_source == "vrpn") {
         config_.state_source = StateSource::VRPN_DIRECT;
+    } else if (state_source == "platform_pose" || state_source == "pose") {
+        config_.state_source = StateSource::PLATFORM_POSE;
     } else if (state_source == "state_estimator" || state_source == "estimator") {
         config_.state_source = StateSource::STATE_ESTIMATOR;
     } else {
@@ -90,6 +99,9 @@ void UnicycleUgvRosNode::loadParams() {
                  state_source.c_str());
         config_.state_source = StateSource::STATE_ESTIMATOR;
     }
+    private_nh_.param("platform_pose_topic", platform_pose_topic_, platform_pose_topic_);
+    private_nh_.param("platform_twist_topic", platform_twist_topic_, platform_twist_topic_);
+    private_nh_.param("reset_pose_topic", reset_pose_topic_, reset_pose_topic_);
     private_nh_.param("active_analytic_topic", active_analytic_topic_, active_analytic_topic_);
     private_nh_.param("active_polynomial_topic", active_polynomial_topic_,
                       active_polynomial_topic_);
@@ -111,6 +123,22 @@ void UnicycleUgvRosNode::loadParams() {
                       config_.command_publish_rate_hz);
     private_nh_.param("auto_start_tracking", config_.auto_start_tracking,
                       config_.auto_start_tracking);
+    private_nh_.param("placement_idle_silent", config_.placement_idle_silent,
+                      config_.placement_idle_silent);
+    private_nh_.param("reset/timeout", config_.reset_timeout, config_.reset_timeout);
+    private_nh_.param("reset/arrive_position", config_.reset_arrive_position,
+                      config_.reset_arrive_position);
+    private_nh_.param("reset/arrive_yaw", config_.reset_arrive_yaw, config_.reset_arrive_yaw);
+    private_nh_.param("reset/settle_speed", config_.reset_settle_speed, config_.reset_settle_speed);
+    private_nh_.param("reset/settle_yaw_rate", config_.reset_settle_yaw_rate,
+                      config_.reset_settle_yaw_rate);
+    private_nh_.param("reset/kp_along", config_.reset_kp_along, config_.reset_kp_along);
+    private_nh_.param("reset/kp_heading", config_.reset_kp_heading, config_.reset_kp_heading);
+    private_nh_.param("reset/max_speed", config_.reset_max_speed, config_.reset_max_speed);
+    private_nh_.param("reset/max_yaw_rate", config_.reset_max_yaw_rate, config_.reset_max_yaw_rate);
+    int settle_frames = config_.reset_settle_frames;
+    private_nh_.param("reset/settle_frames", settle_frames, settle_frames);
+    config_.reset_settle_frames = settle_frames > 0 ? settle_frames : 8;
     private_nh_.param("nmpc/request_rate_hz", config_.nmpc_request_rate_hz,
                       config_.nmpc_request_rate_hz);
     private_nh_.param("limits/max_linear_speed", config_.max_linear_speed,
@@ -174,6 +202,15 @@ void UnicycleUgvRosNode::loadParams() {
     config_.nmpc_weights.terminal_yaw = finitePositiveOr(config_.nmpc_weights.terminal_yaw, 20.0);
     config_.nmpc_weights.terminal_speed =
         finitePositiveOr(config_.nmpc_weights.terminal_speed, 10.0);
+    config_.reset_timeout = finitePositiveOr(config_.reset_timeout, 45.0);
+    config_.reset_arrive_position = finitePositiveOr(config_.reset_arrive_position, 0.40);
+    config_.reset_arrive_yaw = finitePositiveOr(config_.reset_arrive_yaw, 0.60);
+    config_.reset_settle_speed = finitePositiveOr(config_.reset_settle_speed, 0.08);
+    config_.reset_settle_yaw_rate = finitePositiveOr(config_.reset_settle_yaw_rate, 0.12);
+    config_.reset_kp_along = finitePositiveOr(config_.reset_kp_along, 0.8);
+    config_.reset_kp_heading = finitePositiveOr(config_.reset_kp_heading, 1.2);
+    config_.reset_max_speed = finitePositiveOr(config_.reset_max_speed, 0.6);
+    config_.reset_max_yaw_rate = finitePositiveOr(config_.reset_max_yaw_rate, 0.8);
     status_publish_rate_hz_ = finitePositiveOr(status_publish_rate_hz_, 10.0);
     ROS_INFO(
         "[UnicycleUgvRosNode] NMPC weights pos=[%.3f, %.3f] yaw=%.3f speed=%.3f "

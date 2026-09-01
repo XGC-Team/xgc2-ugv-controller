@@ -20,6 +20,7 @@ class CommandInputProducer {
 
     EventSink event_sink_;
     ros::Subscriber command_sub_;
+    ros::Subscriber namespaced_command_sub_;
 };
 
 }  // namespace unicycle_ugv_controller
