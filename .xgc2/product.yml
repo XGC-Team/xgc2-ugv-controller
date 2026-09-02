@@ -80,5 +80,5 @@ release:
     xgc2-ros-msgs: rebuild
     xgc2-ros1-utils: rebuild
   apt_versions:
-    bionic: 1.1.4-38
-    focal: 1.1.4-38
+    bionic: 1.1.4-39
+    focal: 1.1.4-39
