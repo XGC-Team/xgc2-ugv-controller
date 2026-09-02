@@ -21,6 +21,9 @@ SelfCheckState::SelfCheckState(UnicycleUgvController& controller) : controller_(
 
 void SelfCheckState::emitZeroCommandIfDue(::state_machine::StateContext& ctx) {
     const auto cfg = controller_.config();
+    if (cfg.placement_idle_silent) {
+        return;
+    }
     if (command_gate_.due(controller_.currentTime(), 1.0 / cfg.command_publish_rate_hz)) {
         ctx.emitOutput(
             ::state_machine::Event(output_event_type::PUBLISH_ZERO_CMD_VEL,

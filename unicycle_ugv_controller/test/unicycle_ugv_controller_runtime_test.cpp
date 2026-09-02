@@ -55,6 +55,19 @@ TEST(UnicycleUgvControllerRuntime, StartsInSelfCheckWithoutStateEstimate) {
     UnicycleUgvController controller(state);
     controller.update(1.0);
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+    EXPECT_TRUE(hasOutputEvent(controller, output_event_type::PUBLISH_ZERO_CMD_VEL));
+}
+
+TEST(UnicycleUgvControllerRuntime, SilentSelfCheckDoesNotPublishZeroCmdVel) {
+    ros::Time::init();
+    UgvState state;
+    UnicycleUgvController controller(state);
+    auto config = controller.config();
+    config.placement_idle_silent = true;
+    controller.setConfig(config);
+    controller.update(1.0);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+    EXPECT_FALSE(hasOutputEvent(controller, output_event_type::PUBLISH_ZERO_CMD_VEL));
 }
 
 TEST(UnicycleUgvControllerRuntime, RunningEstimatorMovesSelfCheckToReady) {

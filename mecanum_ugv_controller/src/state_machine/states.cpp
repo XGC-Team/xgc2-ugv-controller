@@ -57,7 +57,8 @@ SelfCheckState::SelfCheckState(MecanumUgvController& controller) : controller_(c
 }
 
 ::state_machine::ActionResult SelfCheckState::onTick(::state_machine::StateContext& ctx) {
-    emitZeroIfDue(controller_, command_gate_, ctx, false);
+    emitZeroIfDue(controller_, command_gate_, ctx,
+                  controller_.config().placement_idle_silent);
     return {};
 }
 

@@ -1,9 +1,21 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include "mecanum_ugv_controller/common/types.h"
 #include "mecanum_ugv_controller/mecanum_ugv_controller.h"
 
 namespace mecanum_ugv_controller {
+namespace {
+
+bool hasOutputEvent(MecanumUgvController& controller, ::state_machine::EventId id) {
+    const auto& events = controller.stateMachine().currentOutputEvents();
+    return std::any_of(events.begin(), events.end(),
+                       [id](const ::state_machine::Event& event) { return event.id == id; });
+}
+
+}  // namespace
+
 
 TEST(MecanumUgvControllerRuntime, HolonomicResetCommandsBodyVxVyOmegaTogether) {
     UgvState state;
@@ -61,6 +73,27 @@ TEST(MecanumUgvControllerRuntime, HolonomicResetSettlesWithLooseResidual) {
     EXPECT_TRUE(output.position_ok);
     EXPECT_TRUE(output.yaw_ok);
     EXPECT_TRUE(output.settled);
+}
+
+TEST(MecanumUgvControllerRuntime, SilentSelfCheckDoesNotPublishZeroCmdVel) {
+    ros::Time::init();
+    UgvState state;
+    MecanumUgvController controller(state);
+    controller.update(1.0);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+    EXPECT_FALSE(hasOutputEvent(controller, output_event_type::PUBLISH_ZERO_CMD_VEL));
+}
+
+TEST(MecanumUgvControllerRuntime, LoudSelfCheckPublishesZeroCmdVel) {
+    ros::Time::init();
+    UgvState state;
+    MecanumUgvController controller(state);
+    auto config = controller.config();
+    config.placement_idle_silent = false;
+    controller.setConfig(config);
+    controller.update(1.0);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+    EXPECT_TRUE(hasOutputEvent(controller, output_event_type::PUBLISH_ZERO_CMD_VEL));
 }
 
 TEST(MecanumUgvControllerRuntime, CanonicalPoseMovesSelfCheckToReady) {
