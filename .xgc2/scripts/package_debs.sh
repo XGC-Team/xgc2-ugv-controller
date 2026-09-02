@@ -10,6 +10,7 @@ PACKAGE="ros-${ROS_DISTRO}-xgc2-ugv-controller"
 ROS_PACKAGES=(
   unicycle_reference_trajectory
   unicycle_ugv_controller
+  mecanum_ugv_controller
 )
 
 product_version() {

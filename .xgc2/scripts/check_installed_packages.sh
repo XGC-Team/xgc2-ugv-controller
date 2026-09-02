@@ -18,6 +18,7 @@ xgc2_acados_version="$(dpkg-query -W -f='${Version}' xgc2-acados)"
 dpkg --compare-versions "${xgc2_acados_version}" ge "0.1.0-10~focal"
 test "$(rospack find unicycle_reference_trajectory)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory"
 test "$(rospack find unicycle_ugv_controller)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_ugv_controller"
+test "$(rospack find mecanum_ugv_controller)" = "/opt/ros/${ROS_DISTRO}/share/mecanum_ugv_controller"
 test "$(rospack find rigid_state_estimator_msgs)" = "/opt/ros/${ROS_DISTRO}/share/rigid_state_estimator_msgs"
 test "$(rospack find unicycle_reference_trajectory_msgs)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory_msgs"
 rosmsg show rigid_state_estimator_msgs/RigidStateEstimate | grep -q '^uint8 estimator_state$'
@@ -34,8 +35,12 @@ test -f "/opt/ros/${ROS_DISTRO}/share/unicycle_ugv_controller/launch/ugv_unicycl
 test -f "/opt/ros/${ROS_DISTRO}/include/unicycle_ugv_controller/unicycle_ugv_controller.h"
 test -x "/opt/ros/${ROS_DISTRO}/lib/unicycle_ugv_controller/unicycle_ugv_controller_node"
 test -f "/opt/ros/${ROS_DISTRO}/lib/libunicycle_ugv_controller_nmpc_runtime.so"
+test -f "/opt/ros/${ROS_DISTRO}/share/mecanum_ugv_controller/config/mecanum_ugv_controller.yaml"
+test -f "/opt/ros/${ROS_DISTRO}/share/mecanum_ugv_controller/launch/ugv_mecanum_reset_controller.launch"
+test -x "/opt/ros/${ROS_DISTRO}/lib/mecanum_ugv_controller/mecanum_ugv_controller_node"
 roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch >/tmp/xgc2-unicycle-reference-files.txt
 roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch >/tmp/xgc2-unicycle-controller-files.txt
+roslaunch --files mecanum_ugv_controller ugv_mecanum_reset_controller.launch >/tmp/xgc2-mecanum-controller-files.txt
 
 while IFS= read -r file; do
   if ! file -b "${file}" | grep -q '^ELF'; then
@@ -48,6 +53,7 @@ while IFS= read -r file; do
   fi
 done < <(find "/opt/ros/${ROS_DISTRO}/lib/unicycle_ugv_controller" \
   "/opt/ros/${ROS_DISTRO}/lib/unicycle_reference_trajectory" \
+  "/opt/ros/${ROS_DISTRO}/lib/mecanum_ugv_controller" \
   "/opt/ros/${ROS_DISTRO}/lib/libunicycle_ugv_controller_nmpc_runtime.so" -type f 2>/dev/null | sort -u)
 
 echo "Installed package check passed"

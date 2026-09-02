@@ -54,6 +54,10 @@ required_files=(
   unicycle_reference_trajectory/package.xml
   unicycle_reference_trajectory/include/unicycle_reference_trajectory/unicycle_reference_trajectory_runtime.h
   unicycle_reference_trajectory/launch/ugv_unicycle_reference_trajectory.launch
+  mecanum_ugv_controller/CMakeLists.txt
+  mecanum_ugv_controller/package.xml
+  mecanum_ugv_controller/launch/ugv_mecanum_reset_controller.launch
+  mecanum_ugv_controller/config/mecanum_ugv_controller.yaml
 )
 
 for file in "${required_files[@]}"; do
@@ -67,8 +71,12 @@ grep -q "id: xgc2-ugv-controller" .xgc2/product.yml
 grep -Eq '^version: [0-9]+\.[0-9]+\.[0-9]+-[0-9]+$' .xgc2/product.yml
 grep -q "<name>unicycle_ugv_controller</name>" unicycle_ugv_controller/package.xml
 grep -q "<name>unicycle_reference_trajectory</name>" unicycle_reference_trajectory/package.xml
+grep -q "<name>mecanum_ugv_controller</name>" mecanum_ugv_controller/package.xml
 grep -q "run_tests_unicycle_reference_trajectory" .xgc2/scripts/run_source_tests.sh
 grep -q "run_tests_unicycle_ugv_controller" .xgc2/scripts/run_source_tests.sh
+grep -q "run_tests_mecanum_ugv_controller" .xgc2/scripts/run_source_tests.sh
+grep -q "mecanum_ugv_controller" .xgc2/scripts/package_debs.sh
+grep -q "rospack find mecanum_ugv_controller" .xgc2/scripts/check_installed_packages.sh
 if grep -Eq '^[[:space:]]*continue-on-error:[[:space:]]*true' .github/workflows/ci.yml; then
   echo "CI quality/test jobs must fail closed" >&2
   exit 1
