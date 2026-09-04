@@ -23,11 +23,9 @@ class Custom1State final : public ::state_machine::State {
    private:
     void emitCommand(::state_machine::StateContext& ctx, const ControlCommand& command);
     void emitZero(::state_machine::StateContext& ctx);
-    void postLost(::state_machine::StateContext& ctx);
 
     MecanumUgvController& controller_;
     PeriodicGate command_gate_;
-    bool had_reference_{false};
 };
 
 }  // namespace mecanum_ugv_controller

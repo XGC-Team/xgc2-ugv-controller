@@ -95,8 +95,6 @@ class MecanumUgvRosNode {
                           config_.status_publish_rate_hz);
         private_nh_.param("auto_start_tracking", config_.auto_start_tracking,
                           config_.auto_start_tracking);
-        private_nh_.param("reference_timeout", config_.reference_timeout,
-                          config_.reference_timeout);
         private_nh_.param("heading_target_yaw", config_.heading_target_yaw,
                           config_.heading_target_yaw);
         private_nh_.param("track/kp_yaw", config_.track_kp_yaw, config_.track_kp_yaw);
@@ -122,7 +120,6 @@ class MecanumUgvRosNode {
         config_.status_publish_rate_hz = finitePositiveOr(config_.status_publish_rate_hz, 50.0);
         config_.reset_timeout = finitePositiveOr(config_.reset_timeout, 45.0);
         config_.reset_arrive_position = finitePositiveOr(config_.reset_arrive_position, 0.05);
-        config_.reference_timeout = finitePositiveOr(config_.reference_timeout, 0.5);
         config_.track_kp_yaw = finitePositiveOr(config_.track_kp_yaw, 1.2);
         config_.max_linear_speed = finitePositiveOr(config_.max_linear_speed, 1.0);
         config_.max_yaw_rate = finitePositiveOr(config_.max_yaw_rate, 1.0);
@@ -136,8 +133,8 @@ class MecanumUgvRosNode {
         target.x = config_.reset_initial_x;
         target.y = config_.reset_initial_y;
         target.yaw = wrapAngle(config_.reset_initial_yaw);
-        target.valid = std::isfinite(target.x) && std::isfinite(target.y) &&
-                       std::isfinite(target.yaw);
+        target.valid =
+            std::isfinite(target.x) && std::isfinite(target.y) && std::isfinite(target.yaw);
         if (target.valid) {
             controller_.setResetTarget(target);
         }
@@ -207,7 +204,7 @@ class MecanumUgvRosNode {
             return;
         }
         WorldVelocityReference reference;
-        reference.stamp = msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
+        reference.stamp = ros::Time::now();
         reference.vx = msg->twist.linear.x;
         reference.vy = msg->twist.linear.y;
         reference.valid = true;

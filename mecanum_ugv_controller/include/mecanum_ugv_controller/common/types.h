@@ -15,7 +15,6 @@ struct ControllerConfig {
     double idle_cmd_rate_hz{5.0};
     double status_publish_rate_hz{50.0};
     bool auto_start_tracking{false};
-    double reference_timeout{0.5};
     double heading_target_yaw{0.0};
     double track_kp_yaw{1.2};
     double reset_timeout{45.0};
@@ -26,7 +25,7 @@ struct ControllerConfig {
     double max_yaw_rate{1.0};      // FLU |ω|
     double fence_x_min{-20.0};     // offset world ENU x
     double fence_x_max{20.0};
-    double fence_y_min{-20.0};     // offset world ENU y
+    double fence_y_min{-20.0};  // offset world ENU y
     double fence_y_max{20.0};
     double reset_initial_x{0.0};
     double reset_initial_y{0.0};
@@ -97,7 +96,6 @@ constexpr uint32_t RESET_ARRIVED = 4;
 constexpr uint32_t RESET_TIMEOUT = 5;
 constexpr uint32_t INPUT_STATE_UPDATED = 20;
 constexpr uint32_t INPUT_REFERENCE_UPDATED = 21;
-constexpr uint32_t INPUT_REFERENCE_LOST = 22;
 constexpr uint32_t HEALTH_READY = 40;
 constexpr uint32_t HEALTH_UNHEALTHY = 41;
 }  // namespace event_type

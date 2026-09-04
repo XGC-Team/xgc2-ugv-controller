@@ -70,7 +70,7 @@ bool UnicycleUgvController::referenceReady() const {
     if (cfg.tracking_strategy == TrackingStrategy::FLATNESS) {
         return worldPvaReady();
     }
-    return reference_cache_.valid(ros::Time(current_time_sec_), cfg.reference_timeout);
+    return reference_cache_.valid();
 }
 
 bool UnicycleUgvController::commandReady() const {
@@ -116,8 +116,7 @@ ResetTarget UnicycleUgvController::resetTarget() const {
 
 bool UnicycleUgvController::worldPvaReady() const {
     std::lock_guard<std::mutex> lock(pva_mutex_);
-    return ::unicycle_ugv_controller::worldPvaReady(world_pva_, current_time_sec_,
-                                                    config().reference_timeout);
+    return ::unicycle_ugv_controller::worldPvaReady(world_pva_);
 }
 
 void UnicycleUgvController::setWorldPva(WorldPvaReference reference) {
@@ -132,7 +131,7 @@ WorldPvaReference UnicycleUgvController::worldPva() const {
 
 WorldPvaReference UnicycleUgvController::liftedWorldPva() const {
     std::lock_guard<std::mutex> lock(pva_mutex_);
-    return liftWorldPva(world_pva_, current_time_sec_, config().reference_timeout);
+    return liftWorldPva(world_pva_, current_time_sec_);
 }
 
 void UnicycleUgvController::maybeUpdatePoseVelocity() {
@@ -230,11 +229,6 @@ void UnicycleUgvController::setupMachine() {
         .to(state_type::Ready)
         .on(event_type::STOP_REQUESTED)
         .priority(transition_priority::COMMAND);
-    builder.transition()
-        .from(state_type::Custom1)
-        .to(state_type::Ready)
-        .on(event_type::INPUT_REFERENCE_LOST)
-        .priority(transition_priority::AUTOMATIC);
     builder.transition()
         .from(state_type::Ready)
         .to(state_type::Custom1)

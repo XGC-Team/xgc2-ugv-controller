@@ -68,7 +68,7 @@ void makeCustom1Ready(UnicycleUgvController& controller, UgvState& state) {
     reference.start_time = ros::Time(1.0);
     reference.duration = 10.0;
     reference.origin.orientation.w = 1.0;
-    ASSERT_TRUE(controller.referenceCache().updateAnalytic(reference, ros::Time(1.0)));
+    ASSERT_TRUE(controller.referenceCache().updateAnalytic(reference));
     postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.01);
     state.stamp = ros::Time(1.01);
     controller.update(1.01);
@@ -297,21 +297,21 @@ TEST(UnicycleLaw, FlatnessRejectsInvalidDt) {
     EXPECT_FALSE(computeFlatnessCommand(state, reference, 0.2, 0.0, ControllerConfig{}).valid);
 }
 
-TEST(UnicycleLaw, PvaAcceptsBoundedFutureActivationStamp) {
+TEST(UnicycleLaw, PvaDoesNotValidateAlgorithmTimestamp) {
     WorldPvaReference reference;
     reference.valid = true;
     reference.stamp = ros::Time(1.1);
     reference.x = 2.0;
     reference.vx = 0.5;
-    ASSERT_TRUE(worldPvaReady(reference, 1.0, 0.5));
-    const WorldPvaReference held = liftWorldPva(reference, 1.0, 0.5);
+    ASSERT_TRUE(worldPvaReady(reference));
+    const WorldPvaReference held = liftWorldPva(reference, 1.0);
     ASSERT_TRUE(held.valid);
     EXPECT_DOUBLE_EQ(held.x, reference.x);
     EXPECT_DOUBLE_EQ(held.vx, reference.vx);
 
-    reference.stamp = ros::Time(1.501);
-    EXPECT_FALSE(worldPvaReady(reference, 1.0, 0.5));
-    EXPECT_FALSE(liftWorldPva(reference, 1.0, 0.5).valid);
+    reference.stamp = ros::Time(1001.0);
+    EXPECT_TRUE(worldPvaReady(reference));
+    EXPECT_TRUE(liftWorldPva(reference, 1.0).valid);
 }
 
 TEST(UnicycleLaw, ResetPlanIsBezierNotSequentialRail) {
@@ -461,7 +461,7 @@ TEST(UnicycleUgvControllerRuntime, AutoStartCustom1WhenStateAndReferenceAreReady
     reference.start_time = ros::Time(1.0);
     reference.duration = 10.0;
     reference.origin.orientation.w = 1.0;
-    ASSERT_TRUE(controller.referenceCache().updateAnalytic(reference, ros::Time(1.01)));
+    ASSERT_TRUE(controller.referenceCache().updateAnalytic(reference));
     state.received = true;
     state.stamp = ros::Time(1.0);
     state.estimator_state = rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING;
@@ -533,9 +533,9 @@ TEST(UnicycleUgvControllerRuntime, SampledNmpcHorizonKeepsYawContinuousAcrossPi)
     reference.duration = 30.0;
     reference.origin.orientation.w = 1.0;
     reference.params = {3.0, 1.0, 0.0, 0.0, 0.0};
-    ASSERT_TRUE(cache.updateAnalytic(reference, ros::Time(4.5)));
+    ASSERT_TRUE(cache.updateAnalytic(reference));
     std::vector<xgc2_math::control::Se2Reference> refs;
-    ASSERT_TRUE(cache.sampleHorizon(ros::Time(4.5), 0.1, 10, 1.0, refs));
+    ASSERT_TRUE(cache.sampleHorizon(ros::Time(4.5), 0.1, 10, refs));
     ASSERT_EQ(refs.size(), 11U);
     for (size_t i = 1; i < refs.size(); ++i) {
         EXPECT_LT(std::abs(refs[i].state.yaw - refs[i - 1].state.yaw), 0.1);
@@ -564,9 +564,9 @@ TEST(UnicycleUgvControllerRuntime, ExplicitSampledPlanarKinematicsPreservesRever
         point.vy = 0.0;
         reference.points.push_back(point);
     }
-    ASSERT_TRUE(cache.updateSampled(reference, ros::Time(1.0)));
+    ASSERT_TRUE(cache.updateSampled(reference));
     std::vector<xgc2_math::control::Se2Reference> refs;
-    ASSERT_TRUE(cache.sampleHorizon(ros::Time(1.0), 0.25, 4, 1.0, refs));
+    ASSERT_TRUE(cache.sampleHorizon(ros::Time(1.0), 0.25, 4, refs));
     ASSERT_EQ(refs.size(), 5U);
     for (const auto& ref : refs) {
         EXPECT_NEAR(ref.state.yaw, 0.0, 1.0e-12);

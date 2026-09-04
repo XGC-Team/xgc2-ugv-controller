@@ -29,7 +29,6 @@ class Custom1State final : public ::state_machine::State {
     bool hasCommand() const;
     void emitCommandIfDue(::state_machine::StateContext& ctx);
     void emitZero(::state_machine::StateContext& ctx);
-    void postLost(::state_machine::StateContext& ctx);
 
     UnicycleUgvController& controller_;
     PeriodicGate solve_gate_;
@@ -38,7 +37,6 @@ class Custom1State final : public ::state_machine::State {
     uint64_t in_flight_sequence_{0U};
     bool request_in_flight_{false};
     double request_deadline_{0.0};
-    bool had_reference_{false};
     double body_speed_{0.0};
     double last_tick_time_{0.0};
     bool have_tick_time_{false};

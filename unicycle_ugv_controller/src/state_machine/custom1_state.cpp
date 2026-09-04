@@ -18,7 +18,6 @@ Custom1State::Custom1State(UnicycleUgvController& controller) : controller_(cont
     in_flight_sequence_ = 0U;
     request_in_flight_ = false;
     request_deadline_ = 0.0;
-    had_reference_ = false;
     const UgvState snapshot = controller_.controlState();
     body_speed_ = snapshot.speed;
     last_tick_time_ = controller_.currentTime();
@@ -59,12 +58,8 @@ Custom1State::Custom1State(UnicycleUgvController& controller) : controller_(cont
     }
     if (!controller_.referenceReady()) {
         emitZero(ctx);
-        if (had_reference_) {
-            postLost(ctx);
-        }
         return {};
     }
-    had_reference_ = true;
     requestSolveIfDue(ctx);
     publishNmpcCommandIfDue(ctx);
     return {};
@@ -74,12 +69,8 @@ void Custom1State::tickFlatness(::state_machine::StateContext& ctx) {
     const double now = controller_.currentTime();
     if (!controller_.worldPvaReady()) {
         emitZero(ctx);
-        if (had_reference_) {
-            postLost(ctx);
-        }
         return;
     }
-    had_reference_ = true;
     const UgvState snapshot = controller_.controlState();
     double dt = 0.0;
     if (have_tick_time_) {
@@ -157,20 +148,11 @@ void Custom1State::emitZero(::state_machine::StateContext& ctx) {
                                ::state_machine::EventTimestamp{controller_.currentTime()}));
 }
 
-void Custom1State::postLost(::state_machine::StateContext& ctx) {
-    ::state_machine::Event event(event_type::INPUT_REFERENCE_LOST,
-                                 ::state_machine::EventTimestamp{controller_.currentTime()});
-    event.source = "custom1_state";
-    event.category = ::state_machine::EventCategory::kInternal;
-    (void)ctx.postInternalEvent(std::move(event));
-}
-
 ::state_machine::ActionResult Custom1State::onExit(::state_machine::StateContext& ctx) {
     emitZero(ctx);
     solve_gate_.reset();
     command_gate_.reset();
     request_in_flight_ = false;
-    had_reference_ = false;
     have_tick_time_ = false;
     return {};
 }

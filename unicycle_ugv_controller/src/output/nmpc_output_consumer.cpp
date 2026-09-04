@@ -77,15 +77,13 @@ bool NmpcOutputConsumer::handle(const ::state_machine::Event& event) {
     request.config = config;
     const double stage_dt =
         config.prediction_horizon / static_cast<double>(UnicycleNmpcSolver::horizonSteps());
-    if (!controller_.referenceCache().sampleHorizon(now, stage_dt,
-                                                    UnicycleNmpcSolver::horizonSteps(),
-                                                    config.reference_timeout, request.references)) {
+    if (!controller_.referenceCache().sampleHorizon(
+            now, stage_dt, UnicycleNmpcSolver::horizonSteps(), request.references)) {
         ROS_WARN_THROTTLE(
             1.0,
             "[UgvNmpcOutputConsumer] Reject solve seq=%lu: reference horizon unavailable "
-            "now=%.3f stage_dt=%.3f timeout=%.3f",
-            static_cast<unsigned long>(request.sequence), now.toSec(), stage_dt,
-            config.reference_timeout);
+            "now=%.3f stage_dt=%.3f",
+            static_cast<unsigned long>(request.sequence), now.toSec(), stage_dt);
         reject(request.sequence);
         return true;
     }

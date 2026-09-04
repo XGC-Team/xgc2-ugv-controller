@@ -16,7 +16,6 @@
     <arg name="cmd_vel_topic" default="cmd_vel"/>
 
     <arg name="state_timeout" default="0.2"/>
-    <arg name="reference_timeout" default="0.5"/>
     <arg name="command_publish_rate_hz" default="50.0"/>
     <arg name="idle_cmd_rate_hz" default="5.0"/>
     <arg name="auto_start_tracking" default="false"/>
@@ -69,7 +68,6 @@
             <param name="pva_reference_topic" value="$(arg pva_reference_topic)"/>
             <param name="cmd_vel_topic" value="$(arg cmd_vel_topic)"/>
             <param name="state_timeout" value="$(arg state_timeout)"/>
-            <param name="reference_timeout" value="$(arg reference_timeout)"/>
             <param name="command_publish_rate_hz" value="$(arg command_publish_rate_hz)"/>
             <param name="idle_cmd_rate_hz" value="$(arg idle_cmd_rate_hz)"/>
             <param name="auto_start_tracking" value="$(arg auto_start_tracking)"/>

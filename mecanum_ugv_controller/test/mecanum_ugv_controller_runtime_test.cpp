@@ -62,8 +62,8 @@ void stepHolonomicPlant(UgvState& state, const ControlCommand& command, double d
     state.stamp = ros::Time(state.stamp.toSec() + dt);
 }
 
-void enterCustom1(MecanumUgvController& controller, UgvState& state, WorldVelocityReference& reference,
-                  double t) {
+void enterCustom1(MecanumUgvController& controller, UgvState& state,
+                  WorldVelocityReference& reference, double t) {
     goReady(controller, state, t);
     controller.setWorldReference(reference);
     postCommand(controller, event_type::CUSTOM1_REQUESTED, t + 0.01);
@@ -81,7 +81,8 @@ TEST(MecanumLaw, ResetCommandsBodyVxVyOmegaTogether) {
     goal.y = 0.5;
     goal.yaw = 0.4;
     goal.valid = true;
-    const HolonomicResetOutput output = computeHolonomicResetCommand(state, goal, ControllerConfig{});
+    const HolonomicResetOutput output =
+        computeHolonomicResetCommand(state, goal, ControllerConfig{});
     EXPECT_GT(output.linear_x, 0.0);
     EXPECT_GT(output.linear_y, 0.0);
     EXPECT_GT(output.angular_z, 0.0);
@@ -95,7 +96,8 @@ TEST(MecanumLaw, ResetRotatesWorldErrorIntoBody) {
     goal.x = 1.0;
     goal.yaw = 1.5707963267948966;
     goal.valid = true;
-    const HolonomicResetOutput output = computeHolonomicResetCommand(state, goal, ControllerConfig{});
+    const HolonomicResetOutput output =
+        computeHolonomicResetCommand(state, goal, ControllerConfig{});
     EXPECT_NEAR(output.linear_x, 0.0, 1.0e-6);
     EXPECT_LT(output.linear_y, 0.0);
     EXPECT_NEAR(output.angular_z, 0.0, 1.0e-6);
@@ -133,7 +135,8 @@ TEST(MecanumLaw, TrackRotatesWorldVelocityWithoutAssumingYawZero) {
     WorldVelocityReference reference;
     reference.valid = true;
     reference.vx = 1.0;
-    const HolonomicTrackOutput output = computeHolonomicTrackCommand(state, reference, ControllerConfig{});
+    const HolonomicTrackOutput output =
+        computeHolonomicTrackCommand(state, reference, ControllerConfig{});
     EXPECT_NEAR(output.linear_x, 0.0, 1.0e-6);
     EXPECT_NEAR(output.linear_y, -1.0, 1.0e-6);
 }
@@ -263,6 +266,21 @@ TEST(MecanumSm, Custom1StopReturnsReady) {
     setPose(state, 1.02, 0.0, 0.0, 0.0);
     controller.update(1.02);
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+}
+
+TEST(MecanumSm, Custom1DoesNotValidateAlgorithmTimestamp) {
+    ros::Time::init();
+    UgvState state;
+    MecanumUgvController controller(state);
+    WorldVelocityReference reference;
+    reference.valid = true;
+    reference.vx = 0.2;
+    reference.stamp = ros::Time(1001.0);
+    enterCustom1(controller, state, reference, 1.0);
+
+    setPose(state, 1.1, state.x, state.y, state.yaw);
+    controller.update(1.1);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Custom1);
 }
 
 TEST(MecanumSm, Custom1CanReset) {

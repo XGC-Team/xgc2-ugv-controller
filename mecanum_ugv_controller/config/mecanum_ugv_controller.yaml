@@ -8,7 +8,6 @@ command_publish_rate_hz: 50.0
 idle_cmd_rate_hz: 5.0
 status_publish_rate_hz: 50.0
 auto_start_tracking: false
-reference_timeout: 0.5
 reference_twist_topic: "alg/reference/twist"
 heading_target_yaw: 0.0
 track:

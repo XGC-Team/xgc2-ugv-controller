@@ -51,7 +51,6 @@ struct ControllerConfig {
     double control_period{0.1};
     double prediction_horizon{1.0};
     double state_timeout{0.2};
-    double reference_timeout{0.5};
     double solve_timeout{0.05};
     double result_timeout{0.1};
     double command_publish_rate_hz{50.0};
@@ -219,7 +218,6 @@ constexpr uint32_t RESET_TIMEOUT = 5;
 constexpr uint32_t RESET_PLAN_FAILED = 6;
 constexpr uint32_t INPUT_STATE_UPDATED = 20;
 constexpr uint32_t INPUT_REFERENCE_UPDATED = 21;
-constexpr uint32_t INPUT_REFERENCE_LOST = 22;
 constexpr uint32_t INPUT_NMPC_SOLVE_SUCCEEDED = 23;
 constexpr uint32_t INPUT_NMPC_SOLVE_FAILED = 24;
 constexpr uint32_t INPUT_RESET_TARGET_UPDATED = 25;
@@ -256,9 +254,8 @@ bool updatePoseVelocityFilter(PoseVelocityFilter& filter, double input, double d
 bool updatePoseVelocityEstimator(PoseVelocityEstimator& estimator, double stamp, double x, double y,
                                  double yaw, const ControllerConfig& config);
 
-WorldPvaReference liftWorldPva(const WorldPvaReference& sample, double now_sec,
-                               double future_tolerance);
-bool worldPvaReady(const WorldPvaReference& sample, double now_sec, double timeout);
+WorldPvaReference liftWorldPva(const WorldPvaReference& sample, double now_sec);
+bool worldPvaReady(const WorldPvaReference& sample);
 
 UnicycleBezierPlan planUnicycleReset(const UgvState& state, const ResetTarget& goal,
                                      const ControllerConfig& config);

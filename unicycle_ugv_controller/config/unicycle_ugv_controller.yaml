@@ -11,7 +11,6 @@ pva_reference_topic: "alg/reference/pva"
 cmd_vel_topic: "cmd_vel"
 
 state_timeout: 0.2
-reference_timeout: 0.5
 command_publish_rate_hz: 50.0
 idle_cmd_rate_hz: 5.0
 auto_start_tracking: false

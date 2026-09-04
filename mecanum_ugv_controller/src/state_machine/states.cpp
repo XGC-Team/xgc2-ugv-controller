@@ -2,11 +2,11 @@
 
 #include "mecanum_ugv_controller/common/types.h"
 #include "mecanum_ugv_controller/mecanum_ugv_controller.h"
+#include "mecanum_ugv_controller/state_machine/custom1_state.h"
 #include "mecanum_ugv_controller/state_machine/health_monitor_state.h"
 #include "mecanum_ugv_controller/state_machine/ready_state.h"
 #include "mecanum_ugv_controller/state_machine/reset_state.h"
 #include "mecanum_ugv_controller/state_machine/self_check_state.h"
-#include "mecanum_ugv_controller/state_machine/custom1_state.h"
 
 namespace mecanum_ugv_controller {
 namespace {
@@ -159,19 +159,14 @@ Custom1State::Custom1State(MecanumUgvController& controller) : controller_(contr
     (void)ctx;
     controller_.clearCommand();
     command_gate_.reset();
-    had_reference_ = false;
     return {};
 }
 
 ::state_machine::ActionResult Custom1State::onTick(::state_machine::StateContext& ctx) {
     if (!controller_.worldReferenceReady()) {
         emitZero(ctx);
-        if (had_reference_) {
-            postLost(ctx);
-        }
         return {};
     }
-    had_reference_ = true;
     const HolonomicTrackOutput output = computeHolonomicTrackCommand(
         controller_.state(), controller_.worldReference(), controller_.config());
     ControlCommand command;
@@ -187,7 +182,6 @@ Custom1State::Custom1State(MecanumUgvController& controller) : controller_(contr
 ::state_machine::ActionResult Custom1State::onExit(::state_machine::StateContext& ctx) {
     emitZero(ctx);
     command_gate_.reset();
-    had_reference_ = false;
     return {};
 }
 
@@ -207,14 +201,6 @@ void Custom1State::emitZero(::state_machine::StateContext& ctx) {
     ctx.emitOutput(
         ::state_machine::Event(output_event_type::PUBLISH_ZERO_CMD_VEL,
                                ::state_machine::EventTimestamp{controller_.currentTime()}));
-}
-
-void Custom1State::postLost(::state_machine::StateContext& ctx) {
-    ::state_machine::Event event(event_type::INPUT_REFERENCE_LOST,
-                                 ::state_machine::EventTimestamp{controller_.currentTime()});
-    event.source = "custom1_state";
-    event.category = ::state_machine::EventCategory::kInternal;
-    (void)ctx.postInternalEvent(std::move(event));
 }
 
 }  // namespace mecanum_ugv_controller

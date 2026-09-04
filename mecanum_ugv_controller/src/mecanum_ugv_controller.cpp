@@ -5,11 +5,11 @@
 #include <string>
 #include <utility>
 
+#include "mecanum_ugv_controller/state_machine/custom1_state.h"
 #include "mecanum_ugv_controller/state_machine/health_monitor_state.h"
 #include "mecanum_ugv_controller/state_machine/ready_state.h"
 #include "mecanum_ugv_controller/state_machine/reset_state.h"
 #include "mecanum_ugv_controller/state_machine/self_check_state.h"
-#include "mecanum_ugv_controller/state_machine/custom1_state.h"
 
 namespace mecanum_ugv_controller {
 namespace {
@@ -74,14 +74,8 @@ ResetTarget MecanumUgvController::resetTarget() const {
 
 bool MecanumUgvController::worldReferenceReady() const {
     std::lock_guard<std::mutex> lock(reference_mutex_);
-    if (!world_reference_.valid || !std::isfinite(world_reference_.vx) ||
-        !std::isfinite(world_reference_.vy)) {
-        return false;
-    }
-    constexpr double kFutureStampTolerance = 0.05;
-    const double timeout = config().reference_timeout;
-    const double age = current_time_sec_ - world_reference_.stamp.toSec();
-    return timeout > 0.0 && std::isfinite(age) && age >= -kFutureStampTolerance && age <= timeout;
+    return world_reference_.valid && std::isfinite(world_reference_.vx) &&
+           std::isfinite(world_reference_.vy);
 }
 
 void MecanumUgvController::setWorldReference(WorldVelocityReference reference) {
@@ -167,11 +161,6 @@ void MecanumUgvController::setupMachine() {
         .to(state_type::Ready)
         .on(event_type::STOP_REQUESTED)
         .priority(transition_priority::COMMAND);
-    builder.transition()
-        .from(state_type::Custom1)
-        .to(state_type::Ready)
-        .on(event_type::INPUT_REFERENCE_LOST)
-        .priority(transition_priority::AUTOMATIC);
     builder.transition()
         .from(state_type::Ready)
         .to(state_type::Custom1)

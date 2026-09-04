@@ -179,8 +179,7 @@ control::Se2Reference toSample(const trajectory::PlanarReference2& ref) {
 }  // namespace
 
 bool ReferenceCache::updateAnalytic(
-    const unicycle_reference_trajectory_msgs::AnalyticReference& msg,
-    const ros::Time& received_time) {
+    const unicycle_reference_trajectory_msgs::AnalyticReference& msg) {
     uint32_t flags = 0U;
     auto evaluator = buildAnalytic(msg, flags);
     if (!evaluator) {
@@ -189,7 +188,6 @@ bool ReferenceCache::updateAnalytic(
     std::lock_guard<std::mutex> lock(mutex_);
     evaluator_ = std::shared_ptr<const trajectory::TrajectoryEvaluator2>(std::move(evaluator));
     start_time_ = msg.start_time;
-    received_time_ = received_time;
     trajectory_id_ = msg.trajectory_id;
     revision_ = msg.revision;
     flags_ = flags;
@@ -197,8 +195,7 @@ bool ReferenceCache::updateAnalytic(
 }
 
 bool ReferenceCache::updatePolynomial(
-    const unicycle_reference_trajectory_msgs::ActivePolynomialReference& msg,
-    const ros::Time& received_time) {
+    const unicycle_reference_trajectory_msgs::ActivePolynomialReference& msg) {
     auto evaluator = std::make_unique<trajectory::PiecewisePolynomialEvaluator2>();
     uint32_t flags = 0U;
     if (!fillPolynomial(msg, *evaluator, flags)) {
@@ -207,15 +204,14 @@ bool ReferenceCache::updatePolynomial(
     std::lock_guard<std::mutex> lock(mutex_);
     evaluator_ = std::shared_ptr<const trajectory::TrajectoryEvaluator2>(std::move(evaluator));
     start_time_ = msg.start_time;
-    received_time_ = received_time;
     trajectory_id_ = msg.trajectory_id;
     revision_ = msg.revision;
     flags_ = flags;
     return true;
 }
 
-bool ReferenceCache::updateSampled(const unicycle_reference_trajectory_msgs::SampledReference& msg,
-                                   const ros::Time& received_time) {
+bool ReferenceCache::updateSampled(
+    const unicycle_reference_trajectory_msgs::SampledReference& msg) {
     auto evaluator = std::make_unique<trajectory::SampledEvaluator2>();
     uint32_t flags = 0U;
     if (!fillSampled(msg, *evaluator, flags)) {
@@ -224,7 +220,6 @@ bool ReferenceCache::updateSampled(const unicycle_reference_trajectory_msgs::Sam
     std::lock_guard<std::mutex> lock(mutex_);
     evaluator_ = std::shared_ptr<const trajectory::TrajectoryEvaluator2>(std::move(evaluator));
     start_time_ = msg.start_time;
-    received_time_ = received_time;
     trajectory_id_ = msg.trajectory_id;
     revision_ = msg.revision;
     flags_ = flags;
@@ -235,27 +230,26 @@ void ReferenceCache::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     evaluator_.reset();
     start_time_ = ros::Time{};
-    received_time_ = ros::Time{};
     trajectory_id_ = 0U;
     revision_ = 0U;
     flags_ = 0U;
 }
 
-bool ReferenceCache::activeLocked(const ros::Time& now, double timeout) const {
-    if (!evaluator_ || timeout <= 0.0 || (now - received_time_).toSec() > timeout) {
+bool ReferenceCache::activeLocked() const {
+    if (!evaluator_) {
         return false;
     }
     constexpr uint32_t fatal = trajectory::kFlagInvalidInput | trajectory::kFlagNonFinite;
     return (flags_ & fatal) == 0U;
 }
 
-bool ReferenceCache::valid(const ros::Time& now, double timeout) const {
+bool ReferenceCache::valid() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return activeLocked(now, timeout);
+    return activeLocked();
 }
 
 bool ReferenceCache::sampleHorizon(const ros::Time& now, double stage_dt, int horizon_steps,
-                                   double timeout, std::vector<control::Se2Reference>& refs) const {
+                                   std::vector<control::Se2Reference>& refs) const {
     if (horizon_steps <= 0 || !std::isfinite(stage_dt) || stage_dt <= 0.0) {
         return false;
     }
@@ -263,7 +257,7 @@ bool ReferenceCache::sampleHorizon(const ros::Time& now, double stage_dt, int ho
     ros::Time start_time;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!activeLocked(now, timeout)) {
+        if (!activeLocked()) {
             return false;
         }
         evaluator = evaluator_;

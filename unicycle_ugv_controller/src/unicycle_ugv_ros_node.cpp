@@ -119,7 +119,6 @@ void UnicycleUgvRosNode::loadParams() {
     private_nh_.param("nmpc/prediction_horizon", config_.prediction_horizon,
                       config_.prediction_horizon);
     private_nh_.param("state_timeout", config_.state_timeout, config_.state_timeout);
-    private_nh_.param("reference_timeout", config_.reference_timeout, config_.reference_timeout);
     private_nh_.param("nmpc/solve_timeout", config_.solve_timeout, config_.solve_timeout);
     private_nh_.param("nmpc/result_timeout", config_.result_timeout, config_.result_timeout);
     private_nh_.param("command_publish_rate_hz", config_.command_publish_rate_hz,
@@ -185,7 +184,6 @@ void UnicycleUgvRosNode::loadParams() {
     config_.control_period = finitePositiveOr(config_.control_period, 0.1);
     config_.prediction_horizon = finitePositiveOr(config_.prediction_horizon, 1.0);
     config_.state_timeout = finitePositiveOr(config_.state_timeout, 0.2);
-    config_.reference_timeout = finitePositiveOr(config_.reference_timeout, 0.5);
     config_.solve_timeout = finitePositiveOr(config_.solve_timeout, 0.05);
     config_.result_timeout = finitePositiveOr(config_.result_timeout, 0.1);
     config_.command_publish_rate_hz = finitePositiveOr(config_.command_publish_rate_hz, 50.0);

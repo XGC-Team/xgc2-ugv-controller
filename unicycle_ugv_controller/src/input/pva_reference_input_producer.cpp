@@ -23,7 +23,7 @@ void PvaReferenceInputProducer::callback(
         return;
     }
     WorldPvaReference reference;
-    reference.stamp = msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
+    reference.stamp = ros::Time::now();
     reference.x = msg->x;
     reference.y = msg->y;
     reference.yaw = std::isfinite(msg->yaw) ? wrapAngle(msg->yaw) : 0.0;
