@@ -256,7 +256,8 @@ bool updatePoseVelocityFilter(PoseVelocityFilter& filter, double input, double d
 bool updatePoseVelocityEstimator(PoseVelocityEstimator& estimator, double stamp, double x, double y,
                                  double yaw, const ControllerConfig& config);
 
-WorldPvaReference liftWorldPva(const WorldPvaReference& sample, double now_sec);
+WorldPvaReference liftWorldPva(const WorldPvaReference& sample, double now_sec,
+                               double future_tolerance);
 bool worldPvaReady(const WorldPvaReference& sample, double now_sec, double timeout);
 
 UnicycleBezierPlan planUnicycleReset(const UgvState& state, const ResetTarget& goal,

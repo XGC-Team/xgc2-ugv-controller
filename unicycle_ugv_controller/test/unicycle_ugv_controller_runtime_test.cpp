@@ -297,6 +297,23 @@ TEST(UnicycleLaw, FlatnessRejectsInvalidDt) {
     EXPECT_FALSE(computeFlatnessCommand(state, reference, 0.2, 0.0, ControllerConfig{}).valid);
 }
 
+TEST(UnicycleLaw, PvaAcceptsBoundedFutureActivationStamp) {
+    WorldPvaReference reference;
+    reference.valid = true;
+    reference.stamp = ros::Time(1.1);
+    reference.x = 2.0;
+    reference.vx = 0.5;
+    ASSERT_TRUE(worldPvaReady(reference, 1.0, 0.5));
+    const WorldPvaReference held = liftWorldPva(reference, 1.0, 0.5);
+    ASSERT_TRUE(held.valid);
+    EXPECT_DOUBLE_EQ(held.x, reference.x);
+    EXPECT_DOUBLE_EQ(held.vx, reference.vx);
+
+    reference.stamp = ros::Time(1.501);
+    EXPECT_FALSE(worldPvaReady(reference, 1.0, 0.5));
+    EXPECT_FALSE(liftWorldPva(reference, 1.0, 0.5).valid);
+}
+
 TEST(UnicycleLaw, ResetPlanIsBezierNotSequentialRail) {
     UgvState state;
     state.x = 0.0;

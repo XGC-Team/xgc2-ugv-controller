@@ -401,14 +401,16 @@ bool updatePoseVelocityEstimator(PoseVelocityEstimator& estimator, double stamp,
     return estimator.velocity_valid;
 }
 
-WorldPvaReference liftWorldPva(const WorldPvaReference& sample, double now_sec) {
+WorldPvaReference liftWorldPva(const WorldPvaReference& sample, double now_sec,
+                               double future_tolerance) {
     WorldPvaReference out = sample;
-    if (!sample.valid || !std::isfinite(now_sec) || !std::isfinite(sample.stamp.toSec())) {
+    if (!sample.valid || !std::isfinite(now_sec) || !std::isfinite(sample.stamp.toSec()) ||
+        !std::isfinite(future_tolerance) || future_tolerance <= 0.0) {
         out.valid = false;
         return out;
     }
     const double tau = now_sec - sample.stamp.toSec();
-    if (!std::isfinite(tau) || tau < -0.05) {
+    if (!std::isfinite(tau) || tau < -future_tolerance) {
         out.valid = false;
         return out;
     }
@@ -423,14 +425,13 @@ WorldPvaReference liftWorldPva(const WorldPvaReference& sample, double now_sec) 
 }
 
 bool worldPvaReady(const WorldPvaReference& sample, double now_sec, double timeout) {
-    constexpr double kFutureStampTolerance = 0.05;
     if (!sample.valid || !std::isfinite(sample.x) || !std::isfinite(sample.y) ||
         !std::isfinite(sample.vx) || !std::isfinite(sample.vy) || !std::isfinite(sample.ax) ||
         !std::isfinite(sample.ay)) {
         return false;
     }
     const double age = now_sec - sample.stamp.toSec();
-    return timeout > 0.0 && std::isfinite(age) && age >= -kFutureStampTolerance && age <= timeout;
+    return timeout > 0.0 && std::isfinite(age) && age >= -timeout && age <= timeout;
 }
 
 UnicycleBezierPlan planUnicycleReset(const UgvState& state, const ResetTarget& goal,

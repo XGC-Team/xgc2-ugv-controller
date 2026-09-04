@@ -132,7 +132,7 @@ WorldPvaReference UnicycleUgvController::worldPva() const {
 
 WorldPvaReference UnicycleUgvController::liftedWorldPva() const {
     std::lock_guard<std::mutex> lock(pva_mutex_);
-    return liftWorldPva(world_pva_, current_time_sec_);
+    return liftWorldPva(world_pva_, current_time_sec_, config().reference_timeout);
 }
 
 void UnicycleUgvController::maybeUpdatePoseVelocity() {
