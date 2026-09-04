@@ -423,12 +423,9 @@ WorldPvaReference liftWorldPva(const WorldPvaReference& sample, double now_sec) 
 }
 
 bool worldPvaReady(const WorldPvaReference& sample) {
-    if (!sample.valid || !std::isfinite(sample.x) || !std::isfinite(sample.y) ||
-        !std::isfinite(sample.vx) || !std::isfinite(sample.vy) || !std::isfinite(sample.ax) ||
-        !std::isfinite(sample.ay)) {
-        return false;
-    }
-    return true;
+    return sample.valid && std::isfinite(sample.x) && std::isfinite(sample.y) &&
+           std::isfinite(sample.vx) && std::isfinite(sample.vy) && std::isfinite(sample.ax) &&
+           std::isfinite(sample.ay);
 }
 
 UnicycleBezierPlan planUnicycleReset(const UgvState& state, const ResetTarget& goal,
