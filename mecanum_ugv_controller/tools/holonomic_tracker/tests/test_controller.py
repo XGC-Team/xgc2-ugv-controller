@@ -51,6 +51,17 @@ class HolonomicTrackerTests(unittest.TestCase):
     def test_wrap_angle_is_principal_value(self) -> None:
         self.assertAlmostEqual(wrap_angle(math.pi + 0.1), -math.pi + 0.1, places=6)
 
+    def test_world_velocity_invariant_to_small_yaw(self) -> None:
+        yaw = 0.12
+        v_wx, v_wy = 0.0, 0.4
+        output = track_command(yaw, v_wx, v_wy)
+        c = math.cos(yaw)
+        s = math.sin(yaw)
+        recovered_wx = c * output.linear_x - s * output.linear_y
+        recovered_wy = s * output.linear_x + c * output.linear_y
+        self.assertAlmostEqual(recovered_wx, v_wx, places=6)
+        self.assertAlmostEqual(recovered_wy, v_wy, places=6)
+
 
 if __name__ == "__main__":
     unittest.main()
