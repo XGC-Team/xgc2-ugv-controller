@@ -6,11 +6,10 @@
 #include <utility>
 
 #include "mecanum_ugv_controller/state_machine/health_monitor_state.h"
-#include "mecanum_ugv_controller/state_machine/hold_state.h"
 #include "mecanum_ugv_controller/state_machine/ready_state.h"
 #include "mecanum_ugv_controller/state_machine/reset_state.h"
 #include "mecanum_ugv_controller/state_machine/self_check_state.h"
-#include "mecanum_ugv_controller/state_machine/tracking_state.h"
+#include "mecanum_ugv_controller/state_machine/custom1_state.h"
 
 namespace mecanum_ugv_controller {
 namespace {
@@ -31,7 +30,7 @@ MecanumUgvController::MecanumUgvController(const UgvState& state) : state_(state
 
 void MecanumUgvController::update(double now_sec) {
     current_time_sec_ = now_sec;
-    maybeAutoStartTracking();
+    maybeAutoStartCustom1();
     if (machine_) {
         (void)machine_->update();
     }
@@ -52,7 +51,9 @@ void MecanumUgvController::setConfig(const ControllerConfig& config) {
 }
 
 bool MecanumUgvController::healthReady() const {
-    return stateFresh(state_, ros::Time(current_time_sec_), config().state_timeout);
+    const auto cfg = config();
+    return stateFresh(state_, ros::Time(current_time_sec_), cfg.state_timeout) &&
+           insideFence(state_, cfg);
 }
 
 bool MecanumUgvController::resetTargetReady() const {
@@ -128,12 +129,9 @@ void MecanumUgvController::setupMachine() {
         .state(state_type::Ready)
         .name("Ready")
         .impl(std::make_unique<ReadyState>(*this))
-        .state(state_type::Tracking)
-        .name("Tracking")
-        .impl(std::make_unique<TrackingState>(*this))
-        .state(state_type::Hold)
-        .name("Hold")
-        .impl(std::make_unique<HoldState>(*this))
+        .state(state_type::Custom1)
+        .name("Custom1")
+        .impl(std::make_unique<Custom1State>(*this))
         .state(state_type::Reset)
         .name("Reset")
         .impl(std::make_unique<ResetState>(*this))
@@ -150,54 +148,34 @@ void MecanumUgvController::setupMachine() {
         .on(event_type::HEALTH_UNHEALTHY)
         .priority(transition_priority::AUTOMATIC);
     builder.transition()
-        .from(state_type::Hold)
-        .to(state_type::SelfCheck)
-        .on(event_type::HEALTH_UNHEALTHY)
-        .priority(transition_priority::AUTOMATIC);
-    builder.transition()
         .from(state_type::Reset)
         .to(state_type::SelfCheck)
         .on(event_type::HEALTH_UNHEALTHY)
         .priority(transition_priority::AUTOMATIC);
     builder.transition()
-        .from(state_type::Tracking)
+        .from(state_type::Custom1)
         .to(state_type::SelfCheck)
         .on(event_type::HEALTH_UNHEALTHY)
         .priority(transition_priority::AUTOMATIC);
     builder.transition()
-        .from(state_type::Ready)
-        .to(state_type::Hold)
-        .on(event_type::HOLD_REQUESTED)
-        .priority(transition_priority::COMMAND);
-    builder.transition()
         .from(state_type::Reset)
-        .to(state_type::Hold)
-        .on(event_type::HOLD_REQUESTED)
+        .to(state_type::Ready)
+        .on(event_type::STOP_REQUESTED)
         .priority(transition_priority::COMMAND);
     builder.transition()
-        .from(state_type::Tracking)
-        .to(state_type::Hold)
-        .on(event_type::HOLD_REQUESTED)
+        .from(state_type::Custom1)
+        .to(state_type::Ready)
+        .on(event_type::STOP_REQUESTED)
         .priority(transition_priority::COMMAND);
     builder.transition()
-        .from(state_type::Tracking)
-        .to(state_type::Hold)
+        .from(state_type::Custom1)
+        .to(state_type::Ready)
         .on(event_type::INPUT_REFERENCE_LOST)
         .priority(transition_priority::AUTOMATIC);
     builder.transition()
         .from(state_type::Ready)
-        .to(state_type::Tracking)
-        .on(event_type::TRACKING_REQUESTED)
-        .priority(transition_priority::COMMAND);
-    builder.transition()
-        .from(state_type::Hold)
-        .to(state_type::Tracking)
-        .on(event_type::TRACKING_REQUESTED)
-        .priority(transition_priority::COMMAND);
-    builder.transition()
-        .from(state_type::Reset)
-        .to(state_type::Tracking)
-        .on(event_type::TRACKING_REQUESTED)
+        .to(state_type::Custom1)
+        .on(event_type::CUSTOM1_REQUESTED)
         .priority(transition_priority::COMMAND);
     builder.transition()
         .from(state_type::Ready)
@@ -205,12 +183,7 @@ void MecanumUgvController::setupMachine() {
         .on(event_type::RESET_REQUESTED)
         .priority(transition_priority::COMMAND);
     builder.transition()
-        .from(state_type::Hold)
-        .to(state_type::Reset)
-        .on(event_type::RESET_REQUESTED)
-        .priority(transition_priority::COMMAND);
-    builder.transition()
-        .from(state_type::Tracking)
+        .from(state_type::Custom1)
         .to(state_type::Reset)
         .on(event_type::RESET_REQUESTED)
         .priority(transition_priority::COMMAND);
@@ -231,16 +204,15 @@ void MecanumUgvController::setupMachine() {
     requireOk(machine_->start(), "start Mecanum controller state machine");
 }
 
-void MecanumUgvController::maybeAutoStartTracking() {
+void MecanumUgvController::maybeAutoStartCustom1() {
     const auto cfg = config();
     if (!cfg.auto_start_tracking || !healthReady() || !worldReferenceReady() || !machine_) {
         return;
     }
-    const auto control_state = machine_->currentState(region_type::CONTROL);
-    if (control_state != state_type::Ready && control_state != state_type::Hold) {
+    if (machine_->currentState(region_type::CONTROL) != state_type::Ready) {
         return;
     }
-    ::state_machine::Event event(event_type::TRACKING_REQUESTED,
+    ::state_machine::Event event(event_type::CUSTOM1_REQUESTED,
                                  ::state_machine::EventTimestamp{current_time_sec_});
     event.source = "auto_start_tracking";
     event.category = ::state_machine::EventCategory::kInput;

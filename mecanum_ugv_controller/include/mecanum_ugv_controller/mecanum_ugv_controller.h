@@ -37,7 +37,7 @@ class MecanumUgvController {
 
    private:
     void setupMachine();
-    void maybeAutoStartTracking();
+    void maybeAutoStartCustom1();
 
     const UgvState& state_;
     mutable std::mutex config_mutex_;

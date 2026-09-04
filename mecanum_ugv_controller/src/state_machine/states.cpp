@@ -3,22 +3,18 @@
 #include "mecanum_ugv_controller/common/types.h"
 #include "mecanum_ugv_controller/mecanum_ugv_controller.h"
 #include "mecanum_ugv_controller/state_machine/health_monitor_state.h"
-#include "mecanum_ugv_controller/state_machine/hold_state.h"
 #include "mecanum_ugv_controller/state_machine/ready_state.h"
 #include "mecanum_ugv_controller/state_machine/reset_state.h"
 #include "mecanum_ugv_controller/state_machine/self_check_state.h"
-#include "mecanum_ugv_controller/state_machine/tracking_state.h"
+#include "mecanum_ugv_controller/state_machine/custom1_state.h"
 
 namespace mecanum_ugv_controller {
 namespace {
 
 void emitZeroIfDue(MecanumUgvController& controller, PeriodicGate& gate,
-                   ::state_machine::StateContext& ctx, bool silent) {
-    if (silent) {
-        return;
-    }
-    const auto cfg = controller.config();
-    if (gate.due(controller.currentTime(), 1.0 / cfg.command_publish_rate_hz)) {
+                   ::state_machine::StateContext& ctx, double rate_hz) {
+    const double period = rate_hz > 0.0 ? 1.0 / rate_hz : 0.0;
+    if (gate.due(controller.currentTime(), period)) {
         ctx.emitOutput(
             ::state_machine::Event(output_event_type::PUBLISH_ZERO_CMD_VEL,
                                    ::state_machine::EventTimestamp{controller.currentTime()}));
@@ -57,8 +53,7 @@ SelfCheckState::SelfCheckState(MecanumUgvController& controller) : controller_(c
 }
 
 ::state_machine::ActionResult SelfCheckState::onTick(::state_machine::StateContext& ctx) {
-    emitZeroIfDue(controller_, command_gate_, ctx,
-                  controller_.config().placement_idle_silent);
+    emitZeroIfDue(controller_, command_gate_, ctx, controller_.config().idle_cmd_rate_hz);
     return {};
 }
 
@@ -78,31 +73,11 @@ ReadyState::ReadyState(MecanumUgvController& controller) : controller_(controlle
 }
 
 ::state_machine::ActionResult ReadyState::onTick(::state_machine::StateContext& ctx) {
-    emitZeroIfDue(controller_, command_gate_, ctx, controller_.config().placement_idle_silent);
+    emitZeroIfDue(controller_, command_gate_, ctx, controller_.config().idle_cmd_rate_hz);
     return {};
 }
 
 ::state_machine::ActionResult ReadyState::onExit(::state_machine::StateContext& ctx) {
-    (void)ctx;
-    command_gate_.reset();
-    return {};
-}
-
-HoldState::HoldState(MecanumUgvController& controller) : controller_(controller) {}
-
-::state_machine::ActionResult HoldState::onEnter(::state_machine::StateContext& ctx) {
-    (void)ctx;
-    controller_.clearCommand();
-    command_gate_.reset();
-    return {};
-}
-
-::state_machine::ActionResult HoldState::onTick(::state_machine::StateContext& ctx) {
-    emitZeroIfDue(controller_, command_gate_, ctx, false);
-    return {};
-}
-
-::state_machine::ActionResult HoldState::onExit(::state_machine::StateContext& ctx) {
     (void)ctx;
     command_gate_.reset();
     return {};
@@ -115,7 +90,6 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
     controller_.clearCommand();
     command_gate_.reset();
     enter_time_ = controller_.currentTime();
-    settled_frames_ = 0;
     return {};
 }
 
@@ -133,6 +107,11 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
     }
     const HolonomicResetOutput output =
         computeHolonomicResetCommand(controller_.state(), controller_.resetTarget(), cfg);
+    if (output.position_ok) {
+        emitZero(ctx);
+        postDone(ctx, event_type::RESET_ARRIVED);
+        return {};
+    }
     ControlCommand command;
     command.stamp = ros::Time(now);
     command.linear_x = output.linear_x;
@@ -140,22 +119,12 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
     command.angular_z = output.angular_z;
     command.valid = true;
     emitCommand(ctx, command);
-    if (output.settled) {
-        ++settled_frames_;
-    } else {
-        settled_frames_ = 0;
-    }
-    if (settled_frames_ >= cfg.reset_settle_frames) {
-        emitZero(ctx);
-        postDone(ctx, event_type::RESET_ARRIVED);
-    }
     return {};
 }
 
 ::state_machine::ActionResult ResetState::onExit(::state_machine::StateContext& ctx) {
     emitZero(ctx);
     command_gate_.reset();
-    settled_frames_ = 0;
     return {};
 }
 
@@ -184,9 +153,9 @@ void ResetState::postDone(::state_machine::StateContext& ctx, ::state_machine::E
     (void)ctx.postInternalEvent(std::move(event));
 }
 
-TrackingState::TrackingState(MecanumUgvController& controller) : controller_(controller) {}
+Custom1State::Custom1State(MecanumUgvController& controller) : controller_(controller) {}
 
-::state_machine::ActionResult TrackingState::onEnter(::state_machine::StateContext& ctx) {
+::state_machine::ActionResult Custom1State::onEnter(::state_machine::StateContext& ctx) {
     (void)ctx;
     controller_.clearCommand();
     command_gate_.reset();
@@ -194,7 +163,7 @@ TrackingState::TrackingState(MecanumUgvController& controller) : controller_(con
     return {};
 }
 
-::state_machine::ActionResult TrackingState::onTick(::state_machine::StateContext& ctx) {
+::state_machine::ActionResult Custom1State::onTick(::state_machine::StateContext& ctx) {
     if (!controller_.worldReferenceReady()) {
         emitZero(ctx);
         if (had_reference_) {
@@ -215,14 +184,14 @@ TrackingState::TrackingState(MecanumUgvController& controller) : controller_(con
     return {};
 }
 
-::state_machine::ActionResult TrackingState::onExit(::state_machine::StateContext& ctx) {
+::state_machine::ActionResult Custom1State::onExit(::state_machine::StateContext& ctx) {
     emitZero(ctx);
     command_gate_.reset();
     had_reference_ = false;
     return {};
 }
 
-void TrackingState::emitCommand(::state_machine::StateContext& ctx, const ControlCommand& command) {
+void Custom1State::emitCommand(::state_machine::StateContext& ctx, const ControlCommand& command) {
     const auto cfg = controller_.config();
     if (!command_gate_.due(controller_.currentTime(), 1.0 / cfg.command_publish_rate_hz)) {
         return;
@@ -233,17 +202,17 @@ void TrackingState::emitCommand(::state_machine::StateContext& ctx, const Contro
                                ::state_machine::EventTimestamp{controller_.currentTime()}));
 }
 
-void TrackingState::emitZero(::state_machine::StateContext& ctx) {
+void Custom1State::emitZero(::state_machine::StateContext& ctx) {
     controller_.clearCommand();
     ctx.emitOutput(
         ::state_machine::Event(output_event_type::PUBLISH_ZERO_CMD_VEL,
                                ::state_machine::EventTimestamp{controller_.currentTime()}));
 }
 
-void TrackingState::postLost(::state_machine::StateContext& ctx) {
+void Custom1State::postLost(::state_machine::StateContext& ctx) {
     ::state_machine::Event event(event_type::INPUT_REFERENCE_LOST,
                                  ::state_machine::EventTimestamp{controller_.currentTime()});
-    event.source = "tracking_state";
+    event.source = "custom1_state";
     event.category = ::state_machine::EventCategory::kInternal;
     (void)ctx.postInternalEvent(std::move(event));
 }

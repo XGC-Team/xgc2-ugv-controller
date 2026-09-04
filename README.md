@@ -9,10 +9,10 @@ Packages:
 - `unicycle_ugv_controller`: unicycle-model UGV NMPC controller publishing
   `geometry_msgs/Twist`. Includes a `Reset` placement state that drives to an
   Experiment `initialPose` using a unicycle rail approach.
-- `mecanum_ugv_controller`: holonomic chassis tracker. `Reset` drives to an
-  Experiment `initialPose`. `Tracking` holds heading on world X (`yaw=0`) and
-  converts a Custom-algorithm world-frame integrator velocity into body
-  `vx` (forward) / `vy` (left). The algorithm does not publish `cmd_vel`.
+- `mecanum_ugv_controller`: reusable holonomic chassis modules. Health /
+  SelfCheck, `Reset` to an Experiment `initialPose`, and first-order Custom1
+  (world ENU velocity to body FLU, heading P to east). Algorithms publish
+  `{ns}/alg/reference/twist` only; they do not publish `cmd_vel`.
 
 ## Install
 
