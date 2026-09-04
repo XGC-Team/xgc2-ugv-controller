@@ -1,5 +1,7 @@
 #include "unicycle_ugv_controller/state_machine/reset_state.h"
 
+#include <cmath>
+
 #include "unicycle_ugv_controller/common/types.h"
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
 
@@ -12,7 +14,25 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
     controller_.clearCommand();
     command_gate_.reset();
     enter_time_ = controller_.currentTime();
-    settled_frames_ = 0;
+    last_track_time_ = enter_time_;
+    t_along_ = 0.0;
+    have_track_time_ = true;
+    plan_ = UnicycleBezierPlan{};
+    if (!controller_.resetTargetReady()) {
+        return {};
+    }
+    plan_ = planUnicycleReset(controller_.controlState(), controller_.resetTarget(),
+                              controller_.config());
+    if (plan_.already_arrived) {
+        emitZero(ctx);
+        postDone(ctx, event_type::RESET_ARRIVED);
+        return {};
+    }
+    if (!plan_.valid) {
+        emitZero(ctx);
+        postDone(ctx, event_type::RESET_PLAN_FAILED);
+        return {};
+    }
     return {};
 }
 
@@ -28,30 +48,52 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
         emitZero(ctx);
         return {};
     }
+    if (!plan_.valid && !plan_.already_arrived) {
+        plan_ = planUnicycleReset(controller_.controlState(), controller_.resetTarget(), cfg);
+        if (plan_.already_arrived) {
+            emitZero(ctx);
+            postDone(ctx, event_type::RESET_ARRIVED);
+            return {};
+        }
+        if (!plan_.valid) {
+            emitZero(ctx);
+            postDone(ctx, event_type::RESET_PLAN_FAILED);
+            return {};
+        }
+        t_along_ = 0.0;
+        last_track_time_ = now;
+        have_track_time_ = true;
+    }
+    if (have_track_time_) {
+        const double dt = now - last_track_time_;
+        if (std::isfinite(dt) && dt > 0.0) {
+            t_along_ += dt;
+        }
+    }
+    last_track_time_ = now;
+    have_track_time_ = true;
     const UnicycleResetOutput output =
-        computeUnicycleResetCommand(controller_.state(), controller_.resetTarget(), cfg);
+        trackUnicycleReset(controller_.controlState(), plan_, t_along_, cfg);
+    if (output.position_ok) {
+        emitZero(ctx);
+        postDone(ctx, event_type::RESET_ARRIVED);
+        return {};
+    }
     ControlCommand command;
     command.stamp = ros::Time(now);
     command.linear_speed = output.linear_speed;
     command.angular_speed = output.angular_speed;
     command.valid = true;
     emitCommand(ctx, command);
-    if (output.settled) {
-        ++settled_frames_;
-    } else {
-        settled_frames_ = 0;
-    }
-    if (settled_frames_ >= cfg.reset_settle_frames) {
-        emitZero(ctx);
-        postDone(ctx, event_type::RESET_ARRIVED);
-    }
     return {};
 }
 
 ::state_machine::ActionResult ResetState::onExit(::state_machine::StateContext& ctx) {
     emitZero(ctx);
     command_gate_.reset();
-    settled_frames_ = 0;
+    plan_ = UnicycleBezierPlan{};
+    have_track_time_ = false;
+    t_along_ = 0.0;
     return {};
 }
 

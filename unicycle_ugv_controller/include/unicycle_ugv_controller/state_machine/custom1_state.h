@@ -1,18 +1,20 @@
 #pragma once
 
 #include <state_machine/state_machine.hpp>
+#include <string>
 
+#include "unicycle_ugv_controller/common/types.h"
 #include "unicycle_ugv_controller/state_machine/periodic_gate.h"
 
 namespace unicycle_ugv_controller {
 
 class UnicycleUgvController;
 
-class TrackingState final : public ::state_machine::State {
+class Custom1State final : public ::state_machine::State {
    public:
-    explicit TrackingState(UnicycleUgvController& controller);
+    explicit Custom1State(UnicycleUgvController& controller);
     std::string name() const override {
-        return "Tracking";
+        return "Custom1";
     }
     ::state_machine::ActionResult onEnter(::state_machine::StateContext& ctx) override;
     ::state_machine::ActionResult onEvent(::state_machine::StateContext& ctx,
@@ -22,10 +24,12 @@ class TrackingState final : public ::state_machine::State {
 
    private:
     void requestSolveIfDue(::state_machine::StateContext& ctx);
-    void publishCommandIfDue(::state_machine::StateContext& ctx);
+    void publishNmpcCommandIfDue(::state_machine::StateContext& ctx);
+    void tickFlatness(::state_machine::StateContext& ctx);
     bool hasCommand() const;
-    void emitZeroCommand(::state_machine::StateContext& ctx) const;
-    void emitCurrentCommand(::state_machine::StateContext& ctx) const;
+    void emitCommandIfDue(::state_machine::StateContext& ctx);
+    void emitZero(::state_machine::StateContext& ctx);
+    void postLost(::state_machine::StateContext& ctx);
 
     UnicycleUgvController& controller_;
     PeriodicGate solve_gate_;
@@ -34,6 +38,10 @@ class TrackingState final : public ::state_machine::State {
     uint64_t in_flight_sequence_{0U};
     bool request_in_flight_{false};
     double request_deadline_{0.0};
+    bool had_reference_{false};
+    double body_speed_{0.0};
+    double last_tick_time_{0.0};
+    bool have_tick_time_{false};
 };
 
 }  // namespace unicycle_ugv_controller

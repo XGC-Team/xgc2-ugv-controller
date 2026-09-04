@@ -7,12 +7,11 @@
 #include <utility>
 
 #include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
+#include "unicycle_ugv_controller/state_machine/custom1_state.h"
 #include "unicycle_ugv_controller/state_machine/health_monitor_state.h"
-#include "unicycle_ugv_controller/state_machine/hold_state.h"
 #include "unicycle_ugv_controller/state_machine/ready_state.h"
 #include "unicycle_ugv_controller/state_machine/reset_state.h"
 #include "unicycle_ugv_controller/state_machine/self_check_state.h"
-#include "unicycle_ugv_controller/state_machine/tracking_state.h"
 
 namespace unicycle_ugv_controller {
 namespace {
@@ -33,8 +32,9 @@ UnicycleUgvController::UnicycleUgvController(const UgvState& state) : state_(sta
 
 void UnicycleUgvController::update(double now_sec) {
     current_time_sec_ = now_sec;
+    maybeUpdatePoseVelocity();
+    maybeAutoStartCustom1();
     if (machine_) {
-        maybeAutoStartTracking();
         (void)machine_->update();
     }
 }
@@ -55,18 +55,21 @@ void UnicycleUgvController::setConfig(const ControllerConfig& config) {
 
 bool UnicycleUgvController::healthReady() const {
     const auto cfg = config();
-    if (!stateFresh(state_, ros::Time(current_time_sec_), cfg.state_timeout)) {
+    if (!stateFresh(state_, ros::Time(current_time_sec_), cfg.state_timeout) ||
+        !insideFence(state_, cfg)) {
         return false;
     }
-    if (cfg.state_source == StateSource::VRPN_DIRECT ||
-        cfg.state_source == StateSource::PLATFORM_POSE) {
-        return finiteState(state_);
+    if (cfg.state_source != StateSource::STATE_ESTIMATOR) {
+        return finitePose(state_);
     }
     return rigidEstimateHealthy(state_.estimator_state, state_.estimator_flags);
 }
 
 bool UnicycleUgvController::referenceReady() const {
     const auto cfg = config();
+    if (cfg.tracking_strategy == TrackingStrategy::FLATNESS) {
+        return worldPvaReady();
+    }
     return reference_cache_.valid(ros::Time(current_time_sec_), cfg.reference_timeout);
 }
 
@@ -111,6 +114,64 @@ ResetTarget UnicycleUgvController::resetTarget() const {
     return reset_target_;
 }
 
+bool UnicycleUgvController::worldPvaReady() const {
+    std::lock_guard<std::mutex> lock(pva_mutex_);
+    return ::unicycle_ugv_controller::worldPvaReady(world_pva_, current_time_sec_,
+                                                    config().reference_timeout);
+}
+
+void UnicycleUgvController::setWorldPva(WorldPvaReference reference) {
+    std::lock_guard<std::mutex> lock(pva_mutex_);
+    world_pva_ = reference;
+}
+
+WorldPvaReference UnicycleUgvController::worldPva() const {
+    std::lock_guard<std::mutex> lock(pva_mutex_);
+    return world_pva_;
+}
+
+WorldPvaReference UnicycleUgvController::liftedWorldPva() const {
+    std::lock_guard<std::mutex> lock(pva_mutex_);
+    return liftWorldPva(world_pva_, current_time_sec_);
+}
+
+void UnicycleUgvController::maybeUpdatePoseVelocity() {
+    const auto cfg = config();
+    if (!usesPoseVelocityFilter(cfg.state_source)) {
+        return;
+    }
+    if (!state_.received || !finitePose(state_)) {
+        return;
+    }
+    const double stamp = state_.stamp.toSec();
+    if (have_pose_stamp_ && stamp == last_pose_stamp_) {
+        return;
+    }
+    (void)updatePoseVelocityEstimator(pose_velocity_, stamp, state_.x, state_.y, state_.yaw, cfg);
+    last_pose_stamp_ = stamp;
+    have_pose_stamp_ = true;
+}
+
+UgvState UnicycleUgvController::controlState() const {
+    UgvState snapshot = state_;
+    const auto cfg = config();
+    if (usesPoseVelocityFilter(cfg.state_source)) {
+        snapshot.vx = pose_velocity_.vx;
+        snapshot.vy = pose_velocity_.vy;
+        snapshot.yaw_rate = pose_velocity_.yaw_rate;
+        snapshot.speed = bodySpeedFromWorld(snapshot.yaw, snapshot.vx, snapshot.vy);
+        snapshot.velocity_valid = pose_velocity_.velocity_valid;
+    }
+    return snapshot;
+}
+
+bool UnicycleUgvController::velocityValid() const {
+    if (usesPoseVelocityFilter(config().state_source)) {
+        return pose_velocity_.velocity_valid;
+    }
+    return state_.velocity_valid;
+}
+
 void UnicycleUgvController::setupMachine() {
     auto builder = sm::StateMachine::builder("UnicycleUgvControllerStateMachine");
     builder.region(region_type::HEALTH)
@@ -131,12 +192,9 @@ void UnicycleUgvController::setupMachine() {
         .state(state_type::Ready)
         .name("Ready")
         .impl(std::make_unique<ReadyState>(*this))
-        .state(state_type::Tracking)
-        .name("Tracking")
-        .impl(std::make_unique<TrackingState>(*this))
-        .state(state_type::Hold)
-        .name("Hold")
-        .impl(std::make_unique<HoldState>(*this))
+        .state(state_type::Custom1)
+        .name("Custom1")
+        .impl(std::make_unique<Custom1State>(*this))
         .state(state_type::Reset)
         .name("Reset")
         .impl(std::make_unique<ResetState>(*this))
@@ -153,57 +211,42 @@ void UnicycleUgvController::setupMachine() {
         .on(event_type::HEALTH_UNHEALTHY)
         .priority(transition_priority::AUTOMATIC);
     builder.transition()
-        .from(state_type::Hold)
-        .to(state_type::SelfCheck)
-        .on(event_type::HEALTH_UNHEALTHY)
-        .priority(transition_priority::AUTOMATIC);
-    builder.transition()
-        .from(state_type::Tracking)
-        .to(state_type::SelfCheck)
-        .on(event_type::HEALTH_UNHEALTHY)
-        .priority(transition_priority::AUTOMATIC);
-    builder.transition()
         .from(state_type::Reset)
         .to(state_type::SelfCheck)
         .on(event_type::HEALTH_UNHEALTHY)
         .priority(transition_priority::AUTOMATIC);
     builder.transition()
-        .from(state_type::Ready)
-        .to(state_type::Tracking)
-        .on(event_type::TRACKING_REQUESTED)
+        .from(state_type::Custom1)
+        .to(state_type::SelfCheck)
+        .on(event_type::HEALTH_UNHEALTHY)
+        .priority(transition_priority::AUTOMATIC);
+    builder.transition()
+        .from(state_type::Reset)
+        .to(state_type::Ready)
+        .on(event_type::STOP_REQUESTED)
         .priority(transition_priority::COMMAND);
     builder.transition()
-        .from(state_type::Hold)
-        .to(state_type::Tracking)
-        .on(event_type::TRACKING_REQUESTED)
+        .from(state_type::Custom1)
+        .to(state_type::Ready)
+        .on(event_type::STOP_REQUESTED)
         .priority(transition_priority::COMMAND);
     builder.transition()
-        .from(state_type::Tracking)
-        .to(state_type::Hold)
-        .on(event_type::HOLD_REQUESTED)
-        .priority(transition_priority::COMMAND);
-    builder.transition()
-        .from(state_type::Ready)
-        .to(state_type::Hold)
-        .on(event_type::HOLD_REQUESTED)
-        .priority(transition_priority::COMMAND);
-    builder.transition()
-        .from(state_type::Tracking)
-        .to(state_type::Hold)
+        .from(state_type::Custom1)
+        .to(state_type::Ready)
         .on(event_type::INPUT_REFERENCE_LOST)
         .priority(transition_priority::AUTOMATIC);
     builder.transition()
         .from(state_type::Ready)
+        .to(state_type::Custom1)
+        .on(event_type::CUSTOM1_REQUESTED)
+        .priority(transition_priority::COMMAND);
+    builder.transition()
+        .from(state_type::Ready)
         .to(state_type::Reset)
         .on(event_type::RESET_REQUESTED)
         .priority(transition_priority::COMMAND);
     builder.transition()
-        .from(state_type::Hold)
-        .to(state_type::Reset)
-        .on(event_type::RESET_REQUESTED)
-        .priority(transition_priority::COMMAND);
-    builder.transition()
-        .from(state_type::Tracking)
+        .from(state_type::Custom1)
         .to(state_type::Reset)
         .on(event_type::RESET_REQUESTED)
         .priority(transition_priority::COMMAND);
@@ -219,31 +262,31 @@ void UnicycleUgvController::setupMachine() {
         .priority(transition_priority::AUTOMATIC);
     builder.transition()
         .from(state_type::Reset)
-        .to(state_type::Hold)
-        .on(event_type::HOLD_REQUESTED)
-        .priority(transition_priority::COMMAND);
+        .to(state_type::SelfCheck)
+        .on(event_type::RESET_PLAN_FAILED)
+        .priority(transition_priority::AUTOMATIC);
+
     auto result = builder.build();
     requireOk(result.status, "build UGV controller state machine");
     machine_ = std::move(result.value);
     requireOk(machine_->start(), "start UGV controller state machine");
 }
 
-void UnicycleUgvController::maybeAutoStartTracking() {
+void UnicycleUgvController::maybeAutoStartCustom1() {
     const auto cfg = config();
-    if (!cfg.auto_start_tracking || !healthReady() || !referenceReady()) {
+    if (!cfg.auto_start_tracking || !healthReady() || !referenceReady() || !machine_) {
         return;
     }
-    const auto control_state = machine_->currentState(region_type::CONTROL);
-    if (control_state != state_type::Ready && control_state != state_type::Hold) {
+    if (machine_->currentState(region_type::CONTROL) != state_type::Ready) {
         return;
     }
-    ::state_machine::Event event(event_type::TRACKING_REQUESTED,
+    ::state_machine::Event event(event_type::CUSTOM1_REQUESTED,
                                  ::state_machine::EventTimestamp{current_time_sec_});
     event.source = "auto_start_tracking";
     event.category = ::state_machine::EventCategory::kInput;
     const auto status = machine_->postEvent(std::move(event));
     if (!status.ok()) {
-        ROS_WARN("[UnicycleUgvController] Failed to post auto tracking event: %s",
+        ROS_WARN("[UnicycleUgvController] Failed to post auto Custom1 event: %s",
                  status.message.c_str());
     }
 }

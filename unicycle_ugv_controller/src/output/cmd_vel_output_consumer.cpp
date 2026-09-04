@@ -4,6 +4,8 @@
 #include <memory>
 #include <utility>
 
+#include "unicycle_ugv_controller/common/types.h"
+
 namespace unicycle_ugv_controller {
 namespace {
 
@@ -45,8 +47,16 @@ geometry_msgs::Twist CmdVelOutputConsumer::makeTwist(const ControlCommand& comma
         !std::isfinite(command.angular_speed)) {
         return msg;
     }
-    msg.linear.x = clamp(command.linear_speed, cfg.min_linear_speed, cfg.max_linear_speed);
-    msg.angular.z = clamp(command.angular_speed, -cfg.max_angular_speed, cfg.max_angular_speed);
+    const auto control = controller_.stateMachine().currentState(region_type::CONTROL);
+    if (control == state_type::Custom1 && cfg.tracking_strategy == TrackingStrategy::NMPC) {
+        msg.linear.x = clamp(command.linear_speed, cfg.min_linear_speed, cfg.max_linear_speed);
+        msg.angular.z = clamp(command.angular_speed, -cfg.max_angular_speed, cfg.max_angular_speed);
+    } else {
+        msg.linear.x =
+            clamp(command.linear_speed, -cfg.chassis_max_linear_speed, cfg.chassis_max_linear_speed);
+        msg.angular.z =
+            clamp(command.angular_speed, -cfg.chassis_max_yaw_rate, cfg.chassis_max_yaw_rate);
+    }
     return msg;
 }
 

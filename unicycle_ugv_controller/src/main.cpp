@@ -9,11 +9,11 @@ int main(int argc, char** argv) {
     ros::NodeHandle nh;
     ros::NodeHandle private_nh("~");
 
-    double control_rate_hz = 100.0;
+    double control_rate_hz = 500.0;
     private_nh.param("control_rate_hz", control_rate_hz, control_rate_hz);
     if (!std::isfinite(control_rate_hz) || control_rate_hz <= 0.0) {
-        ROS_WARN("[UnicycleUgvController] Invalid control_rate_hz; using 100 Hz");
-        control_rate_hz = 100.0;
+        ROS_WARN("[UnicycleUgvController] Invalid control_rate_hz; using 500 Hz");
+        control_rate_hz = 500.0;
     }
 
     unicycle_ugv_controller::UnicycleUgvRosNode node(nh);

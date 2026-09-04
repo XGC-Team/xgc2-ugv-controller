@@ -3,31 +3,27 @@
     <arg name="ns" default="ugv1"/>
     <arg name="config_file" default="$(find unicycle_ugv_controller)/config/unicycle_ugv_controller.yaml"/>
 
-    <arg name="control_rate_hz" default="100.0"/>
+    <arg name="control_rate_hz" default="500.0"/>
     <arg name="queue_size" default="10"/>
 
     <arg name="state_estimate_topic" default="alg/state_estimator/state"/>
     <arg name="state_source" default="state_estimator"/>
-    <arg name="vrpn_client_node" default="/vrpn_client_node"/>
-    <arg name="vrpn_rigid_body" default="$(arg ns)"/>
-    <arg name="vrpn_pose_topic" default="$(arg vrpn_client_node)/$(arg vrpn_rigid_body)/pose"/>
-    <arg name="vrpn_twist_topic" default="$(arg vrpn_client_node)/$(arg vrpn_rigid_body)/twist"/>
+    <arg name="tracking_strategy" default="nmpc"/>
     <arg name="active_analytic_topic" default="alg/unicycle_reference_trajectory/active/analytic"/>
     <arg name="active_polynomial_topic" default="alg/unicycle_reference_trajectory/active/polynomial"/>
     <arg name="active_sampled_topic" default="alg/unicycle_reference_trajectory/active/sampled"/>
+    <arg name="pva_reference_topic" default="alg/reference/pva"/>
     <arg name="cmd_vel_topic" default="cmd_vel"/>
 
     <arg name="state_timeout" default="0.2"/>
     <arg name="reference_timeout" default="0.5"/>
-    <arg name="command_publish_rate_hz" default="100.0"/>
+    <arg name="command_publish_rate_hz" default="50.0"/>
+    <arg name="idle_cmd_rate_hz" default="5.0"/>
     <arg name="auto_start_tracking" default="false"/>
-    <arg name="placement_idle_silent" default="false"/>
     <arg name="platform_pose_topic" default="pose"/>
-    <arg name="platform_twist_topic" default="twist"/>
     <arg name="reset_pose_topic" default="reset_pose"/>
     <arg name="reset_timeout" default="45.0"/>
-    <arg name="reset_arrive_position" default="0.40"/>
-    <arg name="reset_arrive_yaw" default="0.60"/>
+    <arg name="reset_arrive_position" default="0.05"/>
 
     <arg name="nmpc_control_period" default="0.1"/>
     <arg name="nmpc_prediction_horizon" default="1.0"/>
@@ -40,6 +36,8 @@
     <arg name="max_angular_speed" default="2.5"/>
     <arg name="max_linear_acceleration" default="2.0"/>
     <arg name="max_angular_acceleration" default="3.0"/>
+    <arg name="chassis_max_linear_speed" default="1.05"/>
+    <arg name="chassis_max_yaw_rate" default="1.05"/>
 
     <arg name="nmpc_weight_position_x" default="20.0"/>
     <arg name="nmpc_weight_position_y" default="20.0"/>
@@ -64,23 +62,21 @@
             <param name="queue_size" value="$(arg queue_size)"/>
             <param name="state_estimate_topic" value="$(arg state_estimate_topic)"/>
             <param name="state_source" value="$(arg state_source)"/>
-            <param name="vrpn_pose_topic" value="$(arg vrpn_pose_topic)"/>
-            <param name="vrpn_twist_topic" value="$(arg vrpn_twist_topic)"/>
+            <param name="tracking_strategy" value="$(arg tracking_strategy)"/>
             <param name="active_analytic_topic" value="$(arg active_analytic_topic)"/>
             <param name="active_polynomial_topic" value="$(arg active_polynomial_topic)"/>
             <param name="active_sampled_topic" value="$(arg active_sampled_topic)"/>
+            <param name="pva_reference_topic" value="$(arg pva_reference_topic)"/>
             <param name="cmd_vel_topic" value="$(arg cmd_vel_topic)"/>
             <param name="state_timeout" value="$(arg state_timeout)"/>
             <param name="reference_timeout" value="$(arg reference_timeout)"/>
             <param name="command_publish_rate_hz" value="$(arg command_publish_rate_hz)"/>
+            <param name="idle_cmd_rate_hz" value="$(arg idle_cmd_rate_hz)"/>
             <param name="auto_start_tracking" value="$(arg auto_start_tracking)"/>
-            <param name="placement_idle_silent" value="$(arg placement_idle_silent)"/>
             <param name="platform_pose_topic" value="$(arg platform_pose_topic)"/>
-            <param name="platform_twist_topic" value="$(arg platform_twist_topic)"/>
             <param name="reset_pose_topic" value="$(arg reset_pose_topic)"/>
             <param name="reset/timeout" value="$(arg reset_timeout)"/>
             <param name="reset/arrive_position" value="$(arg reset_arrive_position)"/>
-            <param name="reset/arrive_yaw" value="$(arg reset_arrive_yaw)"/>
             <param name="nmpc/control_period" value="$(arg nmpc_control_period)"/>
             <param name="nmpc/prediction_horizon" value="$(arg nmpc_prediction_horizon)"/>
             <param name="nmpc/request_rate_hz" value="$(arg nmpc_request_rate_hz)"/>
@@ -91,6 +87,8 @@
             <param name="limits/max_angular_speed" value="$(arg max_angular_speed)"/>
             <param name="limits/max_linear_acceleration" value="$(arg max_linear_acceleration)"/>
             <param name="limits/max_angular_acceleration" value="$(arg max_angular_acceleration)"/>
+            <param name="chassis/max_linear_speed" value="$(arg chassis_max_linear_speed)"/>
+            <param name="chassis/max_yaw_rate" value="$(arg chassis_max_yaw_rate)"/>
             <param name="nmpc/weights/position_x" value="$(arg nmpc_weight_position_x)"/>
             <param name="nmpc/weights/position_y" value="$(arg nmpc_weight_position_y)"/>
             <param name="nmpc/weights/yaw" value="$(arg nmpc_weight_yaw)"/>

@@ -41,10 +41,20 @@ class UnicycleUgvController {
     void setCommand(ControlCommand command);
     ControlCommand command() const;
     void clearCommand();
+    bool worldPvaReady() const;
+    void setWorldPva(WorldPvaReference reference);
+    WorldPvaReference worldPva() const;
+    WorldPvaReference liftedWorldPva() const;
+    const PoseVelocityEstimator& poseVelocity() const {
+        return pose_velocity_;
+    }
+    UgvState controlState() const;
+    bool velocityValid() const;
 
    private:
     void setupMachine();
-    void maybeAutoStartTracking();
+    void maybeAutoStartCustom1();
+    void maybeUpdatePoseVelocity();
 
     const UgvState& state_;
     mutable std::mutex config_mutex_;
@@ -54,8 +64,13 @@ class UnicycleUgvController {
     ControlCommand command_;
     mutable std::mutex reset_mutex_;
     ResetTarget reset_target_;
+    mutable std::mutex pva_mutex_;
+    WorldPvaReference world_pva_;
+    PoseVelocityEstimator pose_velocity_{};
     std::unique_ptr<::state_machine::StateMachine> machine_;
     double current_time_sec_{0.0};
+    double last_pose_stamp_{0.0};
+    bool have_pose_stamp_{false};
 };
 
 }  // namespace unicycle_ugv_controller

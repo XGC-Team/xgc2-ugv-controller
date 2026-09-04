@@ -166,6 +166,7 @@ add_executable(${PROJECT_NAME}_node
   src/unicycle_ugv_controller.cpp
   src/unicycle_ugv_ros_node.cpp
   src/input/command_input_producer.cpp
+  src/input/pva_reference_input_producer.cpp
   src/input/reference_input_producer.cpp
   src/input/reset_target_input_producer.cpp
   src/input/state_input_producer.cpp
@@ -175,8 +176,7 @@ add_executable(${PROJECT_NAME}_node
   src/state_machine/self_check_state.cpp
   src/state_machine/ready_state.cpp
   src/state_machine/reset_state.cpp
-  src/state_machine/tracking_state.cpp
-  src/state_machine/hold_state.cpp)
+  src/state_machine/custom1_state.cpp)
 add_dependencies(${PROJECT_NAME}_node
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS})
@@ -217,8 +217,7 @@ if(CATKIN_ENABLE_TESTING)
     src/state_machine/self_check_state.cpp
     src/state_machine/ready_state.cpp
     src/state_machine/reset_state.cpp
-    src/state_machine/tracking_state.cpp
-    src/state_machine/hold_state.cpp)
+    src/state_machine/custom1_state.cpp)
   if(TARGET unicycle_ugv_controller_runtime_test)
     target_link_libraries(unicycle_ugv_controller_runtime_test
       unicycle_ugv_controller_nmpc_runtime
@@ -227,5 +226,13 @@ if(CATKIN_ENABLE_TESTING)
       xgc2_math::trajectory
       ${catkin_LIBRARIES}
       gtest_main)
+  endif()
+  find_program(PYTHON3_EXECUTABLE python3)
+  if(PYTHON3_EXECUTABLE)
+    add_test(NAME unicycle_tracker_python
+      COMMAND ${PYTHON3_EXECUTABLE} -m unittest discover -s
+              ${CMAKE_CURRENT_SOURCE_DIR}/tools/unicycle_tracker/tests -p "test_*.py")
+    set_tests_properties(unicycle_tracker_python PROPERTIES
+      ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/tools")
   endif()
 endif()

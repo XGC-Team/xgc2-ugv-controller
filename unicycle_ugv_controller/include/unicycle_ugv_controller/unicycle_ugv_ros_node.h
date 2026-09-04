@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "unicycle_ugv_controller/input/command_input_producer.h"
+#include "unicycle_ugv_controller/input/pva_reference_input_producer.h"
 #include "unicycle_ugv_controller/input/reference_input_producer.h"
 #include "unicycle_ugv_controller/input/reset_target_input_producer.h"
 #include "unicycle_ugv_controller/input/state_input_producer.h"
@@ -27,6 +28,7 @@ class UnicycleUgvRosNode {
 
    private:
     void loadParams();
+    void seedResetTarget();
     void updateOnce();
     void dispatchOutputEvents(const std::vector<::state_machine::Event>& events);
     void publishStatusIfDue(const ros::Time& now);
@@ -42,19 +44,18 @@ class UnicycleUgvRosNode {
     std::unique_ptr<CommandInputProducer> command_input_;
     std::unique_ptr<StateInputProducer> state_input_;
     std::unique_ptr<ReferenceInputProducer> reference_input_;
+    std::unique_ptr<PvaReferenceInputProducer> pva_reference_input_;
     std::unique_ptr<ResetTargetInputProducer> reset_target_input_;
 
     ControllerConfig config_{};
     uint32_t queue_size_{10U};
     std::string state_topic_{"alg/state_estimator/state"};
-    std::string vrpn_pose_topic_{"/vrpn_client_node/ugv1/pose"};
-    std::string vrpn_twist_topic_{"/vrpn_client_node/ugv1/twist"};
     std::string platform_pose_topic_{"pose"};
-    std::string platform_twist_topic_{"twist"};
     std::string reset_pose_topic_{"reset_pose"};
     std::string active_analytic_topic_{"alg/unicycle_reference_trajectory/active/analytic"};
     std::string active_polynomial_topic_{"alg/unicycle_reference_trajectory/active/polynomial"};
     std::string active_sampled_topic_{"alg/unicycle_reference_trajectory/active/sampled"};
+    std::string pva_reference_topic_{"alg/reference/pva"};
     std::string cmd_vel_topic_{"cmd_vel"};
     std::string control_state_topic_{"alg/unicycle_ugv_controller/status/control_state"};
     std::string health_state_topic_{"alg/unicycle_ugv_controller/status/health_state"};

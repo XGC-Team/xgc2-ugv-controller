@@ -1,35 +1,53 @@
-control_rate_hz: 100.0
+control_rate_hz: 500.0
 queue_size: 10
 
 state_estimate_topic: "alg/state_estimator/state"
 state_source: "state_estimator"
-vrpn_pose_topic: "/vrpn_client_node/ugv1/pose"
-vrpn_twist_topic: "/vrpn_client_node/ugv1/twist"
+tracking_strategy: "nmpc"
 active_analytic_topic: "alg/unicycle_reference_trajectory/active/analytic"
 active_polynomial_topic: "alg/unicycle_reference_trajectory/active/polynomial"
 active_sampled_topic: "alg/unicycle_reference_trajectory/active/sampled"
+pva_reference_topic: "alg/reference/pva"
 cmd_vel_topic: "cmd_vel"
 
 state_timeout: 0.2
 reference_timeout: 0.5
-command_publish_rate_hz: 100.0
+command_publish_rate_hz: 50.0
+idle_cmd_rate_hz: 5.0
 auto_start_tracking: false
-placement_idle_silent: false
 platform_pose_topic: "pose"
-platform_twist_topic: "twist"
 reset_pose_topic: "reset_pose"
 
 reset:
   timeout: 45.0
-  arrive_position: 0.40
-  arrive_yaw: 0.60
-  settle_speed: 0.08
-  settle_yaw_rate: 0.12
+  arrive_position: 0.05
   kp_along: 0.8
   kp_heading: 1.2
-  max_speed: 0.6
-  max_yaw_rate: 0.8
-  settle_frames: 8
+
+chassis:
+  max_linear_speed: 1.05
+  max_yaw_rate: 1.05
+
+flatness:
+  kp: 6.0
+  kv: 4.0
+  v_eps: 0.15
+
+filter:
+  zeta: 0.7071067811865476
+  wn: 31.41592653589793
+  dt_min: 0.0001
+  dt_max: 0.2
+
+fence:
+  x_min: -20.0
+  x_max: 20.0
+  y_min: -20.0
+  y_max: 20.0
+
+reset_initial_x: 0.0
+reset_initial_y: 0.0
+reset_initial_yaw: 0.0
 
 nmpc:
   control_period: 0.1
@@ -37,9 +55,6 @@ nmpc:
   request_rate_hz: 100.0
   solve_timeout: 0.05
   result_timeout: 0.1
-  # Nonlinear LS weights. Read once at node start from this yaml / launch
-  # args / rosparam. Change a value, restart the controller, then freeze
-  # the keepers back into this file and the launch defaults.
   weights:
     position_x: 20.0
     position_y: 20.0
@@ -58,6 +73,4 @@ limits:
   max_linear_speed: 3.0
   max_angular_speed: 2.5
   max_linear_acceleration: 2.0
-  # 2026-08-21 Scout bag: realized 0.1 s yaw acceleration p95 was about 2.94 rad/s^2.
   max_angular_acceleration: 3.0
-  # Shuttle rail uses signed v (reverse). Do not raise min_linear_speed to 0.

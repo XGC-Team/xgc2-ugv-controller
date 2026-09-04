@@ -6,9 +6,10 @@ Packages:
 
 - `unicycle_reference_trajectory`: planar reference trajectory messages,
   generation runtime, and ROS publishers.
-- `unicycle_ugv_controller`: unicycle-model UGV NMPC controller publishing
-  `geometry_msgs/Twist`. Includes a `Reset` placement state that drives to an
-  Experiment `initialPose` using a unicycle rail approach.
+- `unicycle_ugv_controller`: unicycle chassis controller, unique `cmd_vel`
+  publisher. CONTROL states: SelfCheck / Ready / Reset / Custom1. Reset is a
+  cubic Bézier placement to Experiment `initialPose`. Custom1 selects `nmpc`
+  or `flatness` by rosparam. Remote I/O is canonical `{ns}/pose` only.
 - `mecanum_ugv_controller`: reusable holonomic chassis modules. Health /
   SelfCheck, `Reset` to an Experiment `initialPose`, and first-order Custom1
   (world ENU velocity to body FLU, heading P to east). Algorithms publish

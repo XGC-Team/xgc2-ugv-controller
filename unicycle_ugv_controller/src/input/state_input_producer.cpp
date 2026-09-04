@@ -1,5 +1,6 @@
 #include "unicycle_ugv_controller/input/state_input_producer.h"
 
+#include <cmath>
 #include <utility>
 
 #include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
@@ -8,25 +9,15 @@ namespace unicycle_ugv_controller {
 
 StateInputProducer::StateInputProducer(ros::NodeHandle& nh, UgvState& state,
                                        StateSource state_source, const std::string& state_topic,
-                                       const std::string& vrpn_pose_topic,
-                                       const std::string& vrpn_twist_topic,
-                                       const std::string& platform_pose_topic,
-                                       const std::string& platform_twist_topic,
-                                       EventSink event_sink, uint32_t queue_size)
+                                       const std::string& platform_pose_topic, EventSink event_sink,
+                                       uint32_t queue_size)
     : state_(state), state_source_(state_source), event_sink_(std::move(event_sink)) {
-    if (state_source_ == StateSource::VRPN_DIRECT) {
-        vrpn_pose_sub_ =
-            nh.subscribe(vrpn_pose_topic, queue_size, &StateInputProducer::vrpnPoseCallback, this);
-        vrpn_twist_sub_ = nh.subscribe(vrpn_twist_topic, queue_size,
-                                       &StateInputProducer::vrpnTwistCallback, this);
-    } else if (state_source_ == StateSource::PLATFORM_POSE) {
-        vrpn_pose_sub_ = nh.subscribe(platform_pose_topic, queue_size,
-                                      &StateInputProducer::vrpnPoseCallback, this);
-        vrpn_twist_sub_ = nh.subscribe(platform_twist_topic, queue_size,
-                                       &StateInputProducer::vrpnTwistCallback, this);
-    } else {
+    if (state_source_ == StateSource::STATE_ESTIMATOR) {
         state_sub_ =
             nh.subscribe(state_topic, queue_size, &StateInputProducer::stateCallback, this);
+    } else {
+        pose_sub_ =
+            nh.subscribe(platform_pose_topic, queue_size, &StateInputProducer::poseCallback, this);
     }
 }
 
@@ -41,63 +32,39 @@ void StateInputProducer::stateCallback(
     state_.x = planar.x;
     state_.y = planar.y;
     state_.yaw = planar.yaw;
+    state_.vx = msg->velocity.x;
+    state_.vy = msg->velocity.y;
     state_.speed = planar.speed;
     state_.yaw_rate = planar.yaw_rate;
     state_.estimator_state = msg->estimator_state;
     state_.estimator_flags = msg->flags;
     state_.received = true;
+    state_.velocity_valid = std::isfinite(state_.vx) && std::isfinite(state_.vy);
     post(event_type::INPUT_STATE_UPDATED, "state_estimate", state_.stamp);
 }
 
-void StateInputProducer::vrpnPoseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
+void StateInputProducer::poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
     if (!msg) {
-        ROS_ERROR("[UgvStateInputProducer] Received null VRPN pose");
+        ROS_ERROR("[UgvStateInputProducer] Received null canonical pose");
         return;
     }
     double yaw = 0.0;
     if (!tryYawFromQuaternion(msg->pose.orientation.x, msg->pose.orientation.y,
                               msg->pose.orientation.z, msg->pose.orientation.w, yaw)) {
-        ROS_WARN_THROTTLE(1.0,
-                          "[UgvStateInputProducer] Rejecting VRPN pose with invalid quaternion");
+        ROS_WARN_THROTTLE(1.0, "[UgvStateInputProducer] Rejecting pose with invalid quaternion");
+        return;
+    }
+    if (!std::isfinite(msg->pose.position.x) || !std::isfinite(msg->pose.position.y)) {
         return;
     }
     state_.x = msg->pose.position.x;
     state_.y = msg->pose.position.y;
     state_.yaw = yaw;
-    vrpn_pose_stamp_ = msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
-    vrpn_pose_received_ = true;
-    updateVrpnState(vrpn_pose_stamp_);
-}
-
-void StateInputProducer::vrpnTwistCallback(const geometry_msgs::TwistStamped::ConstPtr& msg) {
-    if (!msg) {
-        ROS_ERROR("[UgvStateInputProducer] Received null VRPN twist");
-        return;
-    }
-    vrpn_velocity_x_ = msg->twist.linear.x;
-    vrpn_velocity_y_ = msg->twist.linear.y;
-    state_.yaw_rate = msg->twist.angular.z;
-    vrpn_twist_stamp_ = msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
-    vrpn_twist_received_ = true;
-    updateVrpnState(vrpn_twist_stamp_);
-}
-
-void StateInputProducer::updateVrpnState(const ros::Time& update_stamp) {
-    if (!vrpn_pose_received_ || !vrpn_twist_received_) {
-        return;
-    }
-    state_.speed =
-        std::cos(state_.yaw) * vrpn_velocity_x_ + std::sin(state_.yaw) * vrpn_velocity_y_;
-    state_.stamp = vrpn_pose_stamp_ < vrpn_twist_stamp_ ? vrpn_pose_stamp_ : vrpn_twist_stamp_;
-    if (state_.stamp.isZero()) {
-        state_.stamp = update_stamp.isZero() ? ros::Time::now() : update_stamp;
-    }
+    state_.stamp = msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
     state_.estimator_state = 0U;
     state_.estimator_flags = 0U;
     state_.received = true;
-    post(event_type::INPUT_STATE_UPDATED,
-         state_source_ == StateSource::PLATFORM_POSE ? "platform_pose" : "vrpn_direct",
-         state_.stamp);
+    post(event_type::INPUT_STATE_UPDATED, "platform_pose", state_.stamp);
 }
 
 void StateInputProducer::post(::state_machine::EventId id, const char* source,
