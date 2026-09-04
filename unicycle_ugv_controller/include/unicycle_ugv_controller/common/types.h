@@ -261,12 +261,13 @@ bool worldPvaReady(const WorldPvaReference& sample, double now_sec, double timeo
 
 UnicycleBezierPlan planUnicycleReset(const UgvState& state, const ResetTarget& goal,
                                      const ControllerConfig& config);
-bool sampleUnicycleReset(const UnicycleBezierPlan& plan, double t_along, UnicycleResetSample& sample);
+bool sampleUnicycleReset(const UnicycleBezierPlan& plan, double t_along,
+                         UnicycleResetSample& sample);
 UnicycleResetOutput trackUnicycleReset(const UgvState& state, const UnicycleBezierPlan& plan,
                                        double t_along, const ControllerConfig& config);
 
-FlatnessCommandOutput computeFlatnessCommand(const UgvState& state, const WorldPvaReference& reference,
-                                             double body_speed, double dt,
-                                             const ControllerConfig& config);
+FlatnessCommandOutput computeFlatnessCommand(const UgvState& state,
+                                             const WorldPvaReference& reference, double body_speed,
+                                             double dt, const ControllerConfig& config);
 
 }  // namespace unicycle_ugv_controller

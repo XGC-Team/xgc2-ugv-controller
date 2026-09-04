@@ -202,7 +202,8 @@ UnicycleBezierPlan makeCandidate(const UgvState& state, const ResetTarget& goal,
 
 bool searchDuration(UnicycleBezierPlan& plan, const ControllerConfig& config) {
     const double dist = hypot2(plan.p3x - plan.p0x, plan.p3y - plan.p0y);
-    double t_hi = std::max(kMinResetDuration, dist / std::max(config.chassis_max_linear_speed, 1.0e-6));
+    double t_hi =
+        std::max(kMinResetDuration, dist / std::max(config.chassis_max_linear_speed, 1.0e-6));
     const double t_cap = config.reset_timeout > 0.0 ? config.reset_timeout : 45.0;
     if (!planFeasible(plan, t_hi, config)) {
         bool found = false;
@@ -377,15 +378,15 @@ bool updatePoseVelocityEstimator(PoseVelocityEstimator& estimator, double stamp,
     }
     const double dt = stamp - estimator.last_stamp;
     const double unwrapped_yaw = estimator.last_yaw + wrapAngle(yaw - estimator.last_yaw);
-    const bool ok_x = updatePoseVelocityFilter(estimator.axis_x, x, dt, config.filter_wn,
-                                               config.filter_zeta, config.velocity_dt_min,
-                                               config.velocity_dt_max);
-    const bool ok_y = updatePoseVelocityFilter(estimator.axis_y, y, dt, config.filter_wn,
-                                               config.filter_zeta, config.velocity_dt_min,
-                                               config.velocity_dt_max);
-    const bool ok_yaw =
-        updatePoseVelocityFilter(estimator.axis_yaw, unwrapped_yaw, dt, config.filter_wn,
-                                 config.filter_zeta, config.velocity_dt_min, config.velocity_dt_max);
+    const bool ok_x =
+        updatePoseVelocityFilter(estimator.axis_x, x, dt, config.filter_wn, config.filter_zeta,
+                                 config.velocity_dt_min, config.velocity_dt_max);
+    const bool ok_y =
+        updatePoseVelocityFilter(estimator.axis_y, y, dt, config.filter_wn, config.filter_zeta,
+                                 config.velocity_dt_min, config.velocity_dt_max);
+    const bool ok_yaw = updatePoseVelocityFilter(estimator.axis_yaw, unwrapped_yaw, dt,
+                                                 config.filter_wn, config.filter_zeta,
+                                                 config.velocity_dt_min, config.velocity_dt_max);
     estimator.last_stamp = stamp;
     estimator.last_yaw = unwrapped_yaw;
     if (!ok_x || !ok_y || !ok_yaw) {
@@ -395,8 +396,8 @@ bool updatePoseVelocityEstimator(PoseVelocityEstimator& estimator, double stamp,
     estimator.vx = estimator.axis_x.x2;
     estimator.vy = estimator.axis_y.x2;
     estimator.yaw_rate = estimator.axis_yaw.x2;
-    estimator.velocity_valid =
-        std::isfinite(estimator.vx) && std::isfinite(estimator.vy) && std::isfinite(estimator.yaw_rate);
+    estimator.velocity_valid = std::isfinite(estimator.vx) && std::isfinite(estimator.vy) &&
+                               std::isfinite(estimator.yaw_rate);
     return estimator.velocity_valid;
 }
 
@@ -479,7 +480,8 @@ UnicycleBezierPlan planUnicycleReset(const UgvState& state, const ResetTarget& g
     return best;
 }
 
-bool sampleUnicycleReset(const UnicycleBezierPlan& plan, double t_along, UnicycleResetSample& sample) {
+bool sampleUnicycleReset(const UnicycleBezierPlan& plan, double t_along,
+                         UnicycleResetSample& sample) {
     sample = UnicycleResetSample{};
     if (!plan.valid || plan.already_arrived || !(plan.T > 0.0)) {
         return false;
@@ -523,7 +525,8 @@ UnicycleResetOutput trackUnicycleReset(const UgvState& state, const UnicycleBezi
     const double ey = sample.y - state.y;
     const double heading_x = std::cos(sample.yaw);
     const double heading_y = std::sin(sample.yaw);
-    output.linear_speed = sample.linear_speed + config.reset_kp_along * (ex * heading_x + ey * heading_y);
+    output.linear_speed =
+        sample.linear_speed + config.reset_kp_along * (ex * heading_x + ey * heading_y);
     output.angular_speed =
         sample.angular_speed + config.reset_kp_heading * wrapAngle(sample.yaw - state.yaw);
     boxSaturateUnicycle(output.linear_speed, output.angular_speed, config.chassis_max_linear_speed,
@@ -531,12 +534,13 @@ UnicycleResetOutput trackUnicycleReset(const UgvState& state, const UnicycleBezi
     return output;
 }
 
-FlatnessCommandOutput computeFlatnessCommand(const UgvState& state, const WorldPvaReference& reference,
-                                             double body_speed, double dt,
-                                             const ControllerConfig& config) {
+FlatnessCommandOutput computeFlatnessCommand(const UgvState& state,
+                                             const WorldPvaReference& reference, double body_speed,
+                                             double dt, const ControllerConfig& config) {
     FlatnessCommandOutput output;
-    if (!finitePose(state) || !reference.valid || !std::isfinite(body_speed) || !std::isfinite(dt) ||
-        dt <= config.velocity_dt_min || dt > config.velocity_dt_max || !state.velocity_valid) {
+    if (!finitePose(state) || !reference.valid || !std::isfinite(body_speed) ||
+        !std::isfinite(dt) || dt <= config.velocity_dt_min || dt > config.velocity_dt_max ||
+        !state.velocity_valid) {
         return output;
     }
     const double ux = reference.ax + config.flatness_kv * (reference.vx - state.vx) +
@@ -547,8 +551,8 @@ FlatnessCommandOutput computeFlatnessCommand(const UgvState& state, const WorldP
     const double s = std::sin(state.yaw);
     output.accel = c * ux + s * uy;
     const double v_eps = std::max(config.flatness_v_eps, 1.0e-6);
-    const double denom = std::copysign(std::max(std::fabs(body_speed), v_eps),
-                                       body_speed == 0.0 ? 1.0 : body_speed);
+    const double denom =
+        std::copysign(std::max(std::fabs(body_speed), v_eps), body_speed == 0.0 ? 1.0 : body_speed);
     output.angular_speed = (-s * ux + c * uy) / denom;
     output.linear_speed = body_speed + output.accel * dt;
     boxSaturateUnicycle(output.linear_speed, output.angular_speed, config.chassis_max_linear_speed,

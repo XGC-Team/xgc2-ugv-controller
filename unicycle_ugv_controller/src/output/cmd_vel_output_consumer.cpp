@@ -52,8 +52,8 @@ geometry_msgs::Twist CmdVelOutputConsumer::makeTwist(const ControlCommand& comma
         msg.linear.x = clamp(command.linear_speed, cfg.min_linear_speed, cfg.max_linear_speed);
         msg.angular.z = clamp(command.angular_speed, -cfg.max_angular_speed, cfg.max_angular_speed);
     } else {
-        msg.linear.x =
-            clamp(command.linear_speed, -cfg.chassis_max_linear_speed, cfg.chassis_max_linear_speed);
+        msg.linear.x = clamp(command.linear_speed, -cfg.chassis_max_linear_speed,
+                             cfg.chassis_max_linear_speed);
         msg.angular.z =
             clamp(command.angular_speed, -cfg.chassis_max_yaw_rate, cfg.chassis_max_yaw_rate);
     }

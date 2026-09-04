@@ -46,9 +46,9 @@ UnicycleUgvRosNode::UnicycleUgvRosNode(ros::NodeHandle& nh)
     health_state_pub_ = nh_.advertise<std_msgs::UInt32>(health_state_topic_, queue_size_);
 
     command_input_ = std::make_unique<CommandInputProducer>(nh_, post_input_event, queue_size_);
-    state_input_ = std::make_unique<StateInputProducer>(nh_, state_, config_.state_source,
-                                                        state_topic_, platform_pose_topic_,
-                                                        post_input_event, queue_size_);
+    state_input_ =
+        std::make_unique<StateInputProducer>(nh_, state_, config_.state_source, state_topic_,
+                                             platform_pose_topic_, post_input_event, queue_size_);
     reset_target_input_ = std::make_unique<ResetTargetInputProducer>(
         nh_, controller_, reset_pose_topic_, post_input_event, queue_size_);
 
