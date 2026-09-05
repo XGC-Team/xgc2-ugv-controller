@@ -478,8 +478,8 @@ UnicycleBezierPlan planUnicycleReset(const UgvState& state, const ResetTarget& g
 bool sampleUnicycleReset(const UnicycleBezierPlan& plan, double t_along,
                          UnicycleResetSample& sample) {
     sample = UnicycleResetSample{};
-    if (!plan.valid || plan.already_arrived || !(plan.T > 0.0) ||
-        !std::isfinite(plan.T) || !std::isfinite(t_along)) {
+    if (!plan.valid || plan.already_arrived || !(plan.T > 0.0) || !std::isfinite(plan.T) ||
+        !std::isfinite(t_along)) {
         return false;
     }
     const double t = std::max(0.0, t_along);
@@ -529,8 +529,8 @@ UnicycleResetOutput trackUnicycleReset(const UgvState& state, const UnicycleBezi
             direction = -1.0;
             heading_error = wrapAngle(heading_error - std::copysign(M_PI, heading_error));
         }
-        output.linear_speed = direction * config.reset_kp_along * dist_goal *
-                              std::max(0.0, std::cos(heading_error));
+        output.linear_speed =
+            direction * config.reset_kp_along * dist_goal * std::max(0.0, std::cos(heading_error));
         output.angular_speed = config.reset_kp_heading * heading_error;
         boxSaturateUnicycle(output.linear_speed, output.angular_speed,
                             config.chassis_max_linear_speed, config.chassis_max_yaw_rate);
