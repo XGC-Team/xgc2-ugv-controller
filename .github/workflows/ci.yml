@@ -25,6 +25,9 @@ jobs:
           git diff --check HEAD
           .xgc2/scripts/check_package_compliance.sh
 
+      - name: Check NMPC result ownership without ROS
+        run: python3 unicycle_ugv_controller/test/nmpc_result_ownership_test.py
+
   cpp-quality:
     name: C++ quality
     runs-on: ubuntu-latest

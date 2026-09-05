@@ -1,6 +1,8 @@
 #include "unicycle_ugv_controller/state_machine/custom1_state.h"
 
+#include <cmath>
 #include <utility>
+#include <variant>
 
 #include "unicycle_ugv_controller/common/types.h"
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
@@ -14,7 +16,8 @@ Custom1State::Custom1State(UnicycleUgvController& controller) : controller_(cont
     controller_.clearCommand();
     solve_gate_.reset();
     command_gate_.reset();
-    request_sequence_ = 0U;
+    // Request IDs belong to this State instance, not one Custom1 activation.
+    // Reusing them would let an old worker result authorize a new session.
     in_flight_sequence_ = 0U;
     request_in_flight_ = false;
     request_deadline_ = 0.0;
@@ -30,19 +33,46 @@ Custom1State::Custom1State(UnicycleUgvController& controller) : controller_(cont
     if (controller_.config().tracking_strategy != TrackingStrategy::NMPC) {
         return {};
     }
-    if ((event.id == event_type::INPUT_NMPC_SOLVE_SUCCEEDED ||
-         event.id == event_type::INPUT_NMPC_SOLVE_FAILED) &&
-        event.correlation_id == in_flight_sequence_) {
-        request_in_flight_ = false;
+    const bool succeeded = event.id == event_type::INPUT_NMPC_SOLVE_SUCCEEDED;
+    if ((!succeeded && event.id != event_type::INPUT_NMPC_SOLVE_FAILED) ||
+        !request_in_flight_ || event.correlation_id != in_flight_sequence_) {
+        return {};
     }
-    if (event.id == event_type::INPUT_NMPC_SOLVE_SUCCEEDED && hasCommand()) {
-        controller_.setCommand(controller_.command());
-        ctx.emitOutput(
-            ::state_machine::Event(output_event_type::PUBLISH_CMD_VEL,
-                                   ::state_machine::EventTimestamp{controller_.currentTime()}));
-    } else if ((event.id == event_type::INPUT_NMPC_SOLVE_SUCCEEDED ||
-                event.id == event_type::INPUT_NMPC_SOLVE_FAILED) &&
-               !hasCommand()) {
+    request_in_flight_ = false;
+    if (controller_.currentTime() > request_deadline_) {
+        return {};
+    }
+
+    // Only the FSM thread may commit a command. The worker supplies a value
+    // snapshot, never a write to the command shared by Reset and Custom1.
+    if (succeeded) {
+        const auto stamp_it = event.payload.find("command_stamp");
+        const auto speed_it = event.payload.find("linear_speed");
+        const auto yaw_rate_it = event.payload.find("angular_speed");
+        if (stamp_it != event.payload.end() && speed_it != event.payload.end() &&
+            yaw_rate_it != event.payload.end()) {
+            const auto* stamp = std::get_if<double>(&stamp_it->second);
+            const auto* speed = std::get_if<double>(&speed_it->second);
+            const auto* yaw_rate = std::get_if<double>(&yaw_rate_it->second);
+            const auto cfg = controller_.config();
+            if (stamp && speed && yaw_rate && std::isfinite(*stamp) && *stamp >= 0.0 &&
+                std::isfinite(*speed) && std::isfinite(*yaw_rate)) {
+                const double age = controller_.currentTime() - *stamp;
+                if (age >= -0.05 && age <= cfg.result_timeout) {
+                    ControlCommand command;
+                    command.stamp = ros::Time(*stamp);
+                    command.linear_speed = *speed;
+                    command.angular_speed = *yaw_rate;
+                    command.valid = true;
+                    controller_.setCommand(command);
+                    emitCommandIfDue(ctx);
+                    return {};
+                }
+            }
+        }
+    }
+    // A rejected result must not overwrite a still-fresh prior command.
+    if (!hasCommand()) {
         emitZero(ctx);
     }
     return {};
