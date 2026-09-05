@@ -34,8 +34,8 @@ Custom1State::Custom1State(UnicycleUgvController& controller) : controller_(cont
         return {};
     }
     const bool succeeded = event.id == event_type::INPUT_NMPC_SOLVE_SUCCEEDED;
-    if ((!succeeded && event.id != event_type::INPUT_NMPC_SOLVE_FAILED) ||
-        !request_in_flight_ || event.correlation_id != in_flight_sequence_) {
+    if ((!succeeded && event.id != event_type::INPUT_NMPC_SOLVE_FAILED) || !request_in_flight_ ||
+        event.correlation_id != in_flight_sequence_) {
         return {};
     }
     request_in_flight_ = false;
