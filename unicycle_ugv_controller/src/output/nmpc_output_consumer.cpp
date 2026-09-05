@@ -129,7 +129,6 @@ void NmpcOutputConsumer::workerLoop() {
         const bool ok =
             entered && backend_.compute(request.state, request.references, request.now, command);
         if (ok) {
-            controller_.setCommand(command);
             publishPrediction(request.now);
             ROS_INFO_THROTTLE(1.0,
                               "[UgvNmpcOutputConsumer] Solve ok seq=%lu linear=%.3f angular=%.3f "
@@ -143,7 +142,7 @@ void NmpcOutputConsumer::workerLoop() {
                               static_cast<unsigned long>(request.sequence), backend_.status(),
                               backend_.solveTimeMs(), request.references.size());
         }
-        postResultEvent(request.sequence, ok);
+        postResultEvent(request.sequence, ok, command);
         {
             std::lock_guard<std::mutex> lock(mutex_);
             busy_ = false;
@@ -155,7 +154,9 @@ void NmpcOutputConsumer::reject(uint64_t sequence) {
     postResultEvent(sequence, false);
 }
 
-void NmpcOutputConsumer::postResultEvent(uint64_t sequence, bool success) {
+void NmpcOutputConsumer::postResultEvent(uint64_t sequence, bool success,
+                                         const ControlCommand& command) {
+    success = success && command.valid;
     if (!event_sink_) {
         return;
     }
@@ -165,6 +166,11 @@ void NmpcOutputConsumer::postResultEvent(uint64_t sequence, bool success) {
     event.source = "nmpc_output_consumer";
     event.category = ::state_machine::EventCategory::kInput;
     event.correlation_id = sequence;
+    if (success) {
+        event.payload["command_stamp"] = command.stamp.toSec();
+        event.payload["linear_speed"] = command.linear_speed;
+        event.payload["angular_speed"] = command.angular_speed;
+    }
     (void)event_sink_(std::move(event));
 }
 

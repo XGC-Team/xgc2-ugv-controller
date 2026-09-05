@@ -40,7 +40,8 @@ class NmpcOutputConsumer final : public ::state_machine::runtime::EventConsumer 
 
     void workerLoop();
     void reject(uint64_t sequence);
-    void postResultEvent(uint64_t sequence, bool success);
+    void postResultEvent(uint64_t sequence, bool success,
+                         const ControlCommand& command = ControlCommand{});
     void publishPrediction(const ros::Time& stamp);
 
     UnicycleUgvController& controller_;
