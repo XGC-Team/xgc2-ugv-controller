@@ -25,6 +25,9 @@ jobs:
           git diff --check HEAD
           .xgc2/scripts/check_package_compliance.sh
 
+      - name: Check Reset terminal convergence without ROS
+        run: python3 unicycle_ugv_controller/test/reset_terminal_regression_test.py
+
   cpp-quality:
     name: C++ quality
     runs-on: ubuntu-latest

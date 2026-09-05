@@ -478,7 +478,8 @@ UnicycleBezierPlan planUnicycleReset(const UgvState& state, const ResetTarget& g
 bool sampleUnicycleReset(const UnicycleBezierPlan& plan, double t_along,
                          UnicycleResetSample& sample) {
     sample = UnicycleResetSample{};
-    if (!plan.valid || plan.already_arrived || !(plan.T > 0.0)) {
+    if (!plan.valid || plan.already_arrived || !(plan.T > 0.0) ||
+        !std::isfinite(plan.T) || !std::isfinite(t_along)) {
         return false;
     }
     const double t = std::max(0.0, t_along);
@@ -495,8 +496,9 @@ bool sampleUnicycleReset(const UnicycleBezierPlan& plan, double t_along,
         sample.valid = true;
         return true;
     }
-    sample.linear_speed = v;
-    sample.angular_speed = omega;
+    // Past the finite path, hold its endpoint rather than its last derivative.
+    sample.linear_speed = t >= plan.T ? 0.0 : v;
+    sample.angular_speed = t >= plan.T ? 0.0 : omega;
     sample.valid = true;
     return true;
 }
@@ -510,6 +512,28 @@ UnicycleResetOutput trackUnicycleReset(const UgvState& state, const UnicycleBezi
     const double dist_goal = hypot2(plan.p3x - state.x, plan.p3y - state.y);
     output.position_ok = dist_goal <= config.reset_arrive_position;
     if (output.position_ok || plan.already_arrived) {
+        return output;
+    }
+    if (!std::isfinite(t_along) || !std::isfinite(plan.T) || !(plan.T > 0.0) ||
+        !std::isfinite(dist_goal)) {
+        return output;
+    }
+    if (t_along >= plan.T) {
+        // Terminal XY approach stays inside Reset. A fixed tangent cannot remove
+        // a lateral residual, and retaining terminal feedforward creates an offset
+        // equilibrium. Point toward the goal, allowing reverse after overshoot.
+        double heading_error =
+            wrapAngle(std::atan2(plan.p3y - state.y, plan.p3x - state.x) - state.yaw);
+        double direction = 1.0;
+        if (std::fabs(heading_error) > 0.5 * M_PI) {
+            direction = -1.0;
+            heading_error = wrapAngle(heading_error - std::copysign(M_PI, heading_error));
+        }
+        output.linear_speed = direction * config.reset_kp_along * dist_goal *
+                              std::max(0.0, std::cos(heading_error));
+        output.angular_speed = config.reset_kp_heading * heading_error;
+        boxSaturateUnicycle(output.linear_speed, output.angular_speed,
+                            config.chassis_max_linear_speed, config.chassis_max_yaw_rate);
         return output;
     }
     UnicycleResetSample sample;
