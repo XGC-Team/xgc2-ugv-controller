@@ -257,12 +257,24 @@ bool worldPvaReady(const WorldPvaReference& sample) {
 }
 
 FlatnessCommandOutput computeFlatnessCommand(const UgvState& state,
-                                             const WorldPvaReference& reference, double body_speed,
+                                             const WorldPvaReference& reference, double command_speed,
                                              double dt, const ControllerConfig& config) {
     FlatnessCommandOutput output;
-    if (!finitePose(state) || !reference.valid || !std::isfinite(body_speed) ||
+    if (!finitePose(state) || !worldPvaReady(reference) || !std::isfinite(command_speed) ||
+        !std::isfinite(state.vx) || !std::isfinite(state.vy) ||
         !std::isfinite(dt) || dt <= config.velocity_dt_min || dt > config.velocity_dt_max ||
         !state.velocity_valid) {
+        return output;
+    }
+    // The dynamic-extension integrator is a command state, not a plant state.
+    // controlState() supplies estimated world velocity (estimator or the existing
+    // second-order pose differentiator). Keep its signed body-axis projection.
+    const double estimated_speed = bodySpeedFromWorld(state.yaw, state.vx, state.vy);
+    if (!std::isfinite(estimated_speed) || !std::isfinite(config.flatness_kp) ||
+        !std::isfinite(config.flatness_kv) || !std::isfinite(config.flatness_v_eps) ||
+        config.flatness_v_eps <= 0.0 || !std::isfinite(config.chassis_max_linear_speed) ||
+        config.chassis_max_linear_speed <= 0.0 || !std::isfinite(config.chassis_max_yaw_rate) ||
+        config.chassis_max_yaw_rate <= 0.0) {
         return output;
     }
     const double ux = reference.ax + config.flatness_kv * (reference.vx - state.vx) +
@@ -283,7 +295,7 @@ FlatnessCommandOutput computeFlatnessCommand(const UgvState& state,
     if (!std::isfinite(length) || length <= 0.0 || !std::isfinite(damping) || damping <= 0.0) {
         return output;
     }
-    const double bandwidth = std::fabs(body_speed) / length;
+    const double bandwidth = std::fabs(estimated_speed) / length;
     const double lateral_position_error =
         -s * (reference.x - state.x) + c * (reference.y - state.y);
     const double lateral_velocity_error =
@@ -294,8 +306,16 @@ FlatnessCommandOutput computeFlatnessCommand(const UgvState& state,
     // Damped inverse of the dynamic-extension decoupling coefficient. Unlike a
     // signed epsilon denominator, this stays continuous during stop/reversal.
     // Exact transverse acceleration tracking is intentionally relaxed near rest.
-    output.angular_speed = body_speed * lateral_accel / (body_speed * body_speed + v_eps * v_eps);
-    output.linear_speed = body_speed + output.accel * dt;
+    output.angular_speed = estimated_speed * lateral_accel /
+                           (estimated_speed * estimated_speed + v_eps * v_eps);
+    // Retain the bounded command integrator; do not restart it from a delayed
+    // measurement every event-pump tick. Only the inverse uses measured speed.
+    output.linear_speed = command_speed + output.accel * dt;
+    // Check before clamping: std::min/max can conceal non-finite inputs.
+    if (!std::isfinite(output.accel) || !std::isfinite(output.linear_speed) ||
+        !std::isfinite(output.angular_speed)) {
+        return FlatnessCommandOutput{};
+    }
     boxSaturateUnicycle(output.linear_speed, output.angular_speed, config.chassis_max_linear_speed,
                         config.chassis_max_yaw_rate);
     output.valid = std::isfinite(output.linear_speed) && std::isfinite(output.angular_speed);
