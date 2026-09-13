@@ -227,7 +227,8 @@ WorldPvaReference liftWorldPva(const WorldPvaReference& sample, double now_sec);
 bool worldPvaReady(const WorldPvaReference& sample);
 
 FlatnessCommandOutput computeFlatnessCommand(const UgvState& state,
-                                             const WorldPvaReference& reference, double body_speed,
-                                             double dt, const ControllerConfig& config);
+                                             const WorldPvaReference& reference,
+                                             double command_speed, double dt,
+                                             const ControllerConfig& config);
 
 }  // namespace unicycle_ugv_controller
