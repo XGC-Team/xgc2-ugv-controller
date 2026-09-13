@@ -13,9 +13,8 @@ Packages:
   SelfCheck, `Reset` to an Experiment `initialPose`, and first-order Custom1
   (world ENU velocity to body FLU, heading P to east). Algorithms publish
   `{ns}/alg/reference/twist` only; they do not publish `cmd_vel`.
-- `ugv_reset_safety`: shared fleet Reset coordinator, geometric guidance,
-  full-footprint obstacle/inter-vehicle CBF QP, command limits and slew limits.
-  Both chassis owners use this implementation; the old Reset laws are removed.
+- `ugv_reset_safety`: shared swarm Reset coordinator, geometric path planning,
+  DWA with obstacle/inter-vehicle footprint checks, command limits and slew limits.
 
 Reset requires an explicit target, a complete UGV roster, fresh canonical poses
 and controller states, and an authoritative static obstacle snapshot. Missing
@@ -50,8 +49,8 @@ Poses farther than the capture radius are refused.
 
 ```bash
 roslaunch unicycle_reference_trajectory ugv_unicycle_target_replanner.launch \
-  ns:=ugv1 random_targets:=false shuttle_mode:=true \
-  shuttle_x:=0.0 shuttle_y_min:=-2.0 shuttle_y_max:=2.0 shuttle_speed:=0.5
+  ns:=ugv1 \
+  config_file:=$(rospack find unicycle_reference_trajectory)/config/unicycle_shuttle.yaml
 ```
 
 The runtime model keeps yaw rate as a state and commands angular acceleration:
@@ -65,53 +64,25 @@ This makes `omega` continuous between shooting stages. Both its magnitude and
 its rate of change are part of the optimization; `max_angular_acceleration`
 also prevents a one-stage full-lock sign flip.
 
-NMPC stage cost is nonlinear LS. All eleven weights are ROS params and
-`roslaunch` args (`nmpc_weight_omega:=6` and so on). They are read
-once when the node starts. Tune with launch args or `rosparam`, restart
-the controller, then freeze the keepers into yaml and the launch defaults.
-
-```bash
-# ns:=ugv1  — set, restart NMPC, then dump
-rosparam set /ugv1/unicycle_ugv_controller/nmpc/weights/omega 6.0
-# restart unicycle_ugv_controller
-rosparam get /ugv1/unicycle_ugv_controller/nmpc/weights
-```
-
-| param | launch arg | default |
-| --- | --- | ---: |
-| `nmpc/weights/position_x` | `nmpc_weight_position_x` | 20 |
-| `nmpc/weights/position_y` | `nmpc_weight_position_y` | 20 |
-| `nmpc/weights/yaw` | `nmpc_weight_yaw` | 8 |
-| `nmpc/weights/speed` | `nmpc_weight_speed` | 4 |
-| `nmpc/weights/accel` | `nmpc_weight_accel` | 0.4 |
-| `nmpc/weights/omega` | `nmpc_weight_omega` | 10 |
-| `nmpc/weights/angular_accel` | `nmpc_weight_angular_accel` | 1 |
-| `nmpc/weights/terminal_position_x` | `nmpc_weight_terminal_position_x` | 60 |
-| `nmpc/weights/terminal_position_y` | `nmpc_weight_terminal_position_y` | 60 |
-| `nmpc/weights/terminal_yaw` | `nmpc_weight_terminal_yaw` | 20 |
-| `nmpc/weights/terminal_speed` | `nmpc_weight_terminal_speed` | 10 |
-
-Default `ω` is `10.0` (was `0.08`, then `4.0`). The old ratio made a saturated
-yaw-rate cheaper than a few centimeters of cross-track.
-Default `max_angular_acceleration` is `3.0 rad/s²`; it is an engineering value
-selected from the 2026-08-21 Scout field bag, whose realized 0.1 s yaw-rate
-finite-difference p95 was about `2.94 rad/s²`.
-
-## Control-state modes
-
-The same controller executable supports both state providers:
-
-- `state_source:=state_estimator` consumes `RigidStateEstimate` and projects
-  to SE2 (`x, y, yaw, speed, yaw_rate`) at the control boundary.
-  Healthy means `estimator_state == STATE_RUNNING` (**3**, not the planar 2)
-  and no `FLAG_FAULT`.
-- `state_source:=vrpn_direct` consumes trusted VRPN pose and twist directly,
-  without launching an estimator. The product NMPC remains the sole
-  `cmd_vel` publisher for the nonholonomic vehicle.
-
-Example:
+NMPC stage cost is nonlinear LS. Weights and limits are defined in the selected
+controller YAML and read once when the node starts. Edit that file, then restart
+the node. The launch file accepts the namespace and configuration file.
 
 ```bash
 roslaunch unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch \
-  ns:=ugv1 state_source:=vrpn_direct
+  ns:=ugv1 config_file:=/absolute/path/to/controller.yaml
 ```
+
+## Control-state modes
+
+The controller supports two configured state providers:
+
+- `state_source: state_estimator` consumes `RigidStateEstimate` and projects it
+  to SE2 (`x, y, yaw, speed, yaw_rate`) at the control boundary. It requires
+  `STATE_RUNNING` and no `FLAG_FAULT`.
+- `state_source: platform_pose` consumes canonical `{ns}/pose`. The supplied
+  `scout_flatness.yaml` selects this provider with `tracking_strategy: flatness`.
+
+`unicycle_ugv_controller.yaml` selects estimator-backed NMPC.
+`unicycle_nmpc_active.yaml` additionally enables automatic tracking for the
+corresponding process definition. Each chassis controller owns its `cmd_vel`.

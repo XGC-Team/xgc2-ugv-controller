@@ -1,0 +1,10 @@
+robots:
+- ugv1
+- ugv2
+- ugv3
+- ugv4
+ground_robots:
+- ugv1
+- ugv2
+- ugv3
+- ugv4

@@ -1,8 +1,6 @@
 <launch>
   <arg name="fleet_config"/>
-  <arg name="scene_namespace" default="/xgc/scene"/>
   <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node" name="ugv_reset_coordinator" output="screen" required="true">
     <rosparam command="load" file="$(arg fleet_config)"/>
-    <param name="scene_namespace" value="$(arg scene_namespace)"/>
   </node>
 </launch>

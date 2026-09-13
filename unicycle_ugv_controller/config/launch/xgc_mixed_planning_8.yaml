@@ -1,0 +1,8 @@
+participant_count: 9
+first_participant_id: 1
+num_uavs: 9
+ready_topic: /formation/ready
+trigger_topic: /formation/sync_trigger
+ack_topic: /formation/sync_ack
+statistics_topic: /formation/sync_statistics
+events_topic: /formation/sync_events

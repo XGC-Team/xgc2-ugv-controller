@@ -1,8 +1,7 @@
-# Complete node configuration. Launch loads this file without parameter overrides.
 active_analytic_topic: alg/unicycle_reference_trajectory/active/analytic
 active_polynomial_topic: alg/unicycle_reference_trajectory/active/polynomial
 active_sampled_topic: alg/unicycle_reference_trajectory/active/sampled
-auto_start_tracking: false
+auto_start_tracking: true
 chassis:
   max_linear_speed: 1.05
   max_yaw_rate: 1.05

@@ -88,14 +88,12 @@ void UnicycleUgvRosNode::loadParams() {
     private_nh_.param("state_estimate_topic", state_topic_, state_topic_);
     std::string state_source{"state_estimator"};
     private_nh_.param("state_source", state_source, state_source);
-    if (state_source == "platform_pose" || state_source == "pose") {
+    if (state_source == "platform_pose") {
         config_.state_source = StateSource::PLATFORM_POSE;
-    } else if (state_source == "state_estimator" || state_source == "estimator") {
+    } else if (state_source == "state_estimator") {
         config_.state_source = StateSource::STATE_ESTIMATOR;
     } else {
-        ROS_WARN("[UnicycleUgvRosNode] Unknown state_source=%s; using state_estimator",
-                 state_source.c_str());
-        config_.state_source = StateSource::STATE_ESTIMATOR;
+        throw std::invalid_argument("Unknown state_source: " + state_source);
     }
     std::string strategy{"nmpc"};
     private_nh_.param("tracking_strategy", strategy, strategy);

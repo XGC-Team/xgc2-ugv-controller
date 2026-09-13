@@ -1,0 +1,16 @@
+robots:
+- uav1
+- uav2
+- uav3
+- uav4
+- uav5
+- ugv1
+- ugv2
+- ugv3
+- ugv4
+ground_robots:
+- ugv1
+- ugv2
+- ugv3
+- ugv4
+duration: 62.83185307179586

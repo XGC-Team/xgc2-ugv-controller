@@ -24,7 +24,7 @@ install(TARGETS ugv_reset_safety_math ugv_reset_coordinator_node
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
 install(DIRECTORY launch config DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 install(FILES README.md DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
-catkin_install_python(PROGRAMS scripts/launch_control_with_slot_poses.py
+catkin_install_python(PROGRAMS scripts/launch_control_with_slot_poses.py scripts/launch_with_yaml_context.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 if(CATKIN_ENABLE_TESTING)
   find_package(rostest REQUIRED)

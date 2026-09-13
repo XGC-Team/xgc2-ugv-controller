@@ -1,54 +1,23 @@
 <?xml version="1.0"?>
 <launch>
-    <arg name="state_source" default="platform_pose"/>
-    <arg name="tracking_strategy" default="flatness"/>
-    <arg name="auto_start_tracking" default="false"/>
-    <arg name="ugv1_reset_initial_x" default=""/>
-    <arg name="ugv1_reset_initial_y" default=""/>
-    <arg name="ugv1_reset_initial_yaw" default=""/>
-    <arg name="ugv2_reset_initial_x" default=""/>
-    <arg name="ugv2_reset_initial_y" default=""/>
-    <arg name="ugv2_reset_initial_yaw" default=""/>
-    <arg name="ugv3_reset_initial_x" default=""/>
-    <arg name="ugv3_reset_initial_y" default=""/>
-    <arg name="ugv3_reset_initial_yaw" default=""/>
-    <arg name="ugv4_reset_initial_x" default=""/>
-    <arg name="ugv4_reset_initial_y" default=""/>
-    <arg name="ugv4_reset_initial_yaw" default=""/>
+    <arg name="ugv1_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml"/>
+    <arg name="ugv2_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml"/>
+    <arg name="ugv3_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml"/>
+    <arg name="ugv4_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml"/>
     <include file="$(find unicycle_ugv_controller)/launch/ugv_unicycle_nmpc_controller.launch">
         <arg name="ns" value="ugv1"/>
-        <arg name="state_source" value="$(arg state_source)"/>
-        <arg name="tracking_strategy" value="$(arg tracking_strategy)"/>
-        <arg name="auto_start_tracking" value="$(arg auto_start_tracking)"/>
-        <arg name="reset_initial_x" value="$(arg ugv1_reset_initial_x)"/>
-        <arg name="reset_initial_y" value="$(arg ugv1_reset_initial_y)"/>
-        <arg name="reset_initial_yaw" value="$(arg ugv1_reset_initial_yaw)"/>
+        <arg name="config_file" value="$(arg ugv1_config_file)"/>
     </include>
     <include file="$(find unicycle_ugv_controller)/launch/ugv_unicycle_nmpc_controller.launch">
         <arg name="ns" value="ugv2"/>
-        <arg name="state_source" value="$(arg state_source)"/>
-        <arg name="tracking_strategy" value="$(arg tracking_strategy)"/>
-        <arg name="auto_start_tracking" value="$(arg auto_start_tracking)"/>
-        <arg name="reset_initial_x" value="$(arg ugv2_reset_initial_x)"/>
-        <arg name="reset_initial_y" value="$(arg ugv2_reset_initial_y)"/>
-        <arg name="reset_initial_yaw" value="$(arg ugv2_reset_initial_yaw)"/>
+        <arg name="config_file" value="$(arg ugv2_config_file)"/>
     </include>
     <include file="$(find unicycle_ugv_controller)/launch/ugv_unicycle_nmpc_controller.launch">
         <arg name="ns" value="ugv3"/>
-        <arg name="state_source" value="$(arg state_source)"/>
-        <arg name="tracking_strategy" value="$(arg tracking_strategy)"/>
-        <arg name="auto_start_tracking" value="$(arg auto_start_tracking)"/>
-        <arg name="reset_initial_x" value="$(arg ugv3_reset_initial_x)"/>
-        <arg name="reset_initial_y" value="$(arg ugv3_reset_initial_y)"/>
-        <arg name="reset_initial_yaw" value="$(arg ugv3_reset_initial_yaw)"/>
+        <arg name="config_file" value="$(arg ugv3_config_file)"/>
     </include>
     <include file="$(find unicycle_ugv_controller)/launch/ugv_unicycle_nmpc_controller.launch">
         <arg name="ns" value="ugv4"/>
-        <arg name="state_source" value="$(arg state_source)"/>
-        <arg name="tracking_strategy" value="$(arg tracking_strategy)"/>
-        <arg name="auto_start_tracking" value="$(arg auto_start_tracking)"/>
-        <arg name="reset_initial_x" value="$(arg ugv4_reset_initial_x)"/>
-        <arg name="reset_initial_y" value="$(arg ugv4_reset_initial_y)"/>
-        <arg name="reset_initial_yaw" value="$(arg ugv4_reset_initial_yaw)"/>
+        <arg name="config_file" value="$(arg ugv4_config_file)"/>
     </include>
 </launch>

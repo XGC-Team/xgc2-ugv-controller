@@ -1,4 +1,4 @@
-# Complete node configuration. Launch loads this file without parameter overrides.
+# Scout PVA tracking profile; complete configuration, no launch overrides.
 active_analytic_topic: alg/unicycle_reference_trajectory/active/analytic
 active_polynomial_topic: alg/unicycle_reference_trajectory/active/polynomial
 active_sampled_topic: alg/unicycle_reference_trajectory/active/sampled
@@ -57,7 +57,7 @@ reset:
   timeout: 90.0
 reset_pose_topic: reset_pose
 state_estimate_topic: alg/state_estimator/state
-state_source: state_estimator
+state_source: platform_pose
 state_timeout: 0.2
 status_publish_rate_hz: 5.0
-tracking_strategy: nmpc
+tracking_strategy: flatness

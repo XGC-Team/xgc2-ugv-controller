@@ -1,69 +1,56 @@
 #!/usr/bin/env python3
-"""Slot initialPose — not a rostest-seeded ROS param — becomes launch args."""
-
+"""Experiment initialPose is frozen into the YAML actually passed to roslaunch."""
 import os
+from pathlib import Path
 import sys
+import tempfile
 import unittest
 
-SCRIPT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts"))
-sys.path.insert(0, SCRIPT_DIR)
-from launch_control_with_slot_poses import launch_args_from_robots  # noqa: E402
+import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+from launch_control_with_slot_poses import materialize_controller_configs, slot_poses
 
 
-class SlotInitialPoseLaunchArgsTest(unittest.TestCase):
-    def test_four_scout_fixture_slots_become_reset_initial_args(self):
+class SlotInitialPoseConfigTest(unittest.TestCase):
+    def test_complete_yaml_preserves_profile_and_freezes_each_slot(self):
         robots = [
-            {
-                "kind": "scout_mini",
-                "namespace": "/ugv1",
-                "initialPose": {"x": -0.9, "y": -2.5, "z": 0.181, "yaw": 0.0},
-            },
-            {
-                "kind": "scout_mini",
-                "namespace": "/ugv2",
-                "initialPose": {"x": -2.5, "y": -1.15, "z": 0.181, "yaw": 0.4},
-            },
-            {
-                "kind": "px4_multirotor",
-                "namespace": "/uav1",
-                "initialPose": {"x": 1.0, "y": 2.0, "z": 0.0, "yaw": 0.0},
-            },
-            {
-                "kind": "scout_mini",
-                "namespace": "ugv3",
-                "initialPose": {"x": -4.1, "y": -2.5, "z": 0.181, "yaw": -0.2},
-            },
-            {
-                "kind": "scout_mini",
-                "namespace": "/ugv4",
-                "initialPose": {"x": -2.5, "y": -3.85, "z": 0.181, "yaw": 1.2},
-            },
+            {'namespace': '/ugv1', 'kind': 'scout_mini', 'initialPose': {'x': -0.9, 'y': -2.5, 'yaw': 0.4}},
+            {'namespace': '/ugv2', 'kind': 'scout_mini', 'initialPose': {'x': 1.2, 'y': 0.5, 'yaw': -0.2}},
+            {'namespace': '/uav1', 'kind': 'px4_multirotor'},
         ]
-        args = launch_args_from_robots(robots)
-        self.assertEqual(
-            args,
-            [
-                "ugv1_reset_initial_x:=-0.9",
-                "ugv1_reset_initial_y:=-2.5",
-                "ugv1_reset_initial_yaw:=0.0",
-                "ugv2_reset_initial_x:=-2.5",
-                "ugv2_reset_initial_y:=-1.15",
-                "ugv2_reset_initial_yaw:=0.4",
-                "ugv3_reset_initial_x:=-4.1",
-                "ugv3_reset_initial_y:=-2.5",
-                "ugv3_reset_initial_yaw:=-0.2",
-                "ugv4_reset_initial_x:=-2.5",
-                "ugv4_reset_initial_y:=-3.85",
-                "ugv4_reset_initial_yaw:=1.2",
-            ],
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / 'base.yaml'
+            original = {'tracking_strategy': 'flatness', 'flatness': {'kp': 6.0}, 'reset_initial_x': 999.0}
+            source.write_text(yaml.safe_dump(original))
+            args = materialize_controller_configs(slot_poses(robots), {'ugv1': source, 'ugv2': source}, root / 'run')
+            self.assertEqual(len(args), 2)
+            for robot, arg in zip(robots, args):
+                name, path = arg.split(':=', 1)
+                self.assertEqual(name, robot['namespace'].strip('/') + '_config_file')
+                parameters = yaml.safe_load(Path(path).read_text())
+                self.assertEqual(parameters['flatness'], {'kp': 6.0})
+                self.assertEqual(parameters['tracking_strategy'], 'flatness')
+                for axis in ('x', 'y', 'yaw'):
+                    self.assertEqual(parameters['reset_initial_' + axis], robot['initialPose'][axis])
+            self.assertEqual(yaml.safe_load(source.read_text()), original)
+            manifest = yaml.safe_load((root / 'run/manifest.yaml').read_text())
+            self.assertEqual(manifest['ugv1']['parameters'], yaml.safe_load((root / 'run/ugv1.yaml').read_text()))
 
-    def test_missing_ugv_pose_fails_closed(self):
-        with self.assertRaises(ValueError):
-            launch_args_from_robots(
-                [{"kind": "scout_mini", "namespace": "/ugv1", "initialPose": {}}]
-            )
+    def test_missing_duplicate_and_nonfinite_poses_fail(self):
+        good = {'namespace': '/ugv1', 'kind': 'scout_mini', 'initialPose': {'x': 0, 'y': 0, 'yaw': 0}}
+        for rows in ([dict(good, initialPose={})], [good, good], [dict(good, initialPose={'x': float('nan'), 'y': 0, 'yaw': 0})]):
+            with self.assertRaises(ValueError):
+                slot_poses(rows)
+
+    def test_roster_mismatch_does_not_create_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / 'run'
+            with self.assertRaises(ValueError):
+                materialize_controller_configs({'ugv1': {}}, {'ugv2': '/unused'}, output)
+            self.assertFalse(output.exists())
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

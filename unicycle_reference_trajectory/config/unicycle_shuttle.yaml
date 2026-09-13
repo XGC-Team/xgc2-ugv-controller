@@ -1,4 +1,3 @@
-# Complete node configuration. Launch loads this file without parameter overrides.
 approach_speed: 0.4
 desired_speed: 1.0
 dynamic_penalty_weight: 1000.0
@@ -22,20 +21,20 @@ random_max_y: 5.0
 random_min_x: -5.0
 random_min_y: -5.0
 random_seed: 0
-random_targets: true
+random_targets: false
 random_yaw_mode: heading
 rel_cost_tol: 1.0e-05
-replan_period: 5.0
+replan_period: 1.0
 sample_dt: 0.01
 sampled_topic: alg/unicycle_reference_trajectory/request/sampled
 shuttle_accel: 1.0
 shuttle_arrive_tol: 0.35
 shuttle_capture_radius: 30.0
-shuttle_mode: false
+shuttle_mode: true
 shuttle_speed: 0.5
-shuttle_x: 0.0
-shuttle_y_max: 2.0
-shuttle_y_min: -2.0
+shuttle_x: 0
+shuttle_y_max: 2
+shuttle_y_min: -2
 shuttle_yaw_tol: 0.7
 start_delay: 0.2
 state_timeout: 0.5

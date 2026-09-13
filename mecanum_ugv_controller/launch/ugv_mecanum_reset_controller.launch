@@ -1,31 +1,10 @@
-<?xml version="1.0"?>
+<?xml version='1.0' encoding='utf-8'?>
 <launch>
-    <arg name="ns" default="ugv1"/>
-    <arg name="config_file" default="$(find mecanum_ugv_controller)/config/mecanum_ugv_controller.yaml"/>
-    <arg name="pose_topic" default="pose"/>
-    <arg name="reset_pose_topic" default="reset_pose"/>
-    <arg name="reference_twist_topic" default="alg/reference/twist"/>
-    <arg name="cmd_vel_topic" default="cmd_vel"/>
-    <arg name="heading_target_yaw" default="0.0"/>
-    <arg name="auto_start_tracking" default="false"/>
-    <arg name="reset_initial_x" default=""/>
-    <arg name="reset_initial_y" default=""/>
-    <arg name="reset_initial_yaw" default=""/>
+    <arg name="ns" default="ugv1" />
+    <arg name="config_file" default="$(find mecanum_ugv_controller)/config/mecanum_ugv_controller.yaml" />
     <group ns="$(arg ns)">
-        <node pkg="mecanum_ugv_controller"
-              type="mecanum_ugv_controller_node"
-              name="mecanum_ugv_controller"
-              output="screen">
-            <rosparam command="load" file="$(arg config_file)"/>
-            <param name="pose_topic" value="$(arg pose_topic)"/>
-            <param name="reset_pose_topic" value="$(arg reset_pose_topic)"/>
-            <param name="reference_twist_topic" value="$(arg reference_twist_topic)"/>
-            <param name="cmd_vel_topic" value="$(arg cmd_vel_topic)"/>
-            <param name="heading_target_yaw" value="$(arg heading_target_yaw)"/>
-            <param name="auto_start_tracking" value="$(arg auto_start_tracking)"/>
-            <param if="$(eval arg('reset_initial_x') != '')" name="reset_initial_x" type="double" value="$(arg reset_initial_x)"/>
-            <param if="$(eval arg('reset_initial_y') != '')" name="reset_initial_y" type="double" value="$(arg reset_initial_y)"/>
-            <param if="$(eval arg('reset_initial_yaw') != '')" name="reset_initial_yaw" type="double" value="$(arg reset_initial_yaw)"/>
+        <node pkg="mecanum_ugv_controller" type="mecanum_ugv_controller_node" name="mecanum_ugv_controller" output="screen">
+            <rosparam command="load" file="$(arg config_file)" />
         </node>
     </group>
 </launch>

@@ -1,29 +1,24 @@
-# 500 Hz is the local event pump (T10/T17), not Wi-Fi.
-control_rate_hz: 500.0
-queue_size: 10
-pose_topic: "pose"
-reset_pose_topic: "reset_pose"
-cmd_vel_topic: "cmd_vel"
-state_timeout: 0.2
-# Controller chooses 30 Hz on both UGV types. GCS swarm_ros_bridge send max_freq 100 is the air ceiling.
-command_publish_rate_hz: 30.0
-idle_cmd_rate_hz: 5.0
-status_publish_rate_hz: 5.0
+# Complete node configuration. Launch loads this file without parameter overrides.
 auto_start_tracking: false
-reference_twist_topic: "alg/reference/twist"
+cmd_vel_topic: cmd_vel
+command_publish_rate_hz: 30.0
+control_rate_hz: 500.0
+fence:
+  x_max: 20.0
+  x_min: -20.0
+  y_max: 20.0
+  y_min: -20.0
 heading_target_yaw: 0.0
-track:
-  kp_yaw: 1.2
-reset:
-  timeout: 600.0
-# FLU |vx|,|vy| after R(ψ)^T. Not world ENU reference.
+idle_cmd_rate_hz: 5.0
 max_linear_speed: 1.0
 max_yaw_rate: 1.0
-# Physical fence: offset world ENU x,y (canonical pose). Not body, not raw VRPN.
-fence:
-  x_min: -20.0
-  x_max: 20.0
-  y_min: -20.0
-  y_max: 20.0
-
-# Reset needs an explicit reset_pose message or all three reset_initial_* params.
+pose_topic: pose
+queue_size: 10
+reference_twist_topic: alg/reference/twist
+reset:
+  timeout: 600.0
+reset_pose_topic: reset_pose
+state_timeout: 0.2
+status_publish_rate_hz: 5.0
+track:
+  kp_yaw: 1.2
