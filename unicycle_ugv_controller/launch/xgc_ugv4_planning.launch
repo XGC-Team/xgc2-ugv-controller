@@ -12,7 +12,7 @@
         <remap from="/formation/convex_feasible_region_markers" to="/xgc/user/formation_markers" />
         <include file="$(find formation_generator)/launch/swarm_algo/algo_ugv_swarm.launch">
             <arg name="num_ugvs" value="4" />
-            <arg name="planner_context_file" value="$(find formation_generator)/config/launch/single_ugv_fleet.yaml" />
+            <arg name="planner_context_file" value="$(find formation_generator)/config/launch/single_ugv_swarm.yaml" />
             <arg name="scenario_dir" value="$(arg scenario_dir)" />
             <arg name="node_output" value="$(arg node_output)" />
             <arg name="continuous_distance_monitor" value="true" />
