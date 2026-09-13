@@ -9,7 +9,7 @@ import unittest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from launch_control_with_slot_poses import materialize_controller_configs, slot_poses
+from launch_control_with_slot_poses import materialize_controller_configs, slot_poses, publish_manifest
 
 
 class SlotInitialPoseConfigTest(unittest.TestCase):
@@ -50,6 +50,32 @@ class SlotInitialPoseConfigTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 materialize_controller_configs({'ugv1': {}}, {'ugv2': '/unused'}, output)
             self.assertFalse(output.exists())
+
+
+    def test_session_manifest_is_self_contained_and_atomically_replaced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / 'one.yaml'
+            source.write_text('ugv1: {parameters: {reset_initial_x: 1}}\n')
+            published = root / 'session/controllers.yaml'
+            publish_manifest(source, published)
+            source.write_text('ugv1: {parameters: {reset_initial_x: 2}}\n')
+            self.assertEqual(yaml.safe_load(published.read_text())['ugv1']['parameters']['reset_initial_x'], 1)
+            publish_manifest(source, published)
+            self.assertEqual(yaml.safe_load(published.read_text())['ugv1']['parameters']['reset_initial_x'], 2)
+            self.assertEqual(list(published.parent.iterdir()), [published])
+
+    def test_runtime_context_preserves_tuning_and_rejects_hidden_tuning(self):
+        from launch_with_yaml_context import prepare_parameters
+        source = 'tracking_strategy: flatness\nlimits: {max_linear_speed: 1.5}\nreset_initial_x: 2\npose_topic: /$(arg ns)/pose\n'
+        values = prepare_parameters(source, {'reset_initial_x': '', 'reset_initial_y': '-1.25', 'cmd_vel_topic': '/ugv7/cmd_vel'}, 'ugv7')
+        self.assertEqual(values['reset_initial_x'], 2)
+        self.assertEqual(values['reset_initial_y'], -1.25)
+        self.assertEqual(values['limits'], {'max_linear_speed': 1.5})
+        self.assertEqual(values['pose_topic'], '/ugv7/pose')
+        for context in ({'tracking_strategy': 'nmpc'}, {'reset_initial_x': True}, {'reset_initial_y': 'nan'}, {'cmd_vel_topic': 'bad topic'}):
+            with self.assertRaises(ValueError):
+                prepare_parameters(source, context, 'ugv7')
 
 
 if __name__ == '__main__':
