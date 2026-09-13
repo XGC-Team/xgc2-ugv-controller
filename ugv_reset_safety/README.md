@@ -7,8 +7,9 @@ each chassis controller remains the sole publisher of native `cmd_vel`.
 ## Targets and execution
 
 Supply a world-frame `geometry_msgs/Pose2D` on `/<namespace>/reset_pose`, or all
-three `reset_initial_x/y/yaw` parameters. The product launcher maps each
-Experiment slot's `initialPose` to these parameters. Missing targets never
+three `reset_initial_x/y/yaw` parameters in the controller YAML. The product
+launcher freezes each Experiment slot's `initialPose` into a complete per-slot
+YAML before launch, and publishes its contents in the Session manifest. Missing targets never
 default to the origin. Updating a target only caches it; `reset` enters Reset,
 and the session freezes that target and its generation.
 

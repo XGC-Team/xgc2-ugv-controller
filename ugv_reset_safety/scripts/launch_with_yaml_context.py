@@ -51,8 +51,8 @@ def main(argv):
         directory = Path(os.environ.get('ROS_HOME', str(Path.home() / '.ros'))) / 'xgc-controller-configurations' / str(uuid.uuid4())
         directory.mkdir(parents=True)
         loaded = directory / 'parameters.yaml'
-        loaded.write_text(yaml.safe_dump(parameters, sort_keys=False))
-        (directory / 'manifest.yaml').write_text(yaml.safe_dump({'source': config, 'context': json.loads(raw_context), 'loaded_file': str(loaded), 'parameters': parameters}, sort_keys=False))
+        loaded.write_text(yaml.safe_dump(parameters))
+        (directory / 'manifest.yaml').write_text(yaml.safe_dump({'source': config, 'context': json.loads(raw_context), 'loaded_file': str(loaded), 'parameters': parameters}))
     except (OSError, ValueError) as error:
         print('controller YAML: ' + str(error), file=sys.stderr)
         return 2

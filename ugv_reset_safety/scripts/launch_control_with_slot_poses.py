@@ -64,10 +64,10 @@ def materialize_controller_configs(poses, source_files, output_dir):
     manifest = {}
     for namespace, parameters in sorted(prepared.items()):
         target = directory / (namespace + ".yaml")
-        target.write_text(yaml.safe_dump(parameters, sort_keys=False))
+        target.write_text(yaml.safe_dump(parameters))
         args.append(namespace + "_config_file:=" + str(target))
         manifest[namespace] = {"source": str(source_files[namespace]), "loaded_file": str(target), "parameters": parameters}
-    (directory / "manifest.yaml").write_text(yaml.safe_dump(manifest, sort_keys=False))
+    (directory / "manifest.yaml").write_text(yaml.safe_dump(manifest))
     return args
 
 
