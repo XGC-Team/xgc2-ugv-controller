@@ -257,13 +257,13 @@ bool worldPvaReady(const WorldPvaReference& sample) {
 }
 
 FlatnessCommandOutput computeFlatnessCommand(const UgvState& state,
-                                             const WorldPvaReference& reference, double command_speed,
-                                             double dt, const ControllerConfig& config) {
+                                             const WorldPvaReference& reference,
+                                             double command_speed, double dt,
+                                             const ControllerConfig& config) {
     FlatnessCommandOutput output;
     if (!finitePose(state) || !worldPvaReady(reference) || !std::isfinite(command_speed) ||
-        !std::isfinite(state.vx) || !std::isfinite(state.vy) ||
-        !std::isfinite(dt) || dt <= config.velocity_dt_min || dt > config.velocity_dt_max ||
-        !state.velocity_valid) {
+        !std::isfinite(state.vx) || !std::isfinite(state.vy) || !std::isfinite(dt) ||
+        dt <= config.velocity_dt_min || dt > config.velocity_dt_max || !state.velocity_valid) {
         return output;
     }
     // The dynamic-extension integrator is a command state, not a plant state.
@@ -306,8 +306,8 @@ FlatnessCommandOutput computeFlatnessCommand(const UgvState& state,
     // Damped inverse of the dynamic-extension decoupling coefficient. Unlike a
     // signed epsilon denominator, this stays continuous during stop/reversal.
     // Exact transverse acceleration tracking is intentionally relaxed near rest.
-    output.angular_speed = estimated_speed * lateral_accel /
-                           (estimated_speed * estimated_speed + v_eps * v_eps);
+    output.angular_speed =
+        estimated_speed * lateral_accel / (estimated_speed * estimated_speed + v_eps * v_eps);
     // Retain the bounded command integrator; do not restart it from a delayed
     // measurement every event-pump tick. Only the inverse uses measured speed.
     output.linear_speed = command_speed + output.accel * dt;
