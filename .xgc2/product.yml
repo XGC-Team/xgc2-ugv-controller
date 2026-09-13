@@ -28,6 +28,7 @@ apt:
   depends:
   - python3-rospkg-modules
   - python3-yaml
+  - python3-defusedxml
   - ros-melodic-roslaunch
   - ros-noetic-roslaunch
   - libeigen3-dev
