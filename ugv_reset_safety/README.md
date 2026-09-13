@@ -19,7 +19,7 @@ also return Ready: Ready alone is not arrival. The chassis Reset timeout is 90 s
 
 ```bash
 roslaunch ugv_reset_safety ugv_reset_coordinator.launch \
-  fleet_config:=/absolute/path/to/fleet.yaml
+  config_file:=/absolute/path/to/swarm.yaml
 ```
 
 The installed `four_scout.yaml`, `two_mecanum.yaml`, and `mixed_pair.yaml` provide

@@ -117,7 +117,16 @@ def main(argv):
         destination = root / str(uuid.uuid4())
         args = materialize_controller_configs(poses, sources, destination)
         if len(argv) == 4:
-            publish_manifest(destination / "manifest.yaml", argv[3])
+            # Include resolved UAV parameters as well in mixed swarm launches.
+            import roslaunch
+            launch_path = roslaunch.rlutil.resolve_launch_arguments([package, launch_file])[0]
+            expanded = roslaunch.config.ROSLaunchConfig()
+            roslaunch.xmlloader.XmlLoader().load(launch_path, expanded, argv=args, verbose=False)
+            manifest_file = destination / "manifest.yaml"
+            manifest = yaml.safe_load(manifest_file.read_text())
+            manifest["ros_parameters"] = {key: parameter.value for key, parameter in expanded.params.items()}
+            manifest_file.write_text(yaml.safe_dump(manifest))
+            publish_manifest(manifest_file, argv[3])
     except (ValueError, OSError, KeyError) as error:
         print("controller YAML: {}".format(error), file=sys.stderr)
         return 2

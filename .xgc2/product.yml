@@ -26,7 +26,7 @@ apt:
   - ros-melodic-xgc2-ugv-controller
   - ros-noetic-xgc2-ugv-controller
   depends:
-  - python3-rospkg
+  - python3-rospkg-modules
   - python3-yaml
   - ros-melodic-roslaunch
   - ros-noetic-roslaunch

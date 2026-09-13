@@ -68,7 +68,13 @@ test -x "/opt/ros/${ROS_DISTRO}/lib/ugv_reset_safety/ugv_reset_coordinator_node"
 rosmsg show ugv_reset_safety/ResetRequest | grep -q "^uint32 generation$"
 rosmsg show ugv_reset_safety/ResetResponse | grep -q "^uint8 status$"
 test "$(rospack find ugv_reset_safety)" = "/opt/ros/${ROS_DISTRO}/share/ugv_reset_safety"
-roslaunch --files ugv_reset_safety ugv_reset_coordinator.launch fleet_config:="/opt/ros/${ROS_DISTRO}/share/ugv_reset_safety/config/mixed_pair.yaml" >/tmp/xgc2-reset-coordinator-files.txt
+roslaunch --files ugv_reset_safety ugv_reset_coordinator.launch config_file:="/opt/ros/${ROS_DISTRO}/share/ugv_reset_safety/config/mixed_pair.yaml" >/tmp/xgc2-reset-coordinator-files.txt
+
+# Resolve the installed Python launch entry without starting a ROS master or node.
+XGC_PRINT_LAUNCH_ARGS=1 rosrun ugv_reset_safety launch_with_yaml_context.py \
+  unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch ugv1 \
+  "/opt/ros/${ROS_DISTRO}/share/unicycle_ugv_controller/config/scout_flatness.yaml" \
+  '{"reset_initial_x":"1","reset_initial_y":"2","reset_initial_yaw":"0"}'
 
 # Exercise the installed public interface using only its exported compiler flags.
 # A missing Eigen include export or pkg-config dependency must fail this check.

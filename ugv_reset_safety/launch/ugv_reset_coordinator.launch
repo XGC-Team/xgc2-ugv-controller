@@ -1,6 +1,6 @@
 <launch>
-  <arg name="fleet_config"/>
+  <arg name="config_file"/>
   <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node" name="ugv_reset_coordinator" output="screen" required="true">
-    <rosparam command="load" file="$(arg fleet_config)"/>
+    <rosparam command="load" file="$(arg config_file)"/>
   </node>
 </launch>

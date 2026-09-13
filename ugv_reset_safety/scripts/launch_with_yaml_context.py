@@ -40,13 +40,11 @@ def prepare_parameters(source_text, context, namespace):
 
 
 def main(argv):
-    if len(argv) != 6:
-        print('usage: launch_with_yaml_context.py PACKAGE LAUNCH NAMESPACE CONFIG_FILE CONFIG_ARGUMENT CONTEXT_JSON', file=sys.stderr)
+    if len(argv) != 5:
+        print('usage: launch_with_yaml_context.py PACKAGE LAUNCH NAMESPACE CONFIG_FILE CONTEXT_JSON', file=sys.stderr)
         return 2
-    package, launch, namespace, config, config_argument, raw_context = argv
+    package, launch, namespace, config, raw_context = argv
     try:
-        if config_argument not in ('config_file', 'fleet_config'):
-            raise ValueError('unsupported launch configuration argument')
         parameters = prepare_parameters(Path(config).read_text(), json.loads(raw_context), namespace)
         directory = Path(os.environ.get('ROS_HOME', str(Path.home() / '.ros'))) / 'xgc-controller-configurations' / str(uuid.uuid4())
         directory.mkdir(parents=True)
@@ -56,7 +54,7 @@ def main(argv):
     except (OSError, ValueError) as error:
         print('controller YAML: ' + str(error), file=sys.stderr)
         return 2
-    command = ['roslaunch', '--wait', package, launch, config_argument + ':=' + str(loaded)]
+    command = ['roslaunch', '--wait', package, launch, 'config_file:=' + str(loaded)]
     if namespace:
         command.append('ns:=' + namespace)
     print('Controller configuration: ' + str(loaded), file=sys.stderr, flush=True)
