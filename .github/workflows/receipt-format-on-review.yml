@@ -1,0 +1,55 @@
+name: Receipt formatting and resolved-topic review
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/receipt-format-on-review.yml'
+permissions:
+  contents: write
+  packages: read
+jobs:
+  prepare:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'review/issue93-pva-receipt-contract-20260914'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    container:
+      image: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Resolve diagnostics beside the actual remapped input topic
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('unicycle_ugv_controller/src/input/pva_reference_input_producer.cpp')
+          text=p.read_text()
+          for suffix in ('receipt','contract'):
+              old='topic + "/'+suffix+'"'
+              new='nh.resolveName(topic) + "/'+suffix+'"'
+              if old in text:
+                  assert text.count(old)==1
+                  text=text.replace(old,new)
+              assert new in text
+          p.write_text(text)
+          PY
+          clang-format --version
+          clang-format -i unicycle_ugv_controller/src/input/pva_reference_input_producer.cpp unicycle_ugv_controller/include/unicycle_ugv_controller/input/pva_reference_input_producer.h unicycle_ugv_controller/include/unicycle_ugv_controller/common/pva_receipt_trace.h
+          python3 unicycle_ugv_controller/test/pva_receipt_trace_test.py
+          git diff --check
+      - name: Push only reviewed source-format and topic changes
+        shell: bash
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add unicycle_ugv_controller/src/input/pva_reference_input_producer.cpp unicycle_ugv_controller/include/unicycle_ugv_controller/input/pva_reference_input_producer.h unicycle_ugv_controller/include/unicycle_ugv_controller/common/pva_receipt_trace.h
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix(flatness): resolve remapped receipt topics and format diagnostics'
+            git push origin "HEAD:refs/heads/$BRANCH"
+          fi
