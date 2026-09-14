@@ -8,6 +8,8 @@
 #include <limits>
 #include <state_machine/state_machine.hpp>
 
+#include "unicycle_ugv_controller/common/flatness_trace.h"
+
 namespace unicycle_ugv_controller {
 
 enum class StateSource {
@@ -107,6 +109,7 @@ struct ControlCommand {
     double linear_speed{0.0};
     double angular_speed{0.0};
     bool valid{false};
+    FlatnessTrace flatness_trace{};
 };
 
 struct ResetTarget {
@@ -126,6 +129,9 @@ struct WorldPvaReference {
     double ax{0.0};
     double ay{0.0};
     bool valid{false};
+    // Diagnostic identity only. stamp above remains the receipt-time lift epoch.
+    ros::Time source_stamp;
+    uint32_t source_sequence{0U};
 };
 
 struct FlatnessCommandOutput {
