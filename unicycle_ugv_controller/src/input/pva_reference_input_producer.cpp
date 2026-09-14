@@ -12,6 +12,8 @@ PvaReferenceInputProducer::PvaReferenceInputProducer(ros::NodeHandle& nh,
                                                      const std::string& topic, EventSink event_sink,
                                                      uint32_t queue_size)
     : controller_(controller), event_sink_(std::move(event_sink)) {
+    accepted_pub_ = nh.advertise<unicycle_reference_trajectory_msgs::PlanarPvaReference>(
+        topic + "/accepted", queue_size, false);
     sub_ = nh.subscribe(topic, queue_size, &PvaReferenceInputProducer::callback, this);
 }
 
@@ -33,6 +35,16 @@ void PvaReferenceInputProducer::callback(
     reference.ay = msg->ay;
     reference.valid = true;
     controller_.setWorldPva(reference);
+    // Preserve the existing receipt-epoch integration contract and tracking
+    // law. An observer's bag time is not this receiver's time, and the input
+    // header can name a future planning knot. Record the exact accepted epoch
+    // so q(t)=q0+v0*tau+0.5*a0*tau^2 can be reconstructed without guessing it.
+    // Acceptance means stored input, not proof of tracking-state admission,
+    // command publication, or physical execution. Record those independently.
+    auto accepted = *msg;
+    accepted.header.stamp = reference.stamp;
+    accepted.yaw = reference.yaw;
+    accepted_pub_.publish(accepted);
     post(event_type::INPUT_REFERENCE_UPDATED, "reference_pva", reference.stamp);
 }
 
