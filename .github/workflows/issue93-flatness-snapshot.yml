@@ -1,0 +1,42 @@
+name: Flatness immutable diagnostic snapshot
+on:
+  push:
+    branches: [issue93/flatness-snapshot-diagnostics]
+  pull_request:
+    paths:
+      - unicycle_ugv_controller/**
+      - .github/workflows/issue93-flatness-snapshot.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          lfs: false
+          submodules: false
+      - run: python3 unicycle_ugv_controller/test/issue93/apply_snapshot_diagnostic.py
+      - run: python3 unicycle_ugv_controller/test/flatness_estimated_speed_test.py
+      - run: python3 unicycle_ugv_controller/test/issue93/test_snapshot_diagnostic.py
+      - name: Push only tested observation call sites to the requested branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/issue93/flatness-snapshot-diagnostics' && github.repository == 'XGC-Team/xgc2-ugv-controller'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- unicycle_ugv_controller/include/unicycle_ugv_controller/common/types.h \
+            unicycle_ugv_controller/src/state_machine/custom1_state.cpp \
+            unicycle_ugv_controller/include/unicycle_ugv_controller/output/cmd_vel_output_consumer.h \
+            unicycle_ugv_controller/src/output/cmd_vel_output_consumer.cpp
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'feat(diagnostics): publish the exact flatness evaluation and command snapshot' \
+            -m 'Keep production low-speed law, signed measured-speed inverse and reference receipt-time lift byte-for-byte unchanged. Header and prior production-kernel regressions passed; ROS integration and vehicle acceptance not run. Relates to XGC-Team/xgc2-harness#93.'
+          git push origin HEAD:refs/heads/issue93/flatness-snapshot-diagnostics
