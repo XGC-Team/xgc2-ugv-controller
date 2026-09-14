@@ -1,0 +1,17 @@
+name: PVA receipt contract regression
+on:
+  pull_request:
+    paths:
+      - 'unicycle_ugv_controller/**'
+      - '.github/workflows/pva-receipt-regression.yml'
+permissions:
+  contents: read
+jobs:
+  receipt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: python3 unicycle_ugv_controller/test/pva_receipt_trace_test.py
