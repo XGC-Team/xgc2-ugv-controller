@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Compile the actual production flatness function without a ROS installation.
 
-Only message/config structs are substituted. The C++ function body is extracted
-verbatim, not reimplemented in Python. This is a numerical unit test, not a
-catkin ABI, state-machine, delay, or vehicle closed-loop test.
+Only message/config structs are substituted. The production wrapper and its
+shared kernel are compiled, not reimplemented in Python. This is a numerical
+unit test, not a catkin ABI, state-machine, delay, or vehicle closed-loop test.
 """
 from pathlib import Path
 import os
@@ -11,7 +11,8 @@ import subprocess
 import tempfile
 import unittest
 
-SOURCE = Path(__file__).resolve().parents[1] / 'src/common_types.cpp'
+PACKAGE = Path(__file__).resolve().parents[1]
+SOURCE = PACKAGE / 'src/common_types.cpp'
 
 def extract(source, signature):
     start = source.index(signature)
@@ -29,6 +30,8 @@ STUBS = r'''
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include "unicycle_ugv_controller/common/flatness_kernel.hpp"
+namespace flatness = unicycle_ugv_controller::flatness;
 struct UgvState { double x=0,y=0,yaw=0,vx=0,vy=0; bool velocity_valid=true; };
 struct WorldPvaReference {
  double x=0,y=0,vx=0,vy=0,ax=0,ay=0; bool valid=true;
@@ -96,7 +99,7 @@ class EstimatedSpeedTest(unittest.TestCase):
             cpp=Path(directory)/'test.cpp'; binary=Path(directory)/'test'
             cpp.write_text(STUBS+'\n'.join(functions)+CASES)
             subprocess.run([os.environ.get('CXX','g++'),'-std=c++17','-Wall','-Wextra',
-                            '-Werror','-O2',str(cpp),'-o',str(binary)],check=True)
+                            '-Werror','-O2','-I'+str(PACKAGE/'include'),str(cpp),'-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True)
 
 if __name__ == '__main__':
