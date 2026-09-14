@@ -25,6 +25,9 @@ class PvaReferenceInputProducer {
     UnicycleUgvController& controller_;
     EventSink event_sink_;
     ros::Subscriber sub_;
+    // Read-only diagnostic: input topic + "/accepted". Its header stamp is
+    // the exact epoch stored by setWorldPva(), not the recorder's arrival time.
+    ros::Publisher accepted_pub_;
 };
 
 }  // namespace unicycle_ugv_controller
