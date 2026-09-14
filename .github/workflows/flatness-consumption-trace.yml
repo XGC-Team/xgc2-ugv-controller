@@ -1,0 +1,26 @@
+name: Flatness consumption trace numerical regression
+on:
+  push:
+    branches: [fix/issue93-consumed-flatness-trace]
+  pull_request:
+    paths:
+      - 'unicycle_ugv_controller/include/**'
+      - 'unicycle_ugv_controller/src/**'
+      - 'unicycle_ugv_controller/test/flatness_*test.py'
+      - '.github/workflows/flatness-consumption-trace.yml'
+permissions:
+  contents: read
+jobs:
+  no-ros-production-core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GIT_LFS_SKIP_SMUDGE: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Verify unchanged numerical control law and receipt-time lift
+        run: test "$(git hash-object unicycle_ugv_controller/src/common_types.cpp)" = 6101dab5e1a0d87f807f88533de39f0c0a030baa
+      - name: Compile and run production speed feedback regression
+        run: python3 unicycle_ugv_controller/test/flatness_estimated_speed_test.py
+      - name: Compile and run production consumption snapshot regression
+        run: python3 unicycle_ugv_controller/test/flatness_consumption_trace_test.py
