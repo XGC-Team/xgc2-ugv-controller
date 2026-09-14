@@ -4,6 +4,7 @@
 #include <string>
 
 #include "unicycle_ugv_controller/common/types.h"
+#include "unicycle_ugv_controller/common/flatness_audit.h"
 #include "unicycle_ugv_controller/state_machine/periodic_gate.h"
 
 namespace unicycle_ugv_controller {
@@ -41,6 +42,7 @@ class Custom1State final : public ::state_machine::State {
     double body_speed_{0.0};
     double last_tick_time_{0.0};
     bool have_tick_time_{false};
+    FlatnessAuditSample flatness_audit_;
 };
 
 }  // namespace unicycle_ugv_controller

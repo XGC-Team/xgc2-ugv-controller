@@ -26,6 +26,7 @@ Custom1State::Custom1State(UnicycleUgvController& controller) : controller_(cont
     body_speed_ = snapshot.speed;
     last_tick_time_ = controller_.currentTime();
     have_tick_time_ = true;
+    flatness_audit_.valid = false;
     return {};
 }
 
@@ -103,13 +104,14 @@ void Custom1State::tickFlatness(::state_machine::StateContext& ctx) {
         return;
     }
     const UgvState snapshot = controller_.controlState();
+    const auto cfg = controller_.config();
     double dt = 0.0;
     if (have_tick_time_) {
         dt = now - last_tick_time_;
     }
     // A simulation clock may repeat across event-pump iterations. Accumulate
     // elapsed time instead of overwriting a valid command with a zero command.
-    if (have_tick_time_ && dt >= 0.0 && dt <= controller_.config().velocity_dt_min) {
+    if (have_tick_time_ && dt >= 0.0 && dt <= cfg.velocity_dt_min) {
         emitCommandIfDue(ctx);
         return;
     }
@@ -117,11 +119,22 @@ void Custom1State::tickFlatness(::state_machine::StateContext& ctx) {
     have_tick_time_ = true;
     const WorldPvaReference lifted = controller_.liftedWorldPva();
     const FlatnessCommandOutput output =
-        computeFlatnessCommand(snapshot, lifted, body_speed_, dt, controller_.config());
+        computeFlatnessCommand(snapshot, lifted, body_speed_, dt, cfg);
     if (!output.valid) {
         emitZero(ctx);
         return;
     }
+    // Freeze the exact inputs used above; observer reception time is not a
+    // replacement for the controller's own PVA receipt or state source stamp.
+    flatness_audit_.values = {{now, snapshot.stamp.toSec(), lifted.stamp.toSec(), dt,
+        snapshot.x, snapshot.y, snapshot.yaw, snapshot.vx, snapshot.vy, snapshot.yaw_rate,
+        bodySpeedFromWorld(snapshot.yaw, snapshot.vx, snapshot.vy),
+        lifted.x, lifted.y, lifted.vx, lifted.vy, lifted.ax, lifted.ay,
+        body_speed_, output.linear_speed, output.angular_speed, output.accel,
+        cfg.flatness_v_eps, cfg.flatness_lateral_response_length, cfg.flatness_lateral_damping,
+        cfg.flatness_kp, cfg.flatness_kv, cfg.chassis_max_linear_speed,
+        cfg.chassis_max_yaw_rate, snapshot.speed}};
+    flatness_audit_.valid = true;
     body_speed_ = output.linear_speed;
     ControlCommand command;
     command.stamp = ros::Time(now);
@@ -174,9 +187,13 @@ void Custom1State::emitCommandIfDue(::state_machine::StateContext& ctx) {
     if (!command_gate_.due(controller_.currentTime(), 1.0 / cfg.command_publish_rate_hz)) {
         return;
     }
-    ctx.emitOutput(
-        ::state_machine::Event(output_event_type::PUBLISH_CMD_VEL,
-                               ::state_machine::EventTimestamp{controller_.currentTime()}));
+    ::state_machine::Event event(output_event_type::PUBLISH_CMD_VEL,
+                                 ::state_machine::EventTimestamp{controller_.currentTime()});
+    if (cfg.tracking_strategy == TrackingStrategy::FLATNESS && flatness_audit_.valid) {
+        event.payload["flatness_audit_json"] = flatness_audit_.toJson();
+        event.payload["flatness_audit_stamp"] = flatness_audit_.values[0];
+    }
+    ctx.emitOutput(std::move(event));
 }
 
 void Custom1State::emitZero(::state_machine::StateContext& ctx, bool force) {
@@ -186,6 +203,11 @@ void Custom1State::emitZero(::state_machine::StateContext& ctx, bool force) {
     if (force || controller_.command().valid) {
         zero_gate_.reset();
     }
+    // This is a command integrator: issuing zero must not leave a previous
+    // nonzero command available to resurrect when valid tracking resumes.
+    // Do not overwrite it from delayed measured velocity on normal ticks.
+    body_speed_ = 0.0;
+    flatness_audit_.valid = false;
     controller_.clearCommand();
     const auto cfg = controller_.config();
     if (!zero_gate_.due(controller_.currentTime(), 1.0 / cfg.idle_cmd_rate_hz)) {

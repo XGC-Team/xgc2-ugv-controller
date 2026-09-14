@@ -1,0 +1,19 @@
+name: Issue 93 Flatness state and audit regression
+on:
+  push:
+    branches: [fix/93-flatness-state-and-receipt-audit]
+  pull_request:
+    paths:
+      - unicycle_ugv_controller/**
+      - .github/workflows/issue93-flatness-audit.yml
+permissions:
+  contents: read
+jobs:
+  ros-free:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          lfs: false
+      - run: python3 unicycle_ugv_controller/test/test_flatness_audit.py

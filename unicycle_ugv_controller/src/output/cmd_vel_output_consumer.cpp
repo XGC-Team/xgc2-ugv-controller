@@ -3,8 +3,11 @@
 #include <cmath>
 #include <memory>
 #include <utility>
+#include <variant>
+#include <std_msgs/String.h>
 
 #include "unicycle_ugv_controller/common/types.h"
+#include "unicycle_ugv_controller/common/flatness_audit.h"
 
 namespace unicycle_ugv_controller {
 CmdVelOutputConsumer::CmdVelOutputConsumer(
@@ -14,14 +17,28 @@ CmdVelOutputConsumer::CmdVelOutputConsumer(
     (void)executor;
     (void)queue_size;
     cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>(cmd_vel_topic, 1);
+    flatness_audit_pub_ = nh.advertise<std_msgs::String>(cmd_vel_topic + "/flatness_audit", 1);
 }
 
 bool CmdVelOutputConsumer::handle(const ::state_machine::Event& event) {
     if (event.id == output_event_type::PUBLISH_CMD_VEL) {
-        const auto command = makeTwist(controller_.command());
+        const auto held_command = controller_.command();
+        const auto command = makeTwist(held_command);
         cmd_vel_pub_.publish(command);
         controller_.resetSession().noteApplied(
             {command.linear.x, command.linear.y, command.angular.z}, ros::Time::now().toNSec());
+        const auto sample_it = event.payload.find("flatness_audit_json");
+        const auto stamp_it = event.payload.find("flatness_audit_stamp");
+        if (sample_it != event.payload.end() && stamp_it != event.payload.end()) {
+            const auto* sample = std::get_if<std::string>(&sample_it->second);
+            const auto* stamp = std::get_if<double>(&stamp_it->second);
+            if (sample && stamp) {
+                std_msgs::String audit;
+                audit.data = flatnessAuditPublication(*sample, ros::Time::now().toSec(),
+                    command.linear.x, command.angular.z, held_command.stamp.toSec(), *stamp);
+                if (!audit.data.empty()) flatness_audit_pub_.publish(audit);
+            }
+        }
         return true;
     }
     if (event.id == output_event_type::PUBLISH_ZERO_CMD_VEL) {
