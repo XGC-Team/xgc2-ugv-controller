@@ -98,6 +98,7 @@ Custom1State::Custom1State(UnicycleUgvController& controller) : controller_(cont
 
 void Custom1State::tickFlatness(::state_machine::StateContext& ctx) {
     const double now = controller_.currentTime();
+    const auto cfg = controller_.config();
     if (!controller_.worldPvaReady()) {
         emitZero(ctx);
         return;
@@ -109,15 +110,16 @@ void Custom1State::tickFlatness(::state_machine::StateContext& ctx) {
     }
     // A simulation clock may repeat across event-pump iterations. Accumulate
     // elapsed time instead of overwriting a valid command with a zero command.
-    if (have_tick_time_ && dt >= 0.0 && dt <= controller_.config().velocity_dt_min) {
+    if (have_tick_time_ && dt >= 0.0 && dt <= cfg.velocity_dt_min) {
         emitCommandIfDue(ctx);
         return;
     }
     last_tick_time_ = now;
     have_tick_time_ = true;
     const WorldPvaReference lifted = controller_.liftedWorldPva();
+    const double command_speed_before = body_speed_;
     const FlatnessCommandOutput output =
-        computeFlatnessCommand(snapshot, lifted, body_speed_, dt, controller_.config());
+        computeFlatnessCommand(snapshot, lifted, command_speed_before, dt, cfg);
     if (!output.valid) {
         emitZero(ctx);
         return;
@@ -128,6 +130,23 @@ void Custom1State::tickFlatness(::state_machine::StateContext& ctx) {
     command.linear_speed = output.linear_speed;
     command.angular_speed = output.angular_speed;
     command.valid = true;
+    // Diagnostics describe this evaluation, not a later reference/state read in
+    // an output callback. The existing command mutex transports one value copy.
+    auto& trace = command.flatness_trace;
+    trace.valid = true;
+    trace.evaluation_stamp_ns = command.stamp.toNSec();
+    trace.state_stamp_ns = snapshot.stamp.toNSec();
+    trace.reference_source_stamp_ns = lifted.source_stamp.toNSec();
+    trace.reference_receive_stamp_ns = lifted.stamp.toNSec();
+    trace.reference_sequence = lifted.source_sequence;
+    trace.dt_s = dt;
+    trace.command_speed_before_mps = command_speed_before;
+    trace.state = {snapshot.x, snapshot.y, snapshot.yaw,
+                   snapshot.vx, snapshot.vy, snapshot.yaw_rate};
+    trace.reference = {lifted.x, lifted.y, lifted.vx, lifted.vy, lifted.ax, lifted.ay};
+    trace.parameters = {cfg.flatness_kp, cfg.flatness_kv, cfg.flatness_v_eps,
+                        cfg.flatness_lateral_response_length, cfg.flatness_lateral_damping,
+                        cfg.chassis_max_linear_speed, cfg.chassis_max_yaw_rate};
     controller_.setCommand(command);
     emitCommandIfDue(ctx);
 }
