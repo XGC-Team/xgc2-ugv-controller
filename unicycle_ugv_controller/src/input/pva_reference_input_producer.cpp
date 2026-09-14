@@ -1,10 +1,11 @@
 #include "unicycle_ugv_controller/input/pva_reference_input_producer.h"
 
+#include <std_msgs/Float64MultiArray.h>
+#include <std_msgs/String.h>
+
 #include <cmath>
 #include <iomanip>
 #include <sstream>
-#include <std_msgs/Float64MultiArray.h>
-#include <std_msgs/String.h>
 #include <utility>
 
 #include "unicycle_ugv_controller/common/pva_receipt_trace.h"
@@ -21,8 +22,10 @@ PvaReferenceInputProducer::PvaReferenceInputProducer(ros::NodeHandle& nh,
     bool publish_receipts = false;
     private_nh.param("publish_pva_receipts", publish_receipts, publish_receipts);
     if (publish_receipts) {
-        receipt_pub_ = nh.advertise<std_msgs::Float64MultiArray>(topic + "/receipt", queue_size);
-        contract_pub_ = nh.advertise<std_msgs::String>(topic + "/contract", 1, true);
+        receipt_pub_ = nh.advertise<std_msgs::Float64MultiArray>(nh.resolveName(topic) + "/receipt",
+                                                                 queue_size);
+        contract_pub_ =
+            nh.advertise<std_msgs::String>(nh.resolveName(topic) + "/contract", 1, true);
         publishContract();
     }
     sub_ = nh.subscribe(topic, queue_size, &PvaReferenceInputProducer::callback, this);
@@ -31,8 +34,7 @@ PvaReferenceInputProducer::PvaReferenceInputProducer(ros::NodeHandle& nh,
 void PvaReferenceInputProducer::publishContract() {
     const auto cfg = controller_.config();
     std::ostringstream out;
-    out << std::setprecision(17)
-        << "{\"schema\":\"unicycle.pva-receipt-contract/v1\","
+    out << std::setprecision(17) << "{\"schema\":\"unicycle.pva-receipt-contract/v1\","
         << "\"time_basis\":\"local_ros_receipt\","
         << "\"state_source\":\""
         << (cfg.state_source == StateSource::PLATFORM_POSE ? "platform_pose" : "state_estimator")
@@ -46,8 +48,7 @@ void PvaReferenceInputProducer::publishContract() {
         << ",\"flatness_kv_per_s\":" << cfg.flatness_kv
         << ",\"lateral_response_length_m\":" << cfg.flatness_lateral_response_length
         << ",\"lateral_damping\":" << cfg.flatness_lateral_damping
-        << ",\"v_eps_mps\":" << cfg.flatness_v_eps
-        << ",\"filter_wn_radps\":" << cfg.filter_wn
+        << ",\"v_eps_mps\":" << cfg.flatness_v_eps << ",\"filter_wn_radps\":" << cfg.filter_wn
         << ",\"filter_zeta\":" << cfg.filter_zeta
         << ",\"velocity_dt_min_s\":" << cfg.velocity_dt_min
         << ",\"velocity_dt_max_s\":" << cfg.velocity_dt_max << "}";

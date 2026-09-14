@@ -11,8 +11,8 @@ inline std::array<double, 12> pvaReceiptTrace(double receipt_time, double source
                                               uint32_t source_sequence, uint32_t receipt_sequence,
                                               const std::array<double, 6>& pva, double yaw) {
     return {{1.0, receipt_time, source_time, static_cast<double>(source_sequence),
-             static_cast<double>(receipt_sequence), pva[0], pva[1], pva[2], pva[3], pva[4],
-             pva[5], yaw}};
+             static_cast<double>(receipt_sequence), pva[0], pva[1], pva[2], pva[3], pva[4], pva[5],
+             yaw}};
 }
 
 inline const char* pvaReceiptTraceLayout() {
