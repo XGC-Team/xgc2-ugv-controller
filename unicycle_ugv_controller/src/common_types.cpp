@@ -6,6 +6,7 @@
 #endif
 
 #include "unicycle_ugv_controller/common/types.h"
+#include "unicycle_ugv_controller/common/flatness_kernel.hpp"
 #include "xgc2_math/algebra/angle.hpp"
 
 namespace unicycle_ugv_controller {
@@ -260,66 +261,7 @@ FlatnessCommandOutput computeFlatnessCommand(const UgvState& state,
                                              const WorldPvaReference& reference,
                                              double command_speed, double dt,
                                              const ControllerConfig& config) {
-    FlatnessCommandOutput output;
-    if (!finitePose(state) || !worldPvaReady(reference) || !std::isfinite(command_speed) ||
-        !std::isfinite(state.vx) || !std::isfinite(state.vy) || !std::isfinite(dt) ||
-        dt <= config.velocity_dt_min || dt > config.velocity_dt_max || !state.velocity_valid) {
-        return output;
-    }
-    // The dynamic-extension integrator is a command state, not a plant state.
-    // controlState() supplies estimated world velocity (estimator or the existing
-    // second-order pose differentiator). Keep its signed body-axis projection.
-    const double estimated_speed = bodySpeedFromWorld(state.yaw, state.vx, state.vy);
-    if (!std::isfinite(estimated_speed) || !std::isfinite(config.flatness_kp) ||
-        !std::isfinite(config.flatness_kv) || !std::isfinite(config.flatness_v_eps) ||
-        config.flatness_v_eps <= 0.0 || !std::isfinite(config.chassis_max_linear_speed) ||
-        config.chassis_max_linear_speed <= 0.0 || !std::isfinite(config.chassis_max_yaw_rate) ||
-        config.chassis_max_yaw_rate <= 0.0) {
-        return output;
-    }
-    const double ux = reference.ax + config.flatness_kv * (reference.vx - state.vx) +
-                      config.flatness_kp * (reference.x - state.x);
-    const double uy = reference.ay + config.flatness_kv * (reference.vy - state.vy) +
-                      config.flatness_kp * (reference.y - state.y);
-    const double c = std::cos(state.yaw);
-    const double s = std::sin(state.yaw);
-    output.accel = c * ux + s * uy;
-    const double v_eps = std::max(config.flatness_v_eps, 1.0e-6);
-    // A skid-steer chassis has lateral motion at the measured body origin while
-    // turning. Fixed Cartesian derivative gain can feed that motion back with
-    // positive yaw gain proportional to 1/v. Set transverse bandwidth by a
-    // spatial response length; keep the measured world velocity and longitudinal
-    // PVA feedback. This is one continuous tracking law, including at v=0.
-    const double length = config.flatness_lateral_response_length;
-    const double damping = config.flatness_lateral_damping;
-    if (!std::isfinite(length) || length <= 0.0 || !std::isfinite(damping) || damping <= 0.0) {
-        return output;
-    }
-    const double bandwidth = std::fabs(estimated_speed) / length;
-    const double lateral_position_error =
-        -s * (reference.x - state.x) + c * (reference.y - state.y);
-    const double lateral_velocity_error =
-        -s * (reference.vx - state.vx) + c * (reference.vy - state.vy);
-    const double lateral_accel = -s * reference.ax + c * reference.ay +
-                                 2.0 * damping * bandwidth * lateral_velocity_error +
-                                 bandwidth * bandwidth * lateral_position_error;
-    // Damped inverse of the dynamic-extension decoupling coefficient. Unlike a
-    // signed epsilon denominator, this stays continuous during stop/reversal.
-    // Exact transverse acceleration tracking is intentionally relaxed near rest.
-    output.angular_speed =
-        estimated_speed * lateral_accel / (estimated_speed * estimated_speed + v_eps * v_eps);
-    // Retain the bounded command integrator; do not restart it from a delayed
-    // measurement every event-pump tick. Only the inverse uses measured speed.
-    output.linear_speed = command_speed + output.accel * dt;
-    // Check before clamping: std::min/max can conceal non-finite inputs.
-    if (!std::isfinite(output.accel) || !std::isfinite(output.linear_speed) ||
-        !std::isfinite(output.angular_speed)) {
-        return FlatnessCommandOutput{};
-    }
-    boxSaturateUnicycle(output.linear_speed, output.angular_speed, config.chassis_max_linear_speed,
-                        config.chassis_max_yaw_rate);
-    output.valid = std::isfinite(output.linear_speed) && std::isfinite(output.angular_speed);
-    return output;
+    return flatness::evaluate<FlatnessCommandOutput>(state, reference, command_speed, dt, config);
 }
 
 }  // namespace unicycle_ugv_controller

@@ -1,0 +1,18 @@
+name: Shared Flatness kernel regression
+on:
+  push:
+    branches: ['issue93/shared-flatness-kernel']
+  pull_request:
+    paths: ['unicycle_ugv_controller/**', '.github/workflows/issue93-flatness-kernel.yml']
+permissions:
+  contents: read
+jobs:
+  kernel:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compare runtime kernel with the pinned existing law without ROS
+        run: python3 unicycle_ugv_controller/test/test_flatness_kernel.py -v
