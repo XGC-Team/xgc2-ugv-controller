@@ -1,8 +1,10 @@
 #pragma once
 
 #include <ros/ros.h>
+#include <std_msgs/String.h>
 #include <unicycle_reference_trajectory_msgs/PlanarPvaReference.h>
 
+#include <cstdint>
 #include <functional>
 #include <state_machine/state_machine.hpp>
 #include <string>
@@ -25,6 +27,8 @@ class PvaReferenceInputProducer {
     UnicycleUgvController& controller_;
     EventSink event_sink_;
     ros::Subscriber sub_;
+    ros::Publisher receipt_pub_;
+    std::uint64_t receipt_sequence_ = 0;
 };
 
 }  // namespace unicycle_ugv_controller

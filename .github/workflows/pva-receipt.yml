@@ -1,0 +1,15 @@
+name: PVA receipt numerical contract
+on:
+  pull_request:
+    paths:
+      - 'unicycle_ugv_controller/**'
+      - '.github/workflows/pva-receipt.yml'
+permissions:
+  contents: read
+jobs:
+  receipt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 unicycle_ugv_controller/test/pva_receipt_test.py
+      - run: python3 unicycle_ugv_controller/test/flatness_estimated_speed_test.py
