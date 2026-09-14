@@ -1,0 +1,34 @@
+name: Flatness accepted-PVA clock regression
+on:
+  push:
+    branches: [fix/93-accepted-pva-clock]
+    paths:
+      - unicycle_ugv_controller/src/common_types.cpp
+      - unicycle_ugv_controller/src/input/pva_reference_input_producer.cpp
+      - unicycle_ugv_controller/include/unicycle_ugv_controller/input/pva_reference_input_producer.h
+      - unicycle_ugv_controller/test/*pva*test.py
+      - unicycle_ugv_controller/test/flatness_estimated_speed_test.py
+      - .github/workflows/flatness-accepted-pva.yml
+  pull_request:
+    paths:
+      - unicycle_ugv_controller/src/common_types.cpp
+      - unicycle_ugv_controller/src/input/pva_reference_input_producer.cpp
+      - unicycle_ugv_controller/include/unicycle_ugv_controller/input/pva_reference_input_producer.h
+      - unicycle_ugv_controller/test/*pva*test.py
+      - unicycle_ugv_controller/test/flatness_estimated_speed_test.py
+      - .github/workflows/flatness-accepted-pva.yml
+permissions:
+  contents: read
+jobs:
+  numerical-ownership:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GIT_LFS_SKIP_SMUDGE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          lfs: false
+          submodules: false
+      - run: python3 unicycle_ugv_controller/test/flatness_estimated_speed_test.py
+      - run: python3 unicycle_ugv_controller/test/accepted_pva_epoch_test.py
