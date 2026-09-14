@@ -3,6 +3,7 @@
 #include <cmath>
 #include <memory>
 #include <utility>
+#include <std_msgs/Float64MultiArray.h>
 
 #include "unicycle_ugv_controller/common/types.h"
 
@@ -14,12 +15,27 @@ CmdVelOutputConsumer::CmdVelOutputConsumer(
     (void)executor;
     (void)queue_size;
     cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>(cmd_vel_topic, 1);
+    flatness_diagnostic_pub_ = nh.advertise<std_msgs::Float64MultiArray>(
+        cmd_vel_topic + "/flatness_diagnostic", 1);
 }
 
 bool CmdVelOutputConsumer::handle(const ::state_machine::Event& event) {
     if (event.id == output_event_type::PUBLISH_CMD_VEL) {
-        const auto command = makeTwist(controller_.command());
+        const auto snapshot = controller_.command();
+        const auto command = makeTwist(snapshot);
+        const double publication_time = ros::Time::now().toSec();
         cmd_vel_pub_.publish(command);
+        const auto diagnostic = atFlatnessPublication(snapshot.flatness_diagnostic,
+            publication_time, command.linear.x, command.angular.z);
+        if (diagnostic.valid) {
+            std_msgs::Float64MultiArray message;
+            message.layout.dim.resize(1);
+            message.layout.dim[0].label = flatnessDiagnosticSchema();
+            message.layout.dim[0].size = FlatnessDiagnostic::Count;
+            message.layout.dim[0].stride = FlatnessDiagnostic::Count;
+            message.data.assign(diagnostic.values.begin(), diagnostic.values.end());
+            flatness_diagnostic_pub_.publish(message);
+        }
         controller_.resetSession().noteApplied(
             {command.linear.x, command.linear.y, command.angular.z}, ros::Time::now().toNSec());
         return true;

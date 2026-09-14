@@ -1,5 +1,7 @@
 #pragma once
 
+#include "unicycle_ugv_controller/common/flatness_diagnostic.h"
+
 #include <geometry_msgs/Twist.h>
 #include <ros/time.h>
 
@@ -107,6 +109,7 @@ struct ControlCommand {
     double linear_speed{0.0};
     double angular_speed{0.0};
     bool valid{false};
+    FlatnessDiagnostic flatness_diagnostic{};
 };
 
 struct ResetTarget {

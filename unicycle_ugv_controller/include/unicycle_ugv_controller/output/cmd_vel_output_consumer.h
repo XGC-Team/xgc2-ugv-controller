@@ -28,6 +28,7 @@ class CmdVelOutputConsumer final : public ::state_machine::runtime::EventConsume
 
     UnicycleUgvController& controller_;
     ros::Publisher cmd_vel_pub_;
+    ros::Publisher flatness_diagnostic_pub_;
 };
 
 }  // namespace unicycle_ugv_controller

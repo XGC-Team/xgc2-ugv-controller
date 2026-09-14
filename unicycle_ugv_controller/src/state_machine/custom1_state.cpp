@@ -116,6 +116,7 @@ void Custom1State::tickFlatness(::state_machine::StateContext& ctx) {
     last_tick_time_ = now;
     have_tick_time_ = true;
     const WorldPvaReference lifted = controller_.liftedWorldPva();
+    const double command_speed_before = body_speed_;
     const FlatnessCommandOutput output =
         computeFlatnessCommand(snapshot, lifted, body_speed_, dt, controller_.config());
     if (!output.valid) {
@@ -128,6 +129,8 @@ void Custom1State::tickFlatness(::state_machine::StateContext& ctx) {
     command.linear_speed = output.linear_speed;
     command.angular_speed = output.angular_speed;
     command.valid = true;
+    command.flatness_diagnostic = makeFlatnessDiagnostic(
+        now, dt, command_speed_before, snapshot, lifted, output);
     controller_.setCommand(command);
     emitCommandIfDue(ctx);
 }
