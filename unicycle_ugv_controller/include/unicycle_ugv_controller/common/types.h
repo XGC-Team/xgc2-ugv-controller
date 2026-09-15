@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <limits>
 #include <state_machine/state_machine.hpp>
+#include "unicycle_ugv_controller/common/heading_recovery.h"
 
 namespace unicycle_ugv_controller {
 
@@ -73,6 +74,7 @@ struct ControllerConfig {
     double flatness_v_eps{0.15};
     double flatness_lateral_response_length{0.8};
     double flatness_lateral_damping{1.0};
+    HeadingRecoveryConfig heading_recovery{};
     double filter_zeta{0.7071067811865476};
     double filter_wn{31.41592653589793};
     double velocity_dt_min{1.0e-4};
