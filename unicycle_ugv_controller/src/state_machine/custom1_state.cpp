@@ -186,6 +186,7 @@ void Custom1State::emitZero(::state_machine::StateContext& ctx, bool force) {
     if (force || controller_.command().valid) {
         zero_gate_.reset();
     }
+    body_speed_ = 0.0;
     controller_.clearCommand();
     const auto cfg = controller_.config();
     if (!zero_gate_.due(controller_.currentTime(), 1.0 / cfg.idle_cmd_rate_hz)) {
