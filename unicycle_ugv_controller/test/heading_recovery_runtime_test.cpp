@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
+
 #include <cmath>
 #include <limits>
+
 #include "unicycle_ugv_controller/common/types.h"
 
 namespace unicycle_ugv_controller {

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <limits>
 #include <state_machine/state_machine.hpp>
+
 #include "unicycle_ugv_controller/common/heading_recovery.h"
 
 namespace unicycle_ugv_controller {

@@ -6,9 +6,9 @@
 #include <stdexcept>
 #include <utility>
 
+#include "unicycle_ugv_controller/common/heading_recovery_ros.h"
 #include "unicycle_ugv_controller/output/cmd_vel_output_consumer.h"
 #include "unicycle_ugv_controller/output/nmpc_output_consumer.h"
-#include "unicycle_ugv_controller/common/heading_recovery_ros.h"
 
 namespace unicycle_ugv_controller {
 namespace {

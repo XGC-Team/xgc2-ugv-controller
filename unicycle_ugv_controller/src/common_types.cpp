@@ -318,20 +318,21 @@ FlatnessCommandOutput computeFlatnessCommand(const UgvState& state,
         // the zero regularisation target by a bounded potential-gradient target.
         // h is the PVA feedback's desired velocity; retain measured body speed,
         // longitudinal feedback and the existing command integrator unchanged.
-        if (config.flatness_kv <= 0.0) return FlatnessCommandOutput{};
+        if (config.flatness_kv <= 0.0)
+            return FlatnessCommandOutput{};
         const double position_rate = config.flatness_kp / config.flatness_kv;
         const double hx = reference.vx + position_rate * (reference.x - state.x);
         const double hy = reference.vy + position_rate * (reference.y - state.y);
         double reference_rate = 0.0;
         if (!std::isfinite(position_rate) ||
-            !regularizedReferenceRate(reference.vx, reference.vy, reference.ax, reference.ay,
-                                      v_eps, reference_rate)) {
+            !regularizedReferenceRate(reference.vx, reference.vy, reference.ax, reference.ay, v_eps,
+                                      reference_rate)) {
             return FlatnessCommandOutput{};
         }
-        const auto recovery = headingRecoveryCentre(
-            hx, hy, state.yaw, state.yaw_rate, reference_rate, v_eps, config.heading_recovery);
+        const auto recovery = headingRecoveryCentre(hx, hy, state.yaw, state.yaw_rate,
+                                                    reference_rate, v_eps, config.heading_recovery);
         if (!recovery.valid || !centredDampedYawRate(estimated_speed, lateral_accel, v_eps,
-                                                    recovery.centre, output.angular_speed)) {
+                                                     recovery.centre, output.angular_speed)) {
             return FlatnessCommandOutput{};
         }
     }
