@@ -57,9 +57,9 @@ TEST(ResetDwa, FourMetresRestoresPositionAndHeadingWithinControllerTimeout) {
 TEST(ResetDwa, AcceptedPoseBrakesResidualMotionBeforeParking) {
     std::vector<Robot> robots{scout()};
     auto& robot = robots[0];
-    // Observed terminal pose from the native Scout transport regression.
+    // Near-edge accepted pose under the 5 cm / 5° gate.
     robot.position = {0.00508955, 0.04966349};
-    robot.yaw = -0.13375718;
+    robot.yaw = -0.08;
     robot.previous = {-0.02, 0.0, 0.01};
     robot.brake_requested = true;
     ResetPath path;

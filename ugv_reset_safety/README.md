@@ -13,7 +13,7 @@ YAML before launch, and publishes its contents in the Session manifest. Missing 
 default to the origin. Updating a target only caches it; `reset` enters Reset,
 and the session freezes that target and its generation.
 
-Arrival requires XY error at most 0.05 m, shortest yaw error at most 10 degrees,
+Arrival requires XY error at most 0.05 m, shortest yaw error at most 5 degrees,
 measured low speed, and an exact zero command for both chassis. Stop and timeout
 also return Ready: Ready alone is not arrival. The chassis Reset timeout is 90 s.
 

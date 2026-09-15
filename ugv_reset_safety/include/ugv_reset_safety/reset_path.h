@@ -15,7 +15,7 @@ struct ResetTarget {
 
 struct PathOptions {
     double position_tolerance = 0.05;
-    double yaw_tolerance = 0.17453292519943295;  // 10 degrees, shortest angle
+    double yaw_tolerance = 0.08726646259971647;  // 5 degrees, shortest angle
     double path_clearance = 0.18;
     double lookahead = 0.5;
 };

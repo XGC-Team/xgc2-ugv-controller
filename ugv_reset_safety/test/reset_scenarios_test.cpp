@@ -190,7 +190,7 @@ ScenarioResult runScenario(std::vector<Robot> robots, const std::vector<ResetTar
         }
         if (result.completed) {
             EXPECT_LE(result.max_position_error, 0.05);
-            EXPECT_LE(result.max_yaw_error, 10.0 * kPi / 180.0);
+            EXPECT_LE(result.max_yaw_error, 5.0 * kPi / 180.0);
         }
         static int recorded_scenarios = 0;
         ::testing::Test::RecordProperty("scenario_" + std::to_string(++recorded_scenarios),
