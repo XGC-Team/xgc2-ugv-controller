@@ -25,6 +25,10 @@ flatness:
   lateral_damping: 1.0
   lateral_response_length: 0.8
   v_eps: 0.15
+  heading_recovery:
+    gain: 1.0
+    axis_bias: 0.5
+    rate_damping: 0.5
 idle_cmd_rate_hz: 5.0
 limits:
   max_angular_acceleration: 3.0

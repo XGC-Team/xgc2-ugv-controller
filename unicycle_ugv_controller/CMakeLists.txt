@@ -209,6 +209,13 @@ install(DIRECTORY tools
   PATTERN "results" EXCLUDE)
 
 if(CATKIN_ENABLE_TESTING)
+  add_executable(heading_recovery_kernel_test test/heading_recovery_test.cpp)
+  add_test(NAME heading_recovery_kernel COMMAND $<TARGET_FILE:heading_recovery_kernel_test>)
+  catkin_add_gtest(heading_recovery_runtime_test test/heading_recovery_runtime_test.cpp)
+  if(TARGET heading_recovery_runtime_test)
+    target_link_libraries(heading_recovery_runtime_test
+      unicycle_ugv_controller_nmpc_runtime ${catkin_LIBRARIES} gtest_main)
+  endif()
   # Diagnostic replay uses the production law; no second controller formula.
   add_executable(flatness_reference_replay tools/flatness_reference_replay.cpp)
   add_test(NAME flatness_skid_response

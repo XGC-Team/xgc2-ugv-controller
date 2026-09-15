@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "unicycle_ugv_controller/common/heading_recovery_ros.h"
 #include "unicycle_ugv_controller/output/cmd_vel_output_consumer.h"
 #include "unicycle_ugv_controller/output/nmpc_output_consumer.h"
 
@@ -103,6 +104,11 @@ void UnicycleUgvRosNode::loadParams() {
         config_.tracking_strategy = TrackingStrategy::NMPC;
     } else {
         throw std::invalid_argument("Unknown tracking_strategy: " + strategy);
+    }
+    config_.heading_recovery = loadHeadingRecovery(private_nh_);
+    if (config_.heading_recovery.gain > 0.0 &&
+        config_.tracking_strategy != TrackingStrategy::FLATNESS) {
+        throw std::invalid_argument("heading_recovery is available only for flatness tracking");
     }
     private_nh_.param("platform_pose_topic", platform_pose_topic_, platform_pose_topic_);
     private_nh_.param("reset_pose_topic", reset_pose_topic_, reset_pose_topic_);

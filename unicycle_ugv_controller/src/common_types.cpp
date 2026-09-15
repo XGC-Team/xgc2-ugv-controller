@@ -266,6 +266,11 @@ FlatnessCommandOutput computeFlatnessCommand(const UgvState& state,
         dt <= config.velocity_dt_min || dt > config.velocity_dt_max || !state.velocity_valid) {
         return output;
     }
+    try {
+        config.heading_recovery.validate();
+    } catch (const std::invalid_argument&) {
+        return output;
+    }
     // The dynamic-extension integrator is a command state, not a plant state.
     // controlState() supplies estimated world velocity (estimator or the existing
     // second-order pose differentiator). Keep its signed body-axis projection.
@@ -308,6 +313,30 @@ FlatnessCommandOutput computeFlatnessCommand(const UgvState& state,
     // Exact transverse acceleration tracking is intentionally relaxed near rest.
     output.angular_speed =
         estimated_speed * lateral_accel / (estimated_speed * estimated_speed + v_eps * v_eps);
+    if (config.heading_recovery.gain > 0.0) {
+        // Configuration opt-in, NOT an angle/speed controller switch. Replace
+        // the zero regularisation target by a bounded potential-gradient target.
+        // h is the PVA feedback's desired velocity; retain measured body speed,
+        // longitudinal feedback and the existing command integrator unchanged.
+        if (config.flatness_kv <= 0.0) {
+            return FlatnessCommandOutput{};
+        }
+        const double position_rate = config.flatness_kp / config.flatness_kv;
+        const double hx = reference.vx + position_rate * (reference.x - state.x);
+        const double hy = reference.vy + position_rate * (reference.y - state.y);
+        double reference_rate = 0.0;
+        if (!std::isfinite(position_rate) ||
+            !regularizedReferenceRate(reference.vx, reference.vy, reference.ax, reference.ay, v_eps,
+                                      reference_rate)) {
+            return FlatnessCommandOutput{};
+        }
+        const auto recovery = headingRecoveryCentre(hx, hy, state.yaw, state.yaw_rate,
+                                                    reference_rate, v_eps, config.heading_recovery);
+        if (!recovery.valid || !centredDampedYawRate(estimated_speed, lateral_accel, v_eps,
+                                                     recovery.centre, output.angular_speed)) {
+            return FlatnessCommandOutput{};
+        }
+    }
     // Retain the bounded command integrator; do not restart it from a delayed
     // measurement every event-pump tick. Only the inverse uses measured speed.
     output.linear_speed = command_speed + output.accel * dt;
