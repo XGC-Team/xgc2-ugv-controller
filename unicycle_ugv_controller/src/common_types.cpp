@@ -318,8 +318,9 @@ FlatnessCommandOutput computeFlatnessCommand(const UgvState& state,
         // the zero regularisation target by a bounded potential-gradient target.
         // h is the PVA feedback's desired velocity; retain measured body speed,
         // longitudinal feedback and the existing command integrator unchanged.
-        if (config.flatness_kv <= 0.0)
+        if (config.flatness_kv <= 0.0) {
             return FlatnessCommandOutput{};
+        }
         const double position_rate = config.flatness_kp / config.flatness_kv;
         const double hx = reference.vx + position_rate * (reference.x - state.x);
         const double hy = reference.vy + position_rate * (reference.y - state.y);

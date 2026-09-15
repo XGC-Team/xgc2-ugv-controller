@@ -11,7 +11,7 @@
 #include <limits>
 #include <random>
 using namespace unicycle_ugv_controller;
-int main() {
+int main() try {
     HeadingRecoveryConfig cfg;
     cfg.gain = 1.0;
     auto lateral = headingRecoveryCentre(0, 0.3, 0, 0, 0, 0.15, cfg);
@@ -69,4 +69,8 @@ int main() {
     CHECK(std::abs(hi - lo) < 2e-8);
     std::cout << "PASS: 10000 gradient/KKT/rotation cases, rest/lateral/reverse, damping, finite "
                  "extremes, rejection, zero-speed continuity\n";
+    return 0;
+} catch (const std::exception& error) {
+    std::cerr << error.what() << '\n';
+    return 1;
 }
