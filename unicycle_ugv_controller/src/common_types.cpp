@@ -197,6 +197,7 @@ bool updatePoseVelocityEstimator(PoseVelocityEstimator& estimator, double stamp,
         estimator.axis_yaw.x1 = yaw;
         estimator.axis_x.initialized = true;
         estimator.axis_y.initialized = true;
+        estimator.axis_yaw.initialized = true;
         estimator.velocity_valid = false;
         estimator.vx = 0.0;
         estimator.vy = 0.0;
