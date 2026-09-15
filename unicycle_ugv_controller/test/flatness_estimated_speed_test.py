@@ -8,6 +8,7 @@ catkin ABI, state-machine, delay, or vehicle closed-loop test.
 from pathlib import Path
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -29,7 +30,9 @@ STUBS = r'''
 #include <iostream>
 #include <limits>
 #include <stdexcept>
-struct UgvState { double x=0,y=0,yaw=0,vx=0,vy=0; bool velocity_valid=true; };
+#include "unicycle_ugv_controller/common/heading_recovery.h"
+using namespace unicycle_ugv_controller;
+struct UgvState { double x=0,y=0,yaw=0,vx=0,vy=0,yaw_rate=0; bool velocity_valid=true; };
 struct WorldPvaReference {
  double x=0,y=0,vx=0,vy=0,ax=0,ay=0; bool valid=true;
 };
@@ -37,6 +40,7 @@ struct ControllerConfig {
  double velocity_dt_min=.0001,velocity_dt_max=.2,flatness_kp=6,flatness_kv=4;
  double flatness_v_eps=.15,flatness_lateral_response_length=.8;
  double flatness_lateral_damping=1,chassis_max_linear_speed=1.05,chassis_max_yaw_rate=1.05;
+ HeadingRecoveryConfig heading_recovery{};
 };
 struct FlatnessCommandOutput { double accel=0,linear_speed=0,angular_speed=0; bool valid=false; };
 void check(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
@@ -81,7 +85,34 @@ int main() {
  s.vx=.3; r.vx=.3; r.y=.02;
  const auto nominal=computeFlatnessCommand(s,r,.3,.01,c);
  close(nominal.angular_speed,.3*std::pow(.3/.8,2)*.02/(.09+.0225));
- std::cout << "10 estimated-speed flatness regression cases passed\n";
+ // Optional heading recovery: use the actual function body, not a second law.
+ s=UgvState{}; r=WorldPvaReference{}; r.y=.3;
+ c.heading_recovery.gain=1.0;
+ const auto left=computeFlatnessCommand(s,r,0.,.01,c);
+ check(left.valid && left.angular_speed>0,"lateral rest has no heading recovery");
+ close(left.linear_speed,0.);
+ r.y=-.3;
+ const auto right=computeFlatnessCommand(s,r,0.,.01,c);
+ check(right.valid,"right lateral recovery invalid"); close(right.angular_speed,-left.angular_speed);
+ r=WorldPvaReference{}; r.x=-.3;
+ const auto backwards=computeFlatnessCommand(s,r,0.,.01,c);
+ check(backwards.valid && backwards.linear_speed<0,"reverse axis unavailable");
+ close(backwards.angular_speed,0.);
+ s.yaw_rate=std::numeric_limits<double>::quiet_NaN();
+ check(!computeFlatnessCommand(s,r,0.,.01,c).valid,"invalid recovery yaw rate accepted");
+ s=UgvState{}; r=WorldPvaReference{}; r.y=.3;
+ c.heading_recovery.gain=1e3;
+ const auto saturated=computeFlatnessCommand(s,r,0.,.01,c);
+ check(saturated.valid,"saturated recovery invalid"); close(saturated.angular_speed,c.chassis_max_yaw_rate);
+ c.heading_recovery.gain=1.;
+ s.vx=-1e-9; const auto lo=computeFlatnessCommand(s,r,.1,.01,c);
+ s.vx= 1e-9; const auto hi=computeFlatnessCommand(s,r,.1,.01,c);
+ check(lo.valid && hi.valid && std::fabs(lo.angular_speed-hi.angular_speed)<1e-7,
+       "heading recovery discontinuous through rest");
+ ControllerConfig base;
+ const auto baseline=computeFlatnessCommand(s,r,.1,.01,base);
+ close(baseline.linear_speed,hi.linear_speed); close(baseline.accel,hi.accel);
+ std::cout << "10 estimated-speed regression cases and heading-recovery production-function checks passed\n";
 }
 '''
 
@@ -96,8 +127,13 @@ class EstimatedSpeedTest(unittest.TestCase):
             cpp=Path(directory)/'test.cpp'; binary=Path(directory)/'test'
             cpp.write_text(STUBS+'\n'.join(functions)+CASES)
             subprocess.run([os.environ.get('CXX','g++'),'-std=c++17','-Wall','-Wextra',
-                            '-Werror','-O2',str(cpp),'-o',str(binary)],check=True)
+                            '-Werror','-O2','-I'+str(SOURCE.parents[1]/'include'),
+                            str(cpp),'-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True)
+
+    def test_heading_kernel(self):
+        subprocess.run([sys.executable, str(Path(__file__).with_name('run_heading_recovery_test.py'))],
+                       check=True)
 
 if __name__ == '__main__':
     unittest.main()
