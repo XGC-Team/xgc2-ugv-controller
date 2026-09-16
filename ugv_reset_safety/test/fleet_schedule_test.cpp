@@ -68,6 +68,27 @@ TEST(FleetSchedule, AdmitsThreeRobotGoalCycleAsOneCohort) {
     EXPECT_EQ(result.selected, (std::vector<std::size_t>{0, 1, 2, 3}));
 }
 
+TEST(FleetSchedule, AdmitsScoutLineSpawnWithSoftenedFootprint) {
+    // Chassis 0.62 x 0.52 admitted; 1.10 square circumradius rejected 1.6 m
+    // spawn. 0.90 x 0.80 stays larger than chassis and still admits.
+    auto scout = [](const std::string& id, double y) {
+        Robot result;
+        result.id = id;
+        result.position = Eigen::Vector2d(-6.0, y);
+        result.half_length = 0.45;
+        result.half_width = 0.40;
+        return result;
+    };
+    const std::vector<Robot> robots{scout("ugv1", -1.2), scout("ugv2", -2.8), scout("ugv3", -4.4),
+                                    scout("ugv4", -6.0)};
+    const std::vector<ResetTarget> targets{target(-6.0, -1.2), target(-6.0, -2.8),
+                                           target(-6.0, -4.4), target(-6.0, -6.0)};
+    FleetSchedule schedule(0.13);
+    const auto result = schedule.initialize(robots, targets);
+    EXPECT_EQ(result.status, ScheduleStatus::Ready) << result.detail;
+    EXPECT_EQ(result.selected.size(), 4U);
+}
+
 TEST(FleetSchedule, RejectsTargetsThatOverlapOrAreOccupiedByNonparticipants) {
     std::vector<Robot> robots{robot("a", -2), robot("b", 2)};
     FleetSchedule schedule;

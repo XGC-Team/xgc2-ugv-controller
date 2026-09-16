@@ -1,6 +1,7 @@
 scene_namespace: /xgc/scene
 # Simulation envelopes; physical execution needs measured residual bounds.
-# Scout Reset footprint is the 1.10 m occupancy square (not chassis CAD 0.62 x 0.52).
+# Scout Reset footprint 0.90 x 0.80 m: larger than chassis CAD 0.62 x 0.52,
+# smaller than the 1.10 m occupancy disc (circumradius of 1.10 blocked 1.6 m spawn).
 frequency: 50.0
 input_timeout: 0.15
 world_frame: world
@@ -14,8 +15,8 @@ fence:
 robots:
 - namespace: ugv1
   type: scout
-  length: 1.10
-  width: 1.10
+  length: 0.90
+  width: 0.80
   body_offset_x: 0.0
   body_offset_y: 0.0
   max_vx: 0.35
