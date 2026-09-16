@@ -10,10 +10,10 @@ cmd_vel_topic: cmd_vel
 command_publish_rate_hz: 30.0
 control_rate_hz: 500.0
 fence:
-  x_max: 20.0
-  x_min: -20.0
-  y_max: 20.0
-  y_min: -20.0
+  x_max: 12.0
+  x_min: -12.0
+  y_max: 7.0
+  y_min: -7.0
 filter:
   dt_max: 0.2
   dt_min: 0.0001
@@ -26,7 +26,7 @@ flatness:
   lateral_response_length: 0.8
   v_eps: 0.15
   heading_recovery:
-    gain: 1.0
+    gain: 1.25
     axis_bias: 0.5
     rate_damping: 0.5
 idle_cmd_rate_hz: 5.0
