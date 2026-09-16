@@ -32,10 +32,43 @@ struct ScheduleResult {
     }
 };
 
-// Batch admission for one Reset cohort, not a complete multi-agent planner.
-// Every requesting robot starts together after /command reset. Target-overlap
-// and a nonparticipant sitting on a requested goal still reject before motion.
-// Goal occupancy cycles are not serialized; path planning and DWA own crossing traffic.
+inline double resetPathCross(const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+    return a.x() * b.y() - a.y() * b.x();
+}
+
+// Interior segment crossing, or collinear opposite-direction overlap (a swap).
+// Same-direction convoys that only share an endpoint are allowed in one wave.
+inline bool resetPathsConflict(const Eigen::Vector2d& a0, const Eigen::Vector2d& a1,
+                               const Eigen::Vector2d& b0, const Eigen::Vector2d& b1) {
+    const Eigen::Vector2d da = a1 - a0;
+    const Eigen::Vector2d db = b1 - b0;
+    const double a_norm = da.norm();
+    const double b_norm = db.norm();
+    if (a_norm < 1e-6 || b_norm < 1e-6) {
+        return false;
+    }
+    const double den = resetPathCross(da, db);
+    if (std::abs(den) > 1e-6 * a_norm * b_norm) {
+        const Eigen::Vector2d r = b0 - a0;
+        const double s = resetPathCross(r, db) / den;
+        const double t = resetPathCross(r, da) / den;
+        return s > 1e-4 && s < 1.0 - 1e-4 && t > 1e-4 && t < 1.0 - 1e-4;
+    }
+    if (da.dot(db) >= 0.0) {
+        return false;
+    }
+    const double a2 = da.squaredNorm();
+    double t0 = (b0 - a0).dot(da) / a2;
+    double t1 = (b1 - a0).dot(da) / a2;
+    if (t0 > t1) {
+        std::swap(t0, t1);
+    }
+    return t0 < 1.0 - 1e-4 && t1 > 1e-4;
+}
+
+// Batch admission for one Reset click. Target-overlap and a nonparticipant on a
+// requested goal still reject before motion. Crossing start→goal segments are
+// split into successive waves so a 一字 swap does not launch every robot at once.
 // Non-requesting robots stay parked obstacles.
 //
 // A completion bit means BOTH original target arrival AND measured stop, not
@@ -109,8 +142,26 @@ class FleetSchedule {
                 }
             }
         }
-        if (!requesting.empty()) {
-            groups_.push_back(requesting);
+        for (const auto i : requesting) {
+            bool placed = false;
+            for (auto& wave : groups_) {
+                bool ok = true;
+                for (const auto j : wave) {
+                    if (resetPathsConflict(robots[i].position, targets[i].position,
+                                           robots[j].position, targets[j].position)) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (ok) {
+                    wave.push_back(i);
+                    placed = true;
+                    break;
+                }
+            }
+            if (!placed) {
+                groups_.push_back({i});
+            }
         }
         completed_.assign(robots.size(), false);
         result_.status = groups_.empty() ? ScheduleStatus::Complete : ScheduleStatus::Ready;

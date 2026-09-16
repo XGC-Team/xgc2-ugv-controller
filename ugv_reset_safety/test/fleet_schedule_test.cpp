@@ -36,7 +36,7 @@ TEST(FleetSchedule, StartsEveryRequesterTogether) {
     EXPECT_TRUE(schedule.select({true, true, true}).selected.empty());
 }
 
-TEST(FleetSchedule, OppositeCornerSwapIsOneCohort) {
+TEST(FleetSchedule, OppositeCornerSwapRunsInWaves) {
     const std::vector<Robot> robots{robot("alpha", -2.5, -2), robot("bravo", 2.5, -2),
                                     robot("charlie", 2.5, 2), robot("delta", -2.5, 2)};
     const std::vector<ResetTarget> targets{target(2.5, 2), target(-2.5, 2), target(-2.5, -2),
@@ -44,10 +44,20 @@ TEST(FleetSchedule, OppositeCornerSwapIsOneCohort) {
     FleetSchedule schedule;
     auto result = schedule.initialize(robots, targets);
     ASSERT_TRUE(result.ok()) << result.detail;
-    EXPECT_EQ(result.selected, (std::vector<std::size_t>{0, 1, 2, 3}));
-    EXPECT_EQ(schedule.select({true, false, false, false}).selected,
-              (std::vector<std::size_t>{1, 2, 3}));
-    EXPECT_EQ(schedule.select({true, true, true, true}).status, ScheduleStatus::Complete);
+    EXPECT_LT(result.selected.size(), 4U);
+    std::vector<bool> arrived(4, false);
+    int waves = 0;
+    while (schedule.select(arrived).status != ScheduleStatus::Complete && waves < 8) {
+        const auto next = schedule.select(arrived);
+        ASSERT_TRUE(next.ok()) << next.detail;
+        ASSERT_FALSE(next.selected.empty());
+        for (const auto i : next.selected) {
+            arrived[i] = true;
+        }
+        ++waves;
+    }
+    EXPECT_EQ(schedule.select(arrived).status, ScheduleStatus::Complete);
+    EXPECT_GE(waves, 2);
 }
 
 TEST(FleetSchedule, TieOrderDependsOnIdsRatherThanRosterOrder) {
@@ -58,14 +68,41 @@ TEST(FleetSchedule, TieOrderDependsOnIdsRatherThanRosterOrder) {
     EXPECT_EQ(schedule.select({false, true, false}).selected, (std::vector<std::size_t>{2, 0}));
 }
 
-TEST(FleetSchedule, AdmitsThreeRobotGoalCycleAsOneCohort) {
+TEST(FleetSchedule, SerializesHeadOnGoalCycle) {
     const std::vector<Robot> robots{robot("first_free", -4), robot("x", 0), robot("y", 2),
                                     robot("z", 4)};
     const std::vector<ResetTarget> targets{target(-4, 3), target(2), target(4), target(0)};
     FleetSchedule schedule;
     const auto result = schedule.initialize(robots, targets);
     EXPECT_EQ(result.status, ScheduleStatus::Ready);
-    EXPECT_EQ(result.selected, (std::vector<std::size_t>{0, 1, 2, 3}));
+    EXPECT_EQ(result.selected, (std::vector<std::size_t>{0, 1, 2}));
+    EXPECT_EQ(schedule.select({true, true, true, false}).selected, (std::vector<std::size_t>{3}));
+    EXPECT_EQ(schedule.select({true, true, true, true}).status, ScheduleStatus::Complete);
+}
+
+TEST(FleetSchedule, SerializesLineSwapUgv3Ugv4) {
+    auto scout = [](const std::string& id, double y) {
+        Robot result;
+        result.id = id;
+        result.position = Eigen::Vector2d(-8.0, y);
+        result.half_length = 0.45;
+        result.half_width = 0.40;
+        return result;
+    };
+    // End 一字 with ugv3/ugv4 swapped vs spawn north→south.
+    const std::vector<Robot> robots{scout("ugv1", 2.7), scout("ugv2", 0.9), scout("ugv3", -2.7),
+                                    scout("ugv4", -0.9)};
+    const std::vector<ResetTarget> targets{target(-6.0, 2.7), target(-6.0, 0.9), target(-6.0, -0.9),
+                                           target(-6.0, -2.7)};
+    FleetSchedule schedule(0.13);
+    const auto first = schedule.initialize(robots, targets);
+    ASSERT_EQ(first.status, ScheduleStatus::Ready) << first.detail;
+    EXPECT_EQ(first.selected, (std::vector<std::size_t>{0, 1, 2}));
+    std::vector<bool> arrived(4, false);
+    for (const auto i : first.selected) {
+        arrived[i] = true;
+    }
+    EXPECT_EQ(schedule.select(arrived).selected, (std::vector<std::size_t>{3}));
 }
 
 TEST(FleetSchedule, AdmitsScoutLineSpawnWithSoftenedFootprint) {
