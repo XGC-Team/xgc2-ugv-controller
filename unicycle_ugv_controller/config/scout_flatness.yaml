@@ -4,7 +4,7 @@ active_polynomial_topic: alg/unicycle_reference_trajectory/active/polynomial
 active_sampled_topic: alg/unicycle_reference_trajectory/active/sampled
 auto_start_tracking: false
 chassis:
-  max_linear_speed: 1.05
+  max_linear_speed: 1.5
   max_yaw_rate: 1.05
 cmd_vel_topic: cmd_vel
 command_publish_rate_hz: 30.0
@@ -34,7 +34,7 @@ limits:
   max_angular_acceleration: 3.0
   max_angular_speed: 2.5
   max_linear_acceleration: 2.0
-  max_linear_speed: 3.0
+  max_linear_speed: 1.5
   min_linear_speed: -1.5
 nmpc:
   control_period: 0.1
