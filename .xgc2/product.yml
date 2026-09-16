@@ -41,8 +41,8 @@ apt:
   - ros-noetic-xgc2-ros1-utils (>= 1.1.1-3)
   - ros-melodic-xgc2-estimator-rigid-state-msgs (>= 1.2.0-3)
   - ros-noetic-xgc2-estimator-rigid-state-msgs (>= 1.2.0-3)
-  - ros-melodic-xgc2-unicycle-reference-trajectory-msgs (>= 1.3.0-16)
-  - ros-noetic-xgc2-unicycle-reference-trajectory-msgs (>= 1.3.0-16)
+  - ros-melodic-xgc2-unicycle-reference-trajectory-msgs (>= 1.3.0-17)
+  - ros-noetic-xgc2-unicycle-reference-trajectory-msgs (>= 1.3.0-17)
 usage:
   install: 'sudo apt update
 
@@ -101,5 +101,5 @@ release:
     xgc2-scene-generation: rebuild
     xgc2-ros1-utils: rebuild
   apt_versions:
-    bionic: 1.3.0-16
-    focal: 1.3.0-16
+    bionic: 1.3.0-17
+    focal: 1.3.0-17
