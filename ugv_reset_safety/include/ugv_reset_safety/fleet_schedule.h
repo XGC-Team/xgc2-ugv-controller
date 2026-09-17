@@ -69,6 +69,9 @@ inline bool resetPathsConflict(const Eigen::Vector2d& a0, const Eigen::Vector2d&
 // Batch admission for one Reset click. Target-overlap and a nonparticipant on a
 // requested goal still reject before motion. Crossing start→goal segments are
 // split into successive waves so a 一字 swap does not launch every robot at once.
+// A wave split never strands anyone on a fleetmate's goal: a parked starter is
+// a hard obstacle, so a conflict component whose goals sit on member starts
+// (swaps and goal cycles) runs as ONE wave and lets DWA negotiate the crossing.
 // Non-requesting robots stay parked obstacles.
 //
 // A completion bit means BOTH original target arrival AND measured stop, not
@@ -142,18 +145,70 @@ class FleetSchedule {
                 }
             }
         }
+        auto occupies = [&](std::size_t mover, std::size_t holder) {
+            return (targets[mover].position - robots[holder].position).norm() <=
+                   radius[mover] + radius[holder] + clearance_;
+        };
+        // Union the requesting robots over path conflicts. A component whose
+        // goals sit on member starts cannot be split: every wave order parks
+        // some robot on a fleetmate's goal, so it stays a single wave.
+        std::vector<std::size_t> component(robots.size());
+        for (std::size_t i = 0; i < robots.size(); ++i) {
+            component[i] = i;
+        }
+        auto root = [&](std::size_t i) {
+            while (component[i] != i) {
+                component[i] = component[component[i]];
+                i = component[i];
+            }
+            return i;
+        };
+        for (std::size_t left = 0; left < requesting.size(); ++left) {
+            for (std::size_t right = left + 1; right < requesting.size(); ++right) {
+                const auto i = requesting[left], j = requesting[right];
+                if (resetPathsConflict(robots[i].position, targets[i].position, robots[j].position,
+                                       targets[j].position)) {
+                    component[root(i)] = root(j);
+                }
+            }
+        }
+        std::vector<bool> occupied_component(robots.size(), false);
+        for (std::size_t left = 0; left < requesting.size(); ++left) {
+            for (std::size_t right = left + 1; right < requesting.size(); ++right) {
+                const auto i = requesting[left], j = requesting[right];
+                if (occupies(i, j) || occupies(j, i)) {
+                    occupied_component[root(i)] = true;
+                    occupied_component[root(j)] = true;
+                }
+            }
+        }
         for (const auto i : requesting) {
-            bool placed = false;
-            for (auto& wave : groups_) {
-                bool ok = true;
-                for (const auto j : wave) {
-                    if (resetPathsConflict(robots[i].position, targets[i].position,
-                                           robots[j].position, targets[j].position)) {
-                        ok = false;
-                        break;
+            std::size_t earliest = 0;
+            for (std::size_t w = 0; w < groups_.size(); ++w) {
+                for (const auto j : groups_[w]) {
+                    if (occupies(i, j)) {
+                        earliest = std::max(earliest, w);
                     }
                 }
-                if (ok) {
+            }
+            bool placed = false;
+            for (std::size_t w = earliest; w < groups_.size(); ++w) {
+                auto& wave = groups_[w];
+                bool forced = false;
+                bool blocked = false;
+                for (const auto j : wave) {
+                    // Trailing j would park i on j's goal; an occupied
+                    // component must also reunite with its own wave.
+                    if (occupies(j, i) || (occupied_component[root(i)] && root(j) == root(i))) {
+                        forced = true;
+                    }
+                    if (!occupied_component[root(i)] &&
+                        resetPathsConflict(robots[i].position, targets[i].position,
+                                           robots[j].position, targets[j].position)) {
+                        blocked = true;
+                    }
+                }
+                if (forced || !blocked) {
                     wave.push_back(i);
                     placed = true;
                     break;

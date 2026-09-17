@@ -450,8 +450,8 @@ TEST(ResetScenarios, TwoRobotsCrossingHeadOnAndPositionSwap) {
             const ResetTarget second_goal{
                 encounter == 0 ? Eigen::Vector2d(0.0, 2.0) : Eigen::Vector2d(-2.0, 0.0),
                 encounter == 2 ? 0.0 : second.yaw};
-            // Both robots start together; the four-Scout test below enforces the 45 s owner
-            // timeout.
+            // Free-goal crossings serialize into waves; occupied-goal swaps move
+            // together. The four-Scout test below enforces the 45 s owner timeout.
             const auto result =
                 runScenario({first, second}, {first_goal, second_goal}, {}, {}, 600.0);
             EXPECT_TRUE(result.completed)

@@ -36,7 +36,9 @@ TEST(FleetSchedule, StartsEveryRequesterTogether) {
     EXPECT_TRUE(schedule.select({true, true, true}).selected.empty());
 }
 
-TEST(FleetSchedule, OppositeCornerSwapRunsInWaves) {
+TEST(FleetSchedule, OppositeCornerSwapIsOneCohort) {
+    // Every diagonal start holds the opposite corner's goal, so no wave order
+    // frees a goal; the cohort moves together and DWA owns the crossing.
     const std::vector<Robot> robots{robot("alpha", -2.5, -2), robot("bravo", 2.5, -2),
                                     robot("charlie", 2.5, 2), robot("delta", -2.5, 2)};
     const std::vector<ResetTarget> targets{target(2.5, 2), target(-2.5, 2), target(-2.5, -2),
@@ -44,20 +46,10 @@ TEST(FleetSchedule, OppositeCornerSwapRunsInWaves) {
     FleetSchedule schedule;
     auto result = schedule.initialize(robots, targets);
     ASSERT_TRUE(result.ok()) << result.detail;
-    EXPECT_LT(result.selected.size(), 4U);
-    std::vector<bool> arrived(4, false);
-    int waves = 0;
-    while (schedule.select(arrived).status != ScheduleStatus::Complete && waves < 8) {
-        const auto next = schedule.select(arrived);
-        ASSERT_TRUE(next.ok()) << next.detail;
-        ASSERT_FALSE(next.selected.empty());
-        for (const auto i : next.selected) {
-            arrived[i] = true;
-        }
-        ++waves;
-    }
-    EXPECT_EQ(schedule.select(arrived).status, ScheduleStatus::Complete);
-    EXPECT_GE(waves, 2);
+    EXPECT_EQ(result.selected, (std::vector<std::size_t>{0, 1, 2, 3}));
+    EXPECT_EQ(schedule.select({true, false, false, false}).selected,
+              (std::vector<std::size_t>{1, 2, 3}));
+    EXPECT_EQ(schedule.select({true, true, true, true}).status, ScheduleStatus::Complete);
 }
 
 TEST(FleetSchedule, TieOrderDependsOnIdsRatherThanRosterOrder) {
@@ -68,16 +60,31 @@ TEST(FleetSchedule, TieOrderDependsOnIdsRatherThanRosterOrder) {
     EXPECT_EQ(schedule.select({false, true, false}).selected, (std::vector<std::size_t>{2, 0}));
 }
 
-TEST(FleetSchedule, SerializesHeadOnGoalCycle) {
+TEST(FleetSchedule, HeadOnGoalCycleWithOccupiedGoalsRunsAsOneWave) {
+    // x, y, z leapfrog along one line head-on; y's goal is z's start and z's
+    // goal is x's start. Any wave split parks a robot on a fleetmate's goal,
+    // so the chain must move as one wave and let DWA negotiate.
     const std::vector<Robot> robots{robot("first_free", -4), robot("x", 0), robot("y", 2),
                                     robot("z", 4)};
     const std::vector<ResetTarget> targets{target(-4, 3), target(2), target(4), target(0)};
     FleetSchedule schedule;
     const auto result = schedule.initialize(robots, targets);
     EXPECT_EQ(result.status, ScheduleStatus::Ready);
-    EXPECT_EQ(result.selected, (std::vector<std::size_t>{0, 1, 2}));
-    EXPECT_EQ(schedule.select({true, true, true, false}).selected, (std::vector<std::size_t>{3}));
+    EXPECT_EQ(result.selected, (std::vector<std::size_t>{0, 1, 2, 3}));
     EXPECT_EQ(schedule.select({true, true, true, true}).status, ScheduleStatus::Complete);
+}
+
+TEST(FleetSchedule, SerializesHeadOnOverlapWhenGoalsAreFree) {
+    // Opposite-direction lanes: the collinear-overlap check still fires, but
+    // neither start holds the other's goal, so b waits for the earlier id.
+    const std::vector<Robot> robots{robot("a", -2, 0), robot("b", 2, 0.9)};
+    const std::vector<ResetTarget> targets{target(2, 0), target(-2, 0.9)};
+    FleetSchedule schedule;
+    const auto result = schedule.initialize(robots, targets);
+    EXPECT_EQ(result.status, ScheduleStatus::Ready);
+    EXPECT_EQ(result.selected, (std::vector<std::size_t>{0}));
+    EXPECT_EQ(schedule.select({true, false}).selected, (std::vector<std::size_t>{1}));
+    EXPECT_EQ(schedule.select({true, true}).status, ScheduleStatus::Complete);
 }
 
 TEST(FleetSchedule, SerializesLineSwapUgv3Ugv4) {
