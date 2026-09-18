@@ -414,11 +414,10 @@ class Coordinator {
                 return;
             }
             const auto command = directResetCommand(robots[i], targets[i]);
-            const bool arrived = withinTargetTolerance(robots[i], targets[i]) &&
-                                 e.measured_speed <= 0.03 && std::abs(e.measured_omega) <= 0.05 &&
-                                 e.robot.previous.cwiseAbs().maxCoeff() <=
-                                     dwa_config_.feasibility_tolerance &&
-                                 command.isZero(0.0);
+            const bool arrived =
+                withinTargetTolerance(robots[i], targets[i]) && command.isZero(0.0) &&
+                e.robot.previous.cwiseAbs().maxCoeff() <= dwa_config_.feasibility_tolerance &&
+                e.measured_speed <= 0.03 && std::abs(e.measured_omega) <= 0.05;
             if (arrived) {
                 reply(e, ResetResponse::ARRIVED, Eigen::Vector3d::Zero(), "");
             } else {

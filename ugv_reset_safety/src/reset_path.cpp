@@ -295,7 +295,8 @@ Eigen::Vector3d directResetCommand(const Robot& robot, const ResetTarget& target
     constexpr double kYawGain = 1.2;
     const double c = std::cos(robot.yaw);
     const double s = std::sin(robot.yaw);
-    const Eigen::Vector2d world = at_xy ? Eigen::Vector2d::Zero() : Eigen::Vector2d(delta * kPositionGain);
+    const Eigen::Vector2d world =
+        at_xy ? Eigen::Vector2d::Zero() : Eigen::Vector2d(delta * kPositionGain);
     double vx = c * world.x() + s * world.y();
     double vy = -s * world.x() + c * world.y();
     double omega = std::abs(yaw_error) <= options.yaw_tolerance ? 0.0 : kYawGain * yaw_error;
