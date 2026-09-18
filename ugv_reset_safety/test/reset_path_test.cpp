@@ -38,6 +38,23 @@ double distanceToBox(const Eigen::Vector2d& point, double xmin, double xmax, dou
     return std::hypot(dx, dy);
 }
 
+TEST(DirectResetCommand, MecanumGoesStraightWithoutScene) {
+    auto robot = makeRobot(RobotType::Mecanum);
+    ResetTarget target;
+    target.position = {1.0, 0.0};
+    auto command = directResetCommand(robot, target);
+    EXPECT_GT(command.x(), 0.3);
+    EXPECT_NEAR(command.y(), 0.0, 1e-9);
+    target.position = {0.0, 1.0};
+    command = directResetCommand(robot, target);
+    EXPECT_NEAR(command.x(), 0.0, 1e-9);
+    EXPECT_GT(command.y(), 0.3);
+    robot.position = target.position;
+    robot.yaw = 0.0;
+    command = directResetCommand(robot, target);
+    EXPECT_TRUE(command.isZero(0.0));
+}
+
 TEST(ResetPath, ArrivalRequiresPositionAndFiveDegreeShortestHeadingForBothChassis) {
     for (auto type : {RobotType::Unicycle, RobotType::Mecanum}) {
         auto robot = makeRobot(type);

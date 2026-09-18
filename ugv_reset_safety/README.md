@@ -27,6 +27,11 @@ simulation profiles: 0.35 m/s on available translation axes, 0.5 rad/s yaw,
 0.35 m/s² linear acceleration, and 0.6 rad/s² angular acceleration. These are
 configuration limits, not physical-robot certifications.
 
+`obstacle_avoidance` is read once at coordinator start (default `true`).
+`two_mecanum.yaml` sets it `false`: no Scene heartbeat, no peer/VRPN occupancy,
+straight holonomic return to the frozen target. `four_scout.yaml` and
+`mixed_pair.yaml` omit the key and keep Scene + DWA.
+
 A 150 ms admission interval collects the requesting roster. The cohort starts
 together once all members enter Reset. Overlapping targets and a target occupied
 by a nonparticipant reject admission. Nonparticipants and completed vehicles

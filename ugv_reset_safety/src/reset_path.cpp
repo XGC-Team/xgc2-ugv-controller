@@ -283,6 +283,31 @@ VisibilityPath planVisibilityPath(const Eigen::Vector2d& start, const Eigen::Vec
     return result;
 }
 
+Eigen::Vector3d directResetCommand(const Robot& robot, const ResetTarget& target,
+                                   const PathOptions& options) {
+    if (withinTargetTolerance(robot, target, options)) {
+        return Eigen::Vector3d::Zero();
+    }
+    const Eigen::Vector2d delta = target.position - robot.position;
+    const double yaw_error = wrap(target.yaw - robot.yaw);
+    const bool at_xy = delta.norm() <= options.position_tolerance;
+    constexpr double kPositionGain = 1.0;
+    constexpr double kYawGain = 1.2;
+    const double c = std::cos(robot.yaw);
+    const double s = std::sin(robot.yaw);
+    const Eigen::Vector2d world = at_xy ? Eigen::Vector2d::Zero() : Eigen::Vector2d(delta * kPositionGain);
+    double vx = c * world.x() + s * world.y();
+    double vy = -s * world.x() + c * world.y();
+    double omega = std::abs(yaw_error) <= options.yaw_tolerance ? 0.0 : kYawGain * yaw_error;
+    if (robot.type == RobotType::Unicycle) {
+        vy = 0.0;
+    }
+    vx = std::clamp(vx, -robot.limits.max_vx, robot.limits.max_vx);
+    vy = std::clamp(vy, -robot.limits.max_vy, robot.limits.max_vy);
+    omega = std::clamp(omega, -robot.limits.max_omega, robot.limits.max_omega);
+    return {vx, vy, omega};
+}
+
 bool withinTargetTolerance(const Robot& robot, const ResetTarget& target,
                            const PathOptions& options) {
     return (robot.position - target.position).norm() <= options.position_tolerance &&

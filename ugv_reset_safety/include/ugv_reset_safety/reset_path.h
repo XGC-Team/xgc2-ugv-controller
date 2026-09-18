@@ -39,6 +39,10 @@ bool validConvexObstacle(const ConvexObstacle& obstacle);
 bool withinTargetTolerance(const Robot& robot, const ResetTarget& target,
                            const PathOptions& options = PathOptions());
 
+// Body-frame twist toward the frozen target. No Scene, peers, or DWA.
+Eigen::Vector3d directResetCommand(const Robot& robot, const ResetTarget& target,
+                                   const PathOptions& options = PathOptions());
+
 VisibilityPath planVisibilityPath(const Eigen::Vector2d& start, const Eigen::Vector2d& goal,
                                   const std::vector<ConvexObstacle>& obstacles, const Fence& fence,
                                   double radius, double clearance);
