@@ -401,7 +401,8 @@ class Coordinator {
         r.command.angular.z = command.z();
         e.response_pub.publish(r);
     }
-    void commandDirect(const std::vector<Robot>& robots, const std::vector<ResetTarget>& targets) {
+    void commandDirect(const std::vector<Robot>& robots, const std::vector<ResetTarget>& targets,
+                       double dt) {
         for (std::size_t i = 0; i < entries_.size(); ++i) {
             auto& e = *entries_[i];
             if (!e.robot.active) {
@@ -413,7 +414,7 @@ class Coordinator {
                 rejectActive("reset target outside fence");
                 return;
             }
-            const auto command = directResetCommand(robots[i], targets[i]);
+            const auto command = directResetCommand(robots[i], targets[i], dt);
             const bool arrived =
                 withinTargetTolerance(robots[i], targets[i]) && command.isZero(0.0) &&
                 e.robot.previous.cwiseAbs().maxCoeff() <= dwa_config_.feasibility_tolerance &&
@@ -532,7 +533,7 @@ class Coordinator {
             requested.push_back(e->robot.active);
         }
         if (!obstacle_avoidance_) {
-            commandDirect(robots, targets);
+            commandDirect(robots, targets, dt);
             return;
         }
         if (!schedule_ready_) {
