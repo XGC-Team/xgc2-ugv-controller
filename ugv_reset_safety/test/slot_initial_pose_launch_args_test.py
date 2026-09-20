@@ -24,7 +24,7 @@ class SlotInitialPoseConfigTest(unittest.TestCase):
             source = root / 'base.yaml'
             original = {'tracking_strategy': 'flatness', 'flatness': {'kp': 6.0}, 'reset_initial_x': 999.0}
             source.write_text(yaml.safe_dump(original))
-            args = materialize_controller_configs(slot_poses(robots), {'ugv1': source, 'ugv2': source}, root / 'run')
+            args = materialize_controller_configs(slot_poses(robots), {'ugv1': source, 'ugv2': source}, root / 'run', None)
             self.assertEqual(len(args), 2)
             for robot, arg in zip(robots, args):
                 name, path = arg.split(':=', 1)
@@ -48,7 +48,7 @@ class SlotInitialPoseConfigTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / 'run'
             with self.assertRaises(ValueError):
-                materialize_controller_configs({'ugv1': {}}, {'ugv2': '/unused'}, output)
+                materialize_controller_configs({'ugv1': {}}, {'ugv2': '/unused'}, output, None)
             self.assertFalse(output.exists())
 
 
