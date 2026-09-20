@@ -36,6 +36,10 @@ if(CATKIN_ENABLE_TESTING)
     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/test/slot_initial_pose_launch_args_test.py)
   set_tests_properties(slot_initial_pose_launch_args_test PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+  add_test(NAME world_boundary_launch_test
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/test/world_boundary_launch_test.py)
+  set_tests_properties(world_boundary_launch_test PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
   add_test(NAME launch_control_with_slot_poses_rosrun_path
     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/test/slot_pose_mapper_rosrun_path_test.py
             ${CATKIN_DEVEL_PREFIX}/lib/${PROJECT_NAME}/launch_control_with_slot_poses.py
