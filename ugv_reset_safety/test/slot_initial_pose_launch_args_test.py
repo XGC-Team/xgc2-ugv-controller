@@ -67,13 +67,27 @@ class SlotInitialPoseConfigTest(unittest.TestCase):
 
     def test_runtime_context_preserves_tuning_and_rejects_hidden_tuning(self):
         from launch_with_yaml_context import prepare_parameters
-        source = 'tracking_strategy: flatness\nlimits: {max_linear_speed: 1.5}\nreset_initial_x: 2\npose_topic: /$(arg ns)/pose\n'
+        source = (
+            'tracking_strategy: flatness\nlimits: {max_linear_speed: 1.5}\nreset_initial_x: 2\n'
+            'pose_topic: /$(arg ns)/pose\nfence: {x_min: -20.0, x_max: 20.0, y_min: -20.0, y_max: 20.0}\n'
+        )
         values = prepare_parameters(source, {'reset_initial_x': '', 'reset_initial_y': '-1.25', 'cmd_vel_topic': '/ugv7/cmd_vel'}, 'ugv7')
         self.assertEqual(values['reset_initial_x'], 2)
         self.assertEqual(values['reset_initial_y'], -1.25)
         self.assertEqual(values['limits'], {'max_linear_speed': 1.5})
         self.assertEqual(values['pose_topic'], '/ugv7/pose')
-        for context in ({'tracking_strategy': 'nmpc'}, {'reset_initial_x': True}, {'reset_initial_y': 'nan'}, {'cmd_vel_topic': 'bad topic'}):
+        self.assertEqual(values['fence'], {'x_min': -20.0, 'x_max': 20.0, 'y_min': -20.0, 'y_max': 20.0})
+        empty_fence = prepare_parameters(source, {
+            'fence_x_min': '', 'fence_x_max': '', 'fence_y_min': '', 'fence_y_max': '',
+        }, 'ugv7')
+        self.assertEqual(empty_fence['fence'], {'x_min': -20.0, 'x_max': 20.0, 'y_min': -20.0, 'y_max': 20.0})
+        overlaid = prepare_parameters(source, {
+            'fence_x_min': '-12', 'fence_x_max': '12', 'fence_y_min': '-7', 'fence_y_max': '7',
+        }, 'ugv7')
+        self.assertEqual(overlaid['fence'], {'x_min': -12.0, 'x_max': 12.0, 'y_min': -7.0, 'y_max': 7.0})
+        self.assertEqual(overlaid['limits'], {'max_linear_speed': 1.5})
+        for context in ({'tracking_strategy': 'nmpc'}, {'reset_initial_x': True}, {'reset_initial_y': 'nan'},
+                        {'cmd_vel_topic': 'bad topic'}, {'fence_x_min': 'nan'}, {'fence_y_max': True}):
             with self.assertRaises(ValueError):
                 prepare_parameters(source, context, 'ugv7')
 
