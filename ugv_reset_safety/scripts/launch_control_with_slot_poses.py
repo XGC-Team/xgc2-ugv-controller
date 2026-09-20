@@ -146,15 +146,27 @@ def publish_manifest(source, destination):
     os.replace(str(temporary), str(target))
 
 
-def launch_config_sources(package, launch_file):
+def controller_launch_root(package, launch_file):
     import rospkg
-    from roslaunch.substitution_args import resolve_args
 
     package_dir = Path(rospkg.RosPack().get_path(package))
     matches = list((package_dir / "launch").rglob(launch_file))
     if len(matches) != 1:
         raise ValueError("expected one controller launch: " + launch_file)
-    root = ET.parse(matches[0]).getroot()
+    return ET.parse(matches[0]).getroot()
+
+
+def launch_boundary_args(package, launch_file, boundary):
+    root = controller_launch_root(package, launch_file)
+    if any(arg.get("name") == "world_boundary_json" for arg in root.findall("arg")):
+        return ["world_boundary_json:=" + json.dumps(boundary, separators=(",", ":"), allow_nan=False)]
+    return []
+
+
+def launch_config_sources(package, launch_file):
+    from roslaunch.substitution_args import resolve_args
+
+    root = controller_launch_root(package, launch_file)
     result = {}
     for argument in root.findall("arg"):
         name = argument.get("name", "")
@@ -181,7 +193,8 @@ def main(argv):
             ros_home = Path(os.environ.get("ROS_HOME", str(Path.home() / ".ros")))
             root = ros_home / "xgc-controller-configurations"
         destination = root / str(uuid.uuid4())
-        args = materialize_controller_configs(poses, sources, destination, boundary)
+        boundary_args = launch_boundary_args(package, launch_file, boundary)
+        args = materialize_controller_configs(poses, sources, destination, boundary) + boundary_args
         if len(argv) == 5:
             # Include resolved UAV parameters as well in mixed swarm launches.
             import roslaunch

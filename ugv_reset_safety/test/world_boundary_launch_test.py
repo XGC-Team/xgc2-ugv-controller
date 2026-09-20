@@ -113,6 +113,21 @@ class WorldBoundaryLaunchTest(unittest.TestCase):
                 sources.assert_not_called()
                 execute.assert_not_called()
 
+    def test_mixed_launches_forward_the_same_explicit_boundary_to_all_uavs(self):
+        repo = Path(__file__).resolve().parents[2]
+        for file in ['unicycle_ugv_controller/launch/xgc_mixed_control.launch',
+                     'mecanum_ugv_controller/launch/xgc_sce1_control.launch']:
+            root = launch.ET.parse(repo / file).getroot()
+            with patch.object(launch, 'controller_launch_root', return_value=root):
+                for boundary in [None, BOUNDARY]:
+                    args = launch.launch_boundary_args('unused', 'unused', boundary)
+                    self.assertEqual(json.loads(args[0].split(':=', 1)[1]), boundary)
+            uavs = [node for node in root.findall('include') if 'px4_multirotor_controller' in node.get('file', '')]
+            self.assertEqual(len(uavs), 5)
+            for include in uavs:
+                forwarded = [arg for arg in include.findall('arg') if arg.get('name') == 'world_boundary_json']
+                self.assertEqual([arg.get('value') for arg in forwarded], ['$(arg world_boundary_json)'])
+
     def test_exec_receives_the_materialized_frozen_yaml(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -120,6 +135,7 @@ class WorldBoundaryLaunchTest(unittest.TestCase):
             source.write_text('flatness: {kp: 6}\n')
             with patch.dict(os.environ, {'ROS_HOME': str(root), 'XGC_PRINT_LAUNCH_ARGS': ''}), \
                     patch.object(launch, 'launch_config_sources', return_value={'ugv1': source}), \
+                    patch.object(launch, 'launch_boundary_args', return_value=[]), \
                     patch.object(launch.os, 'execvp') as execute:
                 launch.main(['pkg', 'file', json.dumps(ROBOTS), json.dumps(BOUNDARY)])
                 program, argv = execute.call_args.args
