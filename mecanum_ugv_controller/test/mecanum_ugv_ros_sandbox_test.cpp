@@ -135,7 +135,7 @@ TEST(MecanumRosSandbox, PoseCommandFenceAndDrop) {
         3.0))
         << "back inside fence -> Ready";
 
-    ros::Duration(0.5).sleep();
+    ros::Duration(0.7).sleep();
     ros::spinOnce();
     EXPECT_EQ(control_state, "SelfCheck") << "dropped pose should SelfCheck";
 }

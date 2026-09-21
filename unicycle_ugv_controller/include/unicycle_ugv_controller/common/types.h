@@ -53,7 +53,7 @@ struct ControllerConfig {
     double control_rate_hz{500.0};
     double control_period{0.1};
     double prediction_horizon{1.0};
-    double state_timeout{0.2};
+    double state_timeout{0.5};
     double solve_timeout{0.05};
     double result_timeout{0.1};
     double command_publish_rate_hz{30.0};

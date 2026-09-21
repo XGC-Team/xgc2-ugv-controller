@@ -110,6 +110,24 @@ TEST(UnicycleSm, CanonicalPoseDoesNotNeedEstimatorOrTwist) {
     EXPECT_TRUE(controller.healthReady());
 }
 
+TEST(UnicycleSm, BriefPoseDropoutKeepsReady) {
+    ros::Time::init();
+    UgvState state;
+    UnicycleUgvController controller(state);
+    goReadyPose(controller, state, 1.0);
+    controller.update(1.3);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+}
+
+TEST(UnicycleSm, PoseTimeoutHalfSecondGoesSelfCheck) {
+    ros::Time::init();
+    UgvState state;
+    UnicycleUgvController controller(state);
+    goReadyPose(controller, state, 1.0);
+    controller.update(1.51);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+}
+
 TEST(UnicycleSm, FaultFlagReturnsToSelfCheck) {
     ros::Time::init();
     UgvState state;
@@ -502,6 +520,10 @@ TEST(UnicycleLaw, PvaDoesNotValidateAlgorithmTimestamp) {
     reference.stamp = ros::Time(1001.0);
     EXPECT_TRUE(worldPvaReady(reference));
     EXPECT_TRUE(liftWorldPva(reference, 1.0).valid);
+}
+
+TEST(UnicycleUgvControllerRuntime, ProductHealthTimeoutIsHalfSecond) {
+    EXPECT_DOUBLE_EQ(ControllerConfig{}.state_timeout, 0.5);
 }
 
 TEST(UnicycleUgvControllerRuntime, StateFreshRejectsExcessivelyFutureStamp) {
