@@ -135,7 +135,8 @@ TEST(MecanumRosSandbox, PoseCommandFenceAndDrop) {
         3.0))
         << "back inside fence -> Ready";
 
-    ros::Duration(0.7).sleep();
+    // HEALTH state_timeout is 0.5 s; leave slack after the last fresh pose.
+    ros::Duration(1.2).sleep();
     ros::spinOnce();
     EXPECT_EQ(control_state, "SelfCheck") << "dropped pose should SelfCheck";
 }
