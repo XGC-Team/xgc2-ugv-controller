@@ -35,8 +35,9 @@ void logFormat(LogLevel level, const char* format, ...) {
     const int length = std::vsnprintf(nullptr, 0, format, measure);
     va_end(measure);
     std::string message(length > 0 ? static_cast<size_t>(length) : 0, '\0');
-    if (length > 0)
+    if (length > 0) {
         std::vsnprintf(&message[0], message.size() + 1, format, args);
+    }
     va_end(args);
     logMessage(level, message.c_str());
 }

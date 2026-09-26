@@ -30,6 +30,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <string>
 #include <utility>
 #include <vector>
@@ -83,12 +84,14 @@ struct Plant {
 
 // NmpcOutputConsumer's yaw unwrapping of the sampled horizon.
 void unwrapReferenceYaw(std::vector<Se2Reference>& refs, double anchor_yaw) {
-    if (!std::isfinite(anchor_yaw))
+    if (!std::isfinite(anchor_yaw)) {
         return;
+    }
     double previous_yaw = anchor_yaw;
     for (auto& ref : refs) {
-        if (!std::isfinite(ref.state.yaw))
+        if (!std::isfinite(ref.state.yaw)) {
             continue;
+        }
         ref.state.yaw = previous_yaw + wrapAngle(ref.state.yaw - previous_yaw);
         previous_yaw = ref.state.yaw;
     }
@@ -128,15 +131,17 @@ class Run {
     // One control period: measure the plant, update the controller, serve its
     // output events, move the plant.
     void step(bool pose_available = true) {
-        if (pose_available)
+        if (pose_available) {
             measure();
+        }
         controller_.update(t_);
         const auto events = controller_.stateMachine().currentOutputEvents();
         std::fprintf(out, "%.3f h %u c %u out", t_,
                      controller_.stateMachine().currentState(region_type::HEALTH),
                      controller_.stateMachine().currentState(region_type::CONTROL));
-        for (const auto& event : events)
+        for (const auto& event : events) {
             std::fprintf(out, " %u", event.id);
+        }
         const ControlCommand command = controller_.command();
         std::fprintf(out, " cmd %d", command.valid ? 1 : 0);
         d(command.stamp.toSec());
@@ -148,10 +153,12 @@ class Run {
         d(plant_.yaw);
         std::fputc('\n', out);
         for (const auto& event : events) {
-            if (event.id == output_event_type::REQUEST_NMPC_SOLVE)
+            if (event.id == output_event_type::REQUEST_NMPC_SOLVE) {
                 solve(event);
-            if (event.id == output_event_type::PUBLISH_CMD_VEL)
+            }
+            if (event.id == output_event_type::PUBLISH_CMD_VEL) {
                 apply(command);
+            }
             if (event.id == output_event_type::PUBLISH_ZERO_CMD_VEL) {
                 linear_ = 0.0;
                 angular_ = 0.0;
@@ -162,8 +169,9 @@ class Run {
     }
 
     void steps(int n, bool pose_available = true) {
-        for (int i = 0; i < n; ++i)
+        for (int i = 0; i < n; ++i) {
             step(pose_available);
+        }
     }
 
    private:
@@ -199,8 +207,9 @@ class Run {
         if (ok) {
             unwrapReferenceYaw(refs, state.yaw);
             backend_.configure(config);
-            if (!entered_)
+            if (!entered_) {
                 entered_ = backend_.enter();
+            }
             ok = entered_ && backend_.compute(state, refs, now, command);
         }
         std::fprintf(out, "  solve %" PRIu64 " ok %d status %d cmd %d", request.correlation_id,
@@ -216,9 +225,11 @@ class Run {
         }
         if (ok) {
             std::fprintf(out, " pred %zu", backend_.predictedStateCount());
-            for (size_t i = 0; i < backend_.predictedStateCount(); ++i)
-                for (int k = 0; k < backend_.predictedStates()[i].size(); ++k)
+            for (size_t i = 0; i < backend_.predictedStateCount(); ++i) {
+                for (int k = 0; k < backend_.predictedStates()[i].size(); ++k) {
                     d(backend_.predictedStates()[i](k));
+                }
+            }
         }
         std::fputc('\n', out);
         const bool success = ok && command.valid;
@@ -242,11 +253,13 @@ class Run {
         linear_ = 0.0;
         angular_ = 0.0;
         if (!command.valid || !std::isfinite(command.linear_speed) ||
-            !std::isfinite(command.angular_speed))
+            !std::isfinite(command.angular_speed)) {
             return;
+        }
         const auto control = controller_.stateMachine().currentState(region_type::CONTROL);
-        if (control == state_type::Reset)
+        if (control == state_type::Reset) {
             return;
+        }
         if (control == state_type::Custom1 && cfg.tracking_strategy == TrackingStrategy::NMPC) {
             linear_ = clamp(command.linear_speed, cfg.min_linear_speed, cfg.max_linear_speed);
             angular_ = clamp(command.angular_speed, -cfg.max_angular_speed, cfg.max_angular_speed);
@@ -422,14 +435,25 @@ int main(int argc, char** argv) {
     }
     using namespace unicycle_ugv_controller;
     out = std::fopen(argv[1], "w");
-    if (!out)
+    if (!out) {
         return 2;
-    runAnalyticCircle();
-    runFigureEightStopRestart();
-    runSampled();
-    runPolynomialPose();
-    runFlatnessFence();
-    runResetTimeout();
+    }
+    try {
+        runAnalyticCircle();
+        runFigureEightStopRestart();
+        runSampled();
+        runPolynomialPose();
+        runFlatnessFence();
+        runResetTimeout();
+    } catch (const std::exception& error) {
+        std::fprintf(stderr, "replay failed: %s\n", error.what());
+        std::fclose(out);
+        return 1;
+    } catch (...) {
+        std::fprintf(stderr, "replay failed: unknown exception\n");
+        std::fclose(out);
+        return 1;
+    }
     std::fclose(out);
     return 0;
 }

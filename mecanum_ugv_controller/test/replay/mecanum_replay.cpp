@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <utility>
 
 #include "mecanum_ugv_controller/common/types.h"
@@ -111,8 +112,9 @@ class Run {
         std::fprintf(out, "%.3f h %u c %u out", t_,
                      controller_.stateMachine().currentState(region_type::HEALTH),
                      controller_.stateMachine().currentState(region_type::CONTROL));
-        for (const auto& event : events)
+        for (const auto& event : events) {
             std::fprintf(out, " %u", event.id);
+        }
         const ControlCommand command = controller_.command();
         std::fprintf(out, " cmd %d", command.valid ? 1 : 0);
         d(command.stamp.toSec());
@@ -132,16 +134,18 @@ class Run {
                 vy_ = command.valid && !reset ? command.linear_y : 0.0;
                 wz_ = command.valid && !reset ? command.angular_z : 0.0;
             }
-            if (event.id == output_event_type::PUBLISH_ZERO_CMD_VEL)
+            if (event.id == output_event_type::PUBLISH_ZERO_CMD_VEL) {
                 vx_ = vy_ = wz_ = 0.0;
+            }
         }
         plant_.step(vx_, vy_, wz_, kDt);
         t_ += kDt;
     }
 
     void steps(int n, bool pose_available = true) {
-        for (int i = 0; i < n; ++i)
+        for (int i = 0; i < n; ++i) {
             step(pose_available);
+        }
     }
 
    private:
@@ -232,12 +236,23 @@ int main(int argc, char** argv) {
     }
     using namespace mecanum_ugv_controller;
     out = std::fopen(argv[1], "w");
-    if (!out)
+    if (!out) {
         return 2;
-    runCurve();
-    runStopDropout();
-    runFence();
-    runResetTimeout();
+    }
+    try {
+        runCurve();
+        runStopDropout();
+        runFence();
+        runResetTimeout();
+    } catch (const std::exception& error) {
+        std::fprintf(stderr, "replay failed: %s\n", error.what());
+        std::fclose(out);
+        return 1;
+    } catch (...) {
+        std::fprintf(stderr, "replay failed: unknown exception\n");
+        std::fclose(out);
+        return 1;
+    }
     std::fclose(out);
     return 0;
 }

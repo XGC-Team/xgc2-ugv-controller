@@ -109,7 +109,6 @@ TEST(MecanumLaw, HeadingPUsesShortestAngleAcrossPi) {
 }
 
 TEST(MecanumSm, SelfCheckPublishesFiveHertzZero) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     controller.update(1.0);
@@ -118,14 +117,12 @@ TEST(MecanumSm, SelfCheckPublishesFiveHertzZero) {
 }
 
 TEST(MecanumSm, FreshPoseInsideFenceMovesSelfCheckToReady) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
 }
 
 TEST(MecanumSm, MissingPoseStaysSelfCheck) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     controller.update(1.0);
@@ -134,7 +131,6 @@ TEST(MecanumSm, MissingPoseStaysSelfCheck) {
 }
 
 TEST(MecanumSm, BriefPoseDropoutKeepsReady) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
@@ -143,7 +139,6 @@ TEST(MecanumSm, BriefPoseDropoutKeepsReady) {
 }
 
 TEST(MecanumSm, PoseTimeoutHalfSecondGoesSelfCheck) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
@@ -152,7 +147,6 @@ TEST(MecanumSm, PoseTimeoutHalfSecondGoesSelfCheck) {
 }
 
 TEST(MecanumSm, Custom1BriefPoseDropoutStaysTracking) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     WorldVelocityReference reference;
@@ -165,7 +159,6 @@ TEST(MecanumSm, Custom1BriefPoseDropoutStaysTracking) {
 }
 
 TEST(MecanumSm, Custom1PoseTimeoutGoesSelfCheck) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     WorldVelocityReference reference;
@@ -178,7 +171,6 @@ TEST(MecanumSm, Custom1PoseTimeoutGoesSelfCheck) {
 }
 
 TEST(MecanumSm, NonFinitePoseIsDirty) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
@@ -188,7 +180,6 @@ TEST(MecanumSm, NonFinitePoseIsDirty) {
 }
 
 TEST(MecanumSm, OutsideFenceGoesSelfCheck) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
@@ -199,7 +190,6 @@ TEST(MecanumSm, OutsideFenceGoesSelfCheck) {
 }
 
 TEST(MecanumSm, ReadyStopIsNotAtInitialPose) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     setPose(state, 1.0, 1.5, -0.8, 0.4);
@@ -209,7 +199,6 @@ TEST(MecanumSm, ReadyStopIsNotAtInitialPose) {
 }
 
 TEST(MecanumSm, ResetStopReturnsReady) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
@@ -228,7 +217,6 @@ TEST(MecanumSm, ResetStopReturnsReady) {
 }
 
 TEST(MecanumSm, ResetDoesNotJumpToCustom1) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
@@ -247,7 +235,6 @@ TEST(MecanumSm, ResetDoesNotJumpToCustom1) {
 }
 
 TEST(MecanumSm, Custom1StopReturnsReady) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
@@ -267,7 +254,6 @@ TEST(MecanumSm, Custom1StopReturnsReady) {
 }
 
 TEST(MecanumSm, Custom1DoesNotValidateAlgorithmTimestamp) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     WorldVelocityReference reference;
@@ -282,7 +268,6 @@ TEST(MecanumSm, Custom1DoesNotValidateAlgorithmTimestamp) {
 }
 
 TEST(MecanumSm, Custom1CanReset) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
@@ -306,7 +291,6 @@ TEST(MecanumSm, Custom1CanReset) {
 }
 
 TEST(MecanumSm, ResetPoseDoesNotDriveStateMachine) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
@@ -320,7 +304,6 @@ TEST(MecanumSm, ResetPoseDoesNotDriveStateMachine) {
 }
 
 TEST(MecanumSm, ResetTimeoutReturnsReady) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     auto config = controller.config();
@@ -341,7 +324,6 @@ TEST(MecanumSm, ResetTimeoutReturnsReady) {
 }
 
 TEST(MecanumSm, InvalidFenceStaysSelfCheck) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     auto config = controller.config();
@@ -356,7 +338,6 @@ TEST(MecanumSm, InvalidFenceStaysSelfCheck) {
 }
 
 TEST(MecanumSm, SelfCheckDoesNotJumpToCustom1OrReset) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     controller.update(1.0);
@@ -376,7 +357,6 @@ TEST(MecanumSm, SelfCheckDoesNotJumpToCustom1OrReset) {
 }
 
 TEST(MecanumSm, ResetWithoutTargetStaysResetAndLogs) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
@@ -396,7 +376,6 @@ TEST(MecanumSm, ResetWithoutTargetStaysResetAndLogs) {
 }
 
 TEST(MecanumLaw, IdealPlantCustom1HeadingAndWorldVelocity) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     auto config = controller.config();
@@ -427,7 +406,6 @@ TEST(MecanumLaw, IdealPlantCustom1HeadingAndWorldVelocity) {
 }
 
 TEST(MecanumLaw, IdealPlantCustom1TracksSettledWorldVelocity) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     auto config = controller.config();
@@ -458,7 +436,6 @@ TEST(MecanumLaw, IdealPlantCustom1TracksSettledWorldVelocity) {
 }
 
 TEST(MecanumLaw, IdealPlantCustom1TracksWorldVelocityStep) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     auto config = controller.config();
@@ -497,7 +474,6 @@ TEST(MecanumLaw, IdealPlantCustom1TracksWorldVelocityStep) {
 }
 
 TEST(MecanumLaw, IdealPlantCustom1TracksSlowWorldVelocitySine) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     auto config = controller.config();
@@ -531,7 +507,6 @@ TEST(MecanumLaw, IdealPlantCustom1TracksSlowWorldVelocitySine) {
 }
 
 TEST(MecanumLaw, IdealPlantCustom1TracksCircleWithHeadingDisturbance) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     auto config = controller.config();
@@ -569,7 +544,6 @@ TEST(MecanumLaw, IdealPlantCustom1TracksCircleWithHeadingDisturbance) {
 }
 
 TEST(MecanumLaw, IdealPlantCustom1SaturatesWorldVelocityOnFluBox) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     auto config = controller.config();
@@ -596,7 +570,6 @@ TEST(MecanumLaw, IdealPlantCustom1SaturatesWorldVelocityOnFluBox) {
 }
 
 TEST(MecanumSm, ResetHasNoUnfilteredFallbackAndCancelsLateResponses) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
@@ -613,7 +586,7 @@ TEST(MecanumSm, ResetHasNoUnfilteredFallbackAndCancelsLateResponses) {
     EXPECT_DOUBLE_EQ(controller.command().linear_y, 0.0);
     auto& session = controller.resetSession();
     const double wall = ugv_reset_safety::monotonicSeconds();
-    const auto issued = session.issue({0.0, 0.0, 0.0}, ros::Time(1.012).toNSec(), wall);
+    const auto issued = session.issue({0.0, 0.0, 0.0}, Time(1.012).toNSec(), wall);
     ASSERT_TRUE(issued.valid);
     ASSERT_TRUE(
         session.accept(issued.generation, issued.stamp, 0, {0.1, 0.0, 0.0}, issued.stamp, wall));
@@ -634,7 +607,6 @@ TEST(MecanumSm, ResetHasNoUnfilteredFallbackAndCancelsLateResponses) {
 }
 
 TEST(MecanumSm, ResetRequiresCoordinatorArrivalEvenAtTarget) {
-    ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
@@ -648,7 +620,7 @@ TEST(MecanumSm, ResetRequiresCoordinatorArrivalEvenAtTarget) {
     ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
     auto& session = controller.resetSession();
     const double wall = ugv_reset_safety::monotonicSeconds();
-    const auto issued = session.issue({0.0, 0.0, 0.0}, ros::Time(1.012).toNSec(), wall);
+    const auto issued = session.issue({0.0, 0.0, 0.0}, Time(1.012).toNSec(), wall);
     ASSERT_TRUE(session.accept(issued.generation, issued.stamp, 1, {}, issued.stamp, wall));
     controller.update(1.014);
     controller.update(1.016);
