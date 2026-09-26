@@ -76,6 +76,10 @@ void enterCustom1(MecanumUgvController& controller, UgvState& state,
 
 }  // namespace
 
+TEST(MecanumLaw, ProductHealthTimeoutIsHalfSecond) {
+    EXPECT_DOUBLE_EQ(ControllerConfig{}.state_timeout, 0.5);
+}
+
 TEST(MecanumLaw, BoxSaturateClampsEachFluAxis) {
     UgvState state;
     WorldVelocityReference reference;
@@ -129,12 +133,47 @@ TEST(MecanumSm, MissingPoseStaysSelfCheck) {
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
 }
 
-TEST(MecanumSm, StalePoseReturnsToSelfCheck) {
+TEST(MecanumSm, BriefPoseDropoutKeepsReady) {
     ros::Time::init();
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
     controller.update(1.3);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+}
+
+TEST(MecanumSm, PoseTimeoutHalfSecondGoesSelfCheck) {
+    ros::Time::init();
+    UgvState state;
+    MecanumUgvController controller(state);
+    goReady(controller, state, 1.0);
+    controller.update(1.51);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+}
+
+TEST(MecanumSm, Custom1BriefPoseDropoutStaysTracking) {
+    ros::Time::init();
+    UgvState state;
+    MecanumUgvController controller(state);
+    WorldVelocityReference reference;
+    reference.valid = true;
+    reference.vx = 0.2;
+    reference.stamp = ros::Time(1.0);
+    enterCustom1(controller, state, reference, 1.0);
+    controller.update(1.31);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Custom1);
+}
+
+TEST(MecanumSm, Custom1PoseTimeoutGoesSelfCheck) {
+    ros::Time::init();
+    UgvState state;
+    MecanumUgvController controller(state);
+    WorldVelocityReference reference;
+    reference.valid = true;
+    reference.vx = 0.2;
+    reference.stamp = ros::Time(1.0);
+    enterCustom1(controller, state, reference, 1.0);
+    controller.update(1.52);
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
 }
 

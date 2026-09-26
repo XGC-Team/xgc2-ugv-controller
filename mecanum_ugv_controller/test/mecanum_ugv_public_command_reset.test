@@ -5,7 +5,7 @@
     <param name="command_publish_rate_hz" value="50.0"/>
     <param name="idle_cmd_rate_hz" value="5.0"/>
     <param name="status_publish_rate_hz" value="50.0"/>
-    <param name="state_timeout" value="0.2"/>
+    <param name="state_timeout" value="0.5"/>
     <param name="fence/x_min" value="-5.0"/>
     <param name="fence/x_max" value="5.0"/>
     <param name="fence/y_min" value="-5.0"/>

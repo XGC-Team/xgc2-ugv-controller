@@ -18,7 +18,7 @@ reference_twist_topic: alg/reference/twist
 reset:
   timeout: 600.0
 reset_pose_topic: reset_pose
-state_timeout: 0.2
+state_timeout: 0.5
 status_publish_rate_hz: 5.0
 track:
   kp_yaw: 1.2

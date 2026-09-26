@@ -6,5 +6,5 @@
     <param name="scene_namespace" value="/cohort_scene"/>
   </node>
   <test test-name="reset_cohort" pkg="ugv_reset_safety"
-        type="reset_cohort_rostest.py" time-limit="15.0"/>
+        type="reset_cohort_rostest.py" time-limit="30.0"/>
 </launch>

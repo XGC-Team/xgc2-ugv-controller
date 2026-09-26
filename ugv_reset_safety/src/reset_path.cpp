@@ -283,6 +283,49 @@ VisibilityPath planVisibilityPath(const Eigen::Vector2d& start, const Eigen::Vec
     return result;
 }
 
+Eigen::Vector3d directResetCommand(const Robot& robot, const ResetTarget& target, double dt,
+                                   const PathOptions& options) {
+    const Eigen::Vector3d speed_limits(robot.limits.max_vx, robot.limits.max_vy,
+                                       robot.limits.max_omega);
+    const Eigen::Vector3d acceleration(robot.limits.accel_vx, robot.limits.accel_vy,
+                                       robot.limits.accel_omega);
+    const Eigen::Vector3d step = acceleration * dt;
+    if (!validRobot(robot) || !validOptions(options) || !target.position.allFinite() ||
+        !std::isfinite(target.yaw) || !std::isfinite(dt) || dt <= 0.0 ||
+        !robot.previous.allFinite() || !acceleration.allFinite() ||
+        (acceleration.array() <= 0.0).any() || !step.allFinite() ||
+        (robot.previous.cwiseAbs().array() > speed_limits.array()).any() ||
+        (robot.type == RobotType::Unicycle && robot.previous.y() != 0.0)) {
+        return Eigen::Vector3d::Zero();
+    }
+    Eigen::Vector3d desired = Eigen::Vector3d::Zero();
+    if (!withinTargetTolerance(robot, target, options)) {
+        const Eigen::Vector2d delta = target.position - robot.position;
+        const double yaw_error = wrap(target.yaw - robot.yaw);
+        const bool at_xy = delta.norm() <= options.position_tolerance;
+        constexpr double kPositionGain = 1.0;
+        constexpr double kYawGain = 1.2;
+        const double c = std::cos(robot.yaw);
+        const double s = std::sin(robot.yaw);
+        const Eigen::Vector2d world =
+            at_xy ? Eigen::Vector2d::Zero() : Eigen::Vector2d(delta * kPositionGain);
+        desired.x() = c * world.x() + s * world.y();
+        desired.y() = robot.type == RobotType::Unicycle ? 0.0 : -s * world.x() + c * world.y();
+        desired.z() = std::abs(yaw_error) <= options.yaw_tolerance ? 0.0 : kYawGain * yaw_error;
+    }
+    if (!desired.allFinite()) {
+        return Eigen::Vector3d::Zero();
+    }
+    for (int axis = 0; axis < 3; ++axis) {
+        desired[axis] = std::clamp(desired[axis], -speed_limits[axis], speed_limits[axis]);
+        // Proposals never advance previous; only the native applied receipt does.
+        // Normal arrival decelerates through this same window to an exact zero.
+        desired[axis] = std::clamp(desired[axis], robot.previous[axis] - step[axis],
+                                   robot.previous[axis] + step[axis]);
+    }
+    return desired;
+}
+
 bool withinTargetTolerance(const Robot& robot, const ResetTarget& target,
                            const PathOptions& options) {
     return (robot.position - target.position).norm() <= options.position_tolerance &&

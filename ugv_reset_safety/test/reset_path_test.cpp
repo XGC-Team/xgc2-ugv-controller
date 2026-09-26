@@ -38,6 +38,145 @@ double distanceToBox(const Eigen::Vector2d& point, double xmin, double xmax, dou
     return std::hypot(dx, dy);
 }
 
+TEST(DirectResetCommand, MecanumGoesStraightWithoutScene) {
+    auto robot = makeRobot(RobotType::Mecanum);
+    ResetTarget target;
+    target.position = {1.0, 0.0};
+    auto command = directResetCommand(robot, target, 0.02);
+    EXPECT_GT(command.x(), 0.0);
+    EXPECT_NEAR(command.y(), 0.0, 1e-9);
+    target.position = {0.0, 1.0};
+    command = directResetCommand(robot, target, 0.02);
+    EXPECT_NEAR(command.x(), 0.0, 1e-9);
+    EXPECT_GT(command.y(), 0.0);
+    robot.position = target.position;
+    robot.yaw = 0.0;
+    command = directResetCommand(robot, target, 0.02);
+    EXPECT_TRUE(command.isZero(0.0));
+}
+
+TEST(DirectResetCommand, SlewsFromLastAppliedCommandWithoutAdvancingProposals) {
+    auto robot = makeRobot(RobotType::Mecanum);
+    robot.limits = {0.35, 0.35, 0.5, 0.35, 0.35, 0.6};
+    ResetTarget target{{1.0, -1.0}, 1.0};
+    const auto first = directResetCommand(robot, target, 0.02);
+    EXPECT_NEAR(first.x(), 0.007, 1e-12);
+    EXPECT_NEAR(first.y(), -0.007, 1e-12);
+    EXPECT_NEAR(first.z(), 0.012, 1e-12);
+    // No applied receipt: another proposal must not advance the rate state.
+    EXPECT_TRUE(robot.previous.isZero(0.0));
+    EXPECT_TRUE(directResetCommand(robot, target, 0.02).isApprox(first));
+    robot.previous = first;
+    const auto next = directResetCommand(robot, target, 0.04);
+    EXPECT_NEAR(next.x(), 0.021, 1e-12);
+    EXPECT_NEAR(next.y(), -0.021, 1e-12);
+    EXPECT_NEAR(next.z(), 0.036, 1e-12);
+    robot.previous = next;
+    target = {{-1.0, 1.0}, -1.0};
+    const auto reverse = directResetCommand(robot, target, 0.02);
+    EXPECT_NEAR(reverse.x(), 0.014, 1e-12);
+    EXPECT_NEAR(reverse.y(), -0.014, 1e-12);
+    EXPECT_NEAR(reverse.z(), 0.024, 1e-12);
+}
+
+TEST(DirectResetCommand, NormalArrivalSlewsToExactZero) {
+    auto robot = makeRobot(RobotType::Mecanum);
+    robot.limits = {0.35, 0.35, 0.5, 0.35, 0.35, 0.6};
+    robot.previous = {0.2, -0.1, 0.1};
+    const ResetTarget target;
+    for (int step = 0; step < 40; ++step) {
+        const auto command = directResetCommand(robot, target, 0.02);
+        EXPECT_LE(std::abs(command.x() - robot.previous.x()), 0.007 + 1e-12);
+        EXPECT_LE(std::abs(command.y() - robot.previous.y()), 0.007 + 1e-12);
+        EXPECT_LE(std::abs(command.z() - robot.previous.z()), 0.012 + 1e-12);
+        robot.previous = command;
+    }
+    EXPECT_TRUE(robot.previous.isZero(0.0));
+}
+
+TEST(DirectResetCommand, DesiredTwistKeepsBodyFrameBoxAndHeadingGain) {
+    auto robot = makeRobot(RobotType::Mecanum);
+    robot.limits = {0.35, 0.35, 0.5, 0.35, 0.35, 0.6};
+    robot.previous = {0.35, 0.35, 0.12};
+    ResetTarget target{{1.0, 1.0}, 0.1};
+    EXPECT_TRUE(directResetCommand(robot, target, 0.02).isApprox(robot.previous));
+    robot.yaw = kPi / 2.0;
+    robot.previous = {0.0, -0.35, 0.12};
+    target = {{1.0, 0.0}, robot.yaw + 0.1};
+    EXPECT_TRUE(directResetCommand(robot, target, 0.02).isApprox(robot.previous));
+}
+
+TEST(DirectResetCommand, RejectsInvalidInputsWithExactZero) {
+    const auto valid_robot = makeRobot(RobotType::Mecanum);
+    const ResetTarget valid_target{{1.0, 1.0}, 1.0};
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double infinity = std::numeric_limits<double>::infinity();
+    for (const double dt : {0.0, -0.02, nan, infinity}) {
+        EXPECT_TRUE(directResetCommand(valid_robot, valid_target, dt).isZero(0.0));
+    }
+    auto robot = valid_robot;
+    robot.position.x() = nan;
+    EXPECT_TRUE(directResetCommand(robot, valid_target, 0.02).isZero(0.0));
+    robot = valid_robot;
+    robot.previous.y() = nan;
+    EXPECT_TRUE(directResetCommand(robot, valid_target, 0.02).isZero(0.0));
+    robot = valid_robot;
+    robot.previous.x() = robot.limits.max_vx + 1.0;
+    EXPECT_TRUE(directResetCommand(robot, valid_target, 0.02).isZero(0.0));
+    for (const double acceleration : {0.0, -1.0, nan, infinity}) {
+        robot = valid_robot;
+        robot.limits.accel_vx = acceleration;
+        EXPECT_TRUE(directResetCommand(robot, valid_target, 0.02).isZero(0.0));
+        robot = valid_robot;
+        robot.limits.accel_vy = acceleration;
+        EXPECT_TRUE(directResetCommand(robot, valid_target, 0.02).isZero(0.0));
+        robot = valid_robot;
+        robot.limits.accel_omega = acceleration;
+        EXPECT_TRUE(directResetCommand(robot, valid_target, 0.02).isZero(0.0));
+    }
+    auto target = valid_target;
+    target.yaw = infinity;
+    EXPECT_TRUE(directResetCommand(valid_robot, target, 0.02).isZero(0.0));
+    target = valid_target;
+    target.position.y() = nan;
+    EXPECT_TRUE(directResetCommand(valid_robot, target, 0.02).isZero(0.0));
+    PathOptions options;
+    options.position_tolerance = nan;
+    EXPECT_TRUE(directResetCommand(valid_robot, valid_target, 0.02, options).isZero(0.0));
+}
+
+TEST(DirectResetCommand, MecanumReturnPreservesFrozenPoseAndSpeedBounds) {
+    auto robot = makeRobot(RobotType::Mecanum);
+    robot.limits = {0.35, 0.35, 0.5, 0.35, 0.35, 0.6};
+    robot.position = {-0.6, 0.25};
+    robot.yaw = 0.35;
+    const ResetTarget target;
+    constexpr double dt = 0.02;
+    bool arrived = false;
+    for (int step = 0; step < 750; ++step) {
+        const auto command = directResetCommand(robot, target, dt);
+        ASSERT_TRUE(command.allFinite());
+        EXPECT_LE(std::abs(command.x()), robot.limits.max_vx);
+        EXPECT_LE(std::abs(command.y()), robot.limits.max_vy);
+        EXPECT_LE(std::abs(command.z()), robot.limits.max_omega);
+        EXPECT_LE(std::abs(command.x() - robot.previous.x()), 0.007 + 1e-12);
+        EXPECT_LE(std::abs(command.y() - robot.previous.y()), 0.007 + 1e-12);
+        EXPECT_LE(std::abs(command.z() - robot.previous.z()), 0.012 + 1e-12);
+        if (withinTargetTolerance(robot, target) && command.isZero(0.0)) {
+            arrived = true;
+            break;
+        }
+        const double midpoint_yaw = robot.yaw + command.z() * dt / 2.0;
+        robot.position +=
+            dt * Eigen::Vector2d(
+                     std::cos(midpoint_yaw) * command.x() - std::sin(midpoint_yaw) * command.y(),
+                     std::sin(midpoint_yaw) * command.x() + std::cos(midpoint_yaw) * command.y());
+        robot.yaw += command.z() * dt;
+        robot.previous = command;
+    }
+    EXPECT_TRUE(arrived);
+}
+
 TEST(ResetPath, ArrivalRequiresPositionAndFiveDegreeShortestHeadingForBothChassis) {
     for (auto type : {RobotType::Unicycle, RobotType::Mecanum}) {
         auto robot = makeRobot(type);

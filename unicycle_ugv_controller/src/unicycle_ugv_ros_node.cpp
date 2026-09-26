@@ -189,7 +189,7 @@ void UnicycleUgvRosNode::loadParams() {
     config_.control_rate_hz = finitePositiveOr(config_.control_rate_hz, 500.0);
     config_.control_period = finitePositiveOr(config_.control_period, 0.1);
     config_.prediction_horizon = finitePositiveOr(config_.prediction_horizon, 1.0);
-    config_.state_timeout = finitePositiveOr(config_.state_timeout, 0.2);
+    config_.state_timeout = finitePositiveOr(config_.state_timeout, 0.5);
     config_.solve_timeout = finitePositiveOr(config_.solve_timeout, 0.05);
     config_.result_timeout = finitePositiveOr(config_.result_timeout, 0.1);
     config_.command_publish_rate_hz = finitePositiveOr(config_.command_publish_rate_hz, 30.0);

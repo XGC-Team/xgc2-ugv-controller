@@ -84,6 +84,7 @@ class Coordinator {
         private_.param("state_timeout", state_timeout_, 1.0);
         private_.param("world_frame", world_frame_, std::string("world"));
         private_.param("scene_namespace", scene_namespace_, std::string("/xgc/scene"));
+        private_.param("obstacle_avoidance", obstacle_avoidance_, true);
         private_.param("clearance", dwa_config_.clearance, 0.08);
         private_.param("uncertainty_margin", dwa_config_.uncertainty_margin, 0.03);
         fence_.enabled = true;
@@ -400,6 +401,31 @@ class Coordinator {
         r.command.angular.z = command.z();
         e.response_pub.publish(r);
     }
+    void commandDirect(const std::vector<Robot>& robots, const std::vector<ResetTarget>& targets,
+                       double dt) {
+        for (std::size_t i = 0; i < entries_.size(); ++i) {
+            auto& e = *entries_[i];
+            if (!e.robot.active) {
+                continue;
+            }
+            if (fence_.enabled &&
+                (targets[i].position.x() < fence_.xmin || targets[i].position.x() > fence_.xmax ||
+                 targets[i].position.y() < fence_.ymin || targets[i].position.y() > fence_.ymax)) {
+                rejectActive("reset target outside fence");
+                return;
+            }
+            const auto command = directResetCommand(robots[i], targets[i], dt);
+            const bool arrived =
+                withinTargetTolerance(robots[i], targets[i]) && command.isZero(0.0) &&
+                e.robot.previous.cwiseAbs().maxCoeff() <= dwa_config_.feasibility_tolerance &&
+                e.measured_speed <= 0.03 && std::abs(e.measured_omega) <= 0.05;
+            if (arrived) {
+                reply(e, ResetResponse::ARRIVED, Eigen::Vector3d::Zero(), "");
+            } else {
+                reply(e, ResetResponse::RUNNING, command, "");
+            }
+        }
+    }
     void rejectActive(const std::string& reason) {
         for (auto& e : entries_) {
             if (e->have_request && e->robot.active) {
@@ -426,7 +452,7 @@ class Coordinator {
         if (!active) {
             return;
         }
-        if (!scene_parsed_) {
+        if (obstacle_avoidance_ && !scene_parsed_) {
             rejectActive("scene unavailable: " + scene_error_);
             return;
         }
@@ -456,11 +482,12 @@ class Coordinator {
                 return;
             }
         }
-        if (scene_state_wall_.isZero() || (wall - scene_state_wall_).toSec() > 0.5) {
+        if (obstacle_avoidance_ &&
+            (scene_state_wall_.isZero() || (wall - scene_state_wall_).toSec() > 0.5)) {
             rejectActive("shared scene heartbeat expired");
             return;
         }
-        if (!scene_valid_) {
+        if (obstacle_avoidance_ && !scene_valid_) {
             rejectActive("scene unavailable: " + scene_error_);
             return;
         }
@@ -504,6 +531,10 @@ class Coordinator {
             target.yaw = e->frozen_target.theta;
             targets.push_back(target);
             requested.push_back(e->robot.active);
+        }
+        if (!obstacle_avoidance_) {
+            commandDirect(robots, targets, dt);
+            return;
         }
         if (!schedule_ready_) {
             schedule_ = FleetSchedule(dwa_config_.clearance + dwa_config_.uncertainty_margin);
@@ -636,6 +667,7 @@ class Coordinator {
     bool schedule_ready_ = false;
     std::vector<bool> scheduled_requested_, completed_;
     ros::WallTime last_admission_;
+    bool obstacle_avoidance_ = true;
     double frequency_ = 50, timeout_ = .15, state_timeout_ = 1.0;
     uint32_t consumer_generation_ = 1;
     ros::WallTime last_tick_;

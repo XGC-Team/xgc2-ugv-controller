@@ -58,7 +58,7 @@ reset:
 reset_pose_topic: reset_pose
 state_estimate_topic: alg/state_estimator/state
 state_source: platform_pose
-state_timeout: 0.2
+state_timeout: 0.5
 status_publish_rate_hz: 5.0
 tracking_strategy: flatness
 reset_initial_x: 1.25

@@ -8,7 +8,7 @@
     <param name="command_publish_rate_hz" value="50.0"/>
     <param name="idle_cmd_rate_hz" value="5.0"/>
     <param name="status_publish_rate_hz" value="50.0"/>
-    <param name="state_timeout" value="0.2"/>
+    <param name="state_timeout" value="0.5"/>
     <param name="reset_initial_x" type="double" value="0.8"/>
     <param name="reset_initial_y" type="double" value="0.0"/>
     <param name="reset_initial_yaw" type="double" value="0.0"/>

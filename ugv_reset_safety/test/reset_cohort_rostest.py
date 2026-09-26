@@ -9,7 +9,7 @@ import rostest
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import String
 from ugv_reset_safety.msg import ResetRequest, ResetResponse
-from xgc2_geometry_msgs.msg import SceneSnapshot, SceneState
+from xgc2_geometry_msgs.msg import SceneConsumerStatus, SceneSnapshot, SceneState
 
 
 class ResetCohortTest(unittest.TestCase):
@@ -35,6 +35,13 @@ class ResetCohortTest(unittest.TestCase):
             subs.append(rospy.Subscriber(ns + '/reset/response', ResetResponse, receive))
         snapshot_pub = rospy.Publisher('/cohort_scene/snapshot', SceneSnapshot, queue_size=1, latch=True)
         scene_pub = rospy.Publisher('/cohort_scene/state', SceneState, queue_size=1)
+        scene_ready = [False]
+
+        def on_scene_status(msg):
+            if msg.operational:
+                scene_ready[0] = True
+
+        status_sub = rospy.Subscriber('/cohort_scene/consumer_status', SceneConsumerStatus, on_scene_status)
         snapshot = SceneSnapshot(epoch='cohort', revision=1)
         snapshot.header.frame_id = 'world'
         snapshot.header.stamp = rospy.Time.now()
@@ -78,7 +85,12 @@ class ResetCohortTest(unittest.TestCase):
                    and time.monotonic() < connected_deadline):
                 time.sleep(.01)
             self.assertTrue(all(pub.get_num_connections() for group in pubs for pub in group))
-            time.sleep(.5)
+            # A busy runner can accept TCP before the latched scene is applied.
+            # Starting admission then sticky-rejects the generation as unavailable.
+            ready_deadline = time.monotonic() + 8.0
+            while not scene_ready[0] and time.monotonic() < ready_deadline:
+                time.sleep(.01)
+            self.assertTrue(scene_ready[0], "coordinator must apply the cohort scene before admission")
             for generation, count in ((1, 4), (2, 3), (3, 4), (4, 4)):
                 with lock:
                     enabled[:] = [False] * 4
@@ -104,6 +116,7 @@ class ResetCohortTest(unittest.TestCase):
                                      set(range(4)), 'all joined owners must enter DWA')
         finally:
             timer.shutdown()
+            status_sub.unregister()
             for sub in subs:
                 sub.unregister()
 

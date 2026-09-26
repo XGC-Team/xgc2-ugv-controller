@@ -10,7 +10,17 @@ import uuid
 
 import yaml
 
-CONTEXT_FIELDS = {'reset_initial_x', 'reset_initial_y', 'reset_initial_yaw', 'cmd_vel_topic', 'scene_namespace'}
+CONTEXT_FIELDS = {
+    'reset_initial_x', 'reset_initial_y', 'reset_initial_yaw',
+    'cmd_vel_topic', 'scene_namespace',
+    'fence_x_min', 'fence_x_max', 'fence_y_min', 'fence_y_max',
+}
+FENCE_YAML_KEYS = {
+    'fence_x_min': 'x_min',
+    'fence_x_max': 'x_max',
+    'fence_y_min': 'y_min',
+    'fence_y_max': 'y_max',
+}
 
 
 def prepare_parameters(source_text, context, namespace):
@@ -33,9 +43,27 @@ def prepare_parameters(source_text, context, namespace):
                 raise ValueError('reset pose must contain finite numbers')
             if not math.isfinite(value):
                 raise ValueError('reset pose must contain finite numbers')
+            values[key] = value
+        elif key in FENCE_YAML_KEYS:
+            if value == '':
+                continue
+            if isinstance(value, bool):
+                raise ValueError('fence must contain finite numbers')
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                raise ValueError('fence must contain finite numbers')
+            if not math.isfinite(value):
+                raise ValueError('fence must contain finite numbers')
+            fence = values.get('fence')
+            if not isinstance(fence, dict):
+                fence = {}
+            fence[FENCE_YAML_KEYS[key]] = value
+            values['fence'] = fence
         elif not isinstance(value, str) or not re.fullmatch(r'/?[A-Za-z_][A-Za-z0-9_/]*', value):
             raise ValueError('invalid ROS topic context: ' + key)
-        values[key] = value
+        else:
+            values[key] = value
     return values
 
 
