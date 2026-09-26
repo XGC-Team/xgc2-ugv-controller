@@ -19,7 +19,7 @@ bool hasOutputEvent(MecanumUgvController& controller, ::state_machine::EventId i
 
 void setPose(UgvState& state, double t, double x, double y, double yaw) {
     state.received = true;
-    state.stamp = ros::Time(t);
+    state.stamp = Time(t);
     state.x = x;
     state.y = y;
     state.yaw = yaw;
@@ -61,7 +61,7 @@ void stepHolonomicPlant(UgvState& state, const ControlCommand& command, double d
     state.x += vwx * dt;
     state.y += vwy * dt;
     state.yaw = wrapAngle(state.yaw + omega * dt);
-    state.stamp = ros::Time(state.stamp.toSec() + dt);
+    state.stamp = Time(state.stamp.toSec() + dt);
 }
 
 void enterCustom1(MecanumUgvController& controller, UgvState& state,
@@ -158,7 +158,7 @@ TEST(MecanumSm, Custom1BriefPoseDropoutStaysTracking) {
     WorldVelocityReference reference;
     reference.valid = true;
     reference.vx = 0.2;
-    reference.stamp = ros::Time(1.0);
+    reference.stamp = Time(1.0);
     enterCustom1(controller, state, reference, 1.0);
     controller.update(1.31);
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Custom1);
@@ -171,7 +171,7 @@ TEST(MecanumSm, Custom1PoseTimeoutGoesSelfCheck) {
     WorldVelocityReference reference;
     reference.valid = true;
     reference.vx = 0.2;
-    reference.stamp = ros::Time(1.0);
+    reference.stamp = Time(1.0);
     enterCustom1(controller, state, reference, 1.0);
     controller.update(1.52);
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
@@ -254,7 +254,7 @@ TEST(MecanumSm, Custom1StopReturnsReady) {
     WorldVelocityReference reference;
     reference.valid = true;
     reference.vx = 0.2;
-    reference.stamp = ros::Time(1.0);
+    reference.stamp = Time(1.0);
     controller.setWorldReference(reference);
     postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.01);
     setPose(state, 1.01, 0.0, 0.0, 0.0);
@@ -273,7 +273,7 @@ TEST(MecanumSm, Custom1DoesNotValidateAlgorithmTimestamp) {
     WorldVelocityReference reference;
     reference.valid = true;
     reference.vx = 0.2;
-    reference.stamp = ros::Time(1001.0);
+    reference.stamp = Time(1001.0);
     enterCustom1(controller, state, reference, 1.0);
 
     setPose(state, 1.1, state.x, state.y, state.yaw);
@@ -289,7 +289,7 @@ TEST(MecanumSm, Custom1CanReset) {
     WorldVelocityReference reference;
     reference.valid = true;
     reference.vx = 0.2;
-    reference.stamp = ros::Time(1.0);
+    reference.stamp = Time(1.0);
     controller.setWorldReference(reference);
     postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.01);
     setPose(state, 1.01, 0.0, 0.0, 0.0);
@@ -408,7 +408,7 @@ TEST(MecanumLaw, IdealPlantCustom1HeadingAndWorldVelocity) {
     reference.valid = true;
     reference.vx = 0.4;
     reference.vy = 0.0;
-    reference.stamp = ros::Time(1.0);
+    reference.stamp = Time(1.0);
     controller.setWorldReference(reference);
     postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.01);
     controller.update(1.01);
@@ -417,7 +417,7 @@ TEST(MecanumLaw, IdealPlantCustom1HeadingAndWorldVelocity) {
     const double dt = 0.02;
     for (int i = 0; i < 250; ++i) {
         t += dt;
-        reference.stamp = ros::Time(t);
+        reference.stamp = Time(t);
         controller.setWorldReference(reference);
         stepHolonomicPlant(state, controller.command(), dt);
         controller.update(t);
@@ -438,7 +438,7 @@ TEST(MecanumLaw, IdealPlantCustom1TracksSettledWorldVelocity) {
     reference.valid = true;
     reference.vx = 0.5;
     reference.vy = -0.3;
-    reference.stamp = ros::Time(1.0);
+    reference.stamp = Time(1.0);
     enterCustom1(controller, state, reference, 1.0);
     double t = 1.01;
     const double dt = 0.02;
@@ -446,7 +446,7 @@ TEST(MecanumLaw, IdealPlantCustom1TracksSettledWorldVelocity) {
     double vwy = 0.0;
     for (int i = 0; i < 25; ++i) {
         t += dt;
-        reference.stamp = ros::Time(t);
+        reference.stamp = Time(t);
         controller.setWorldReference(reference);
         plantWorldVelocity(state, controller.command(), vwx, vwy);
         stepHolonomicPlant(state, controller.command(), dt);
@@ -469,13 +469,13 @@ TEST(MecanumLaw, IdealPlantCustom1TracksWorldVelocityStep) {
     reference.valid = true;
     reference.vx = 0.4;
     reference.vy = 0.0;
-    reference.stamp = ros::Time(1.0);
+    reference.stamp = Time(1.0);
     enterCustom1(controller, state, reference, 1.0);
     double t = 1.01;
     const double dt = 0.02;
     for (int i = 0; i < 10; ++i) {
         t += dt;
-        reference.stamp = ros::Time(t);
+        reference.stamp = Time(t);
         controller.setWorldReference(reference);
         stepHolonomicPlant(state, controller.command(), dt);
         controller.update(t);
@@ -486,7 +486,7 @@ TEST(MecanumLaw, IdealPlantCustom1TracksWorldVelocityStep) {
     double vwy = 0.0;
     for (int i = 0; i < 10; ++i) {
         t += dt;
-        reference.stamp = ros::Time(t);
+        reference.stamp = Time(t);
         controller.setWorldReference(reference);
         plantWorldVelocity(state, controller.command(), vwx, vwy);
         stepHolonomicPlant(state, controller.command(), dt);
@@ -508,7 +508,7 @@ TEST(MecanumLaw, IdealPlantCustom1TracksSlowWorldVelocitySine) {
     reference.valid = true;
     reference.vx = 0.4;
     reference.vy = 0.0;
-    reference.stamp = ros::Time(1.0);
+    reference.stamp = Time(1.0);
     enterCustom1(controller, state, reference, 1.0);
     double t = 1.01;
     const double dt = 0.02;
@@ -517,7 +517,7 @@ TEST(MecanumLaw, IdealPlantCustom1TracksSlowWorldVelocitySine) {
         t += dt;
         reference.vx = 0.4 * std::cos(0.4 * t);
         reference.vy = 0.4 * std::sin(0.4 * t);
-        reference.stamp = ros::Time(t);
+        reference.stamp = Time(t);
         controller.setWorldReference(reference);
         controller.update(t);
         double vwx = 0.0;
@@ -543,7 +543,7 @@ TEST(MecanumLaw, IdealPlantCustom1TracksCircleWithHeadingDisturbance) {
     reference.valid = true;
     reference.vx = 0.0;
     reference.vy = kRadius * kOmega;
-    reference.stamp = ros::Time(1.0);
+    reference.stamp = Time(1.0);
     enterCustom1(controller, state, reference, 1.0);
     setPose(state, 1.01, kRadius, 0.0, 0.0);
     controller.update(1.01);
@@ -555,7 +555,7 @@ TEST(MecanumLaw, IdealPlantCustom1TracksCircleWithHeadingDisturbance) {
         const double angle = kOmega * (t - 1.01);
         reference.vx = -kRadius * kOmega * std::sin(angle);
         reference.vy = kRadius * kOmega * std::cos(angle);
-        reference.stamp = ros::Time(t);
+        reference.stamp = Time(t);
         controller.setWorldReference(reference);
         controller.update(t);
         stepHolonomicPlant(state, controller.command(), dt);
@@ -580,12 +580,12 @@ TEST(MecanumLaw, IdealPlantCustom1SaturatesWorldVelocityOnFluBox) {
     reference.valid = true;
     reference.vx = 2.0;
     reference.vy = -2.0;
-    reference.stamp = ros::Time(1.0);
+    reference.stamp = Time(1.0);
     enterCustom1(controller, state, reference, 1.0);
     double t = 1.01;
     const double dt = 0.02;
     t += dt;
-    reference.stamp = ros::Time(t);
+    reference.stamp = Time(t);
     controller.setWorldReference(reference);
     controller.update(t);
     double vwx = 0.0;

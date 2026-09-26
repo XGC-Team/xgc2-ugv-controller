@@ -46,8 +46,8 @@ void d(double v) {
 }
 
 // The core's stamp, from harness seconds.
-ros::Time stampAt(double t) {
-    return ros::Time(t);
+Time stampAt(double t) {
+    return Time(t);
 }
 
 struct Plant {

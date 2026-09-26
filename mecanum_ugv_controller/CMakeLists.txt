@@ -18,6 +18,7 @@ include_directories(include ${catkin_INCLUDE_DIRS})
 
 add_executable(${PROJECT_NAME}_node
   src/common_types.cpp
+  src/core_log.cpp
   src/mecanum_ugv_controller.cpp
   src/mecanum_ugv_ros_node.cpp
   src/state_machine/states.cpp)
@@ -43,6 +44,7 @@ if(CATKIN_ENABLE_TESTING)
   catkin_add_gtest(mecanum_ugv_controller_runtime_test
     test/mecanum_ugv_controller_runtime_test.cpp
     src/common_types.cpp
+    src/core_log.cpp
     src/mecanum_ugv_controller.cpp
     src/state_machine/states.cpp)
   if(TARGET mecanum_ugv_controller_runtime_test)
@@ -57,6 +59,7 @@ if(CATKIN_ENABLE_TESTING)
   add_executable(mecanum_ugv_controller_replay
     test/replay/mecanum_replay.cpp
     src/common_types.cpp
+    src/core_log.cpp
     src/mecanum_ugv_controller.cpp
     src/state_machine/states.cpp)
   add_dependencies(mecanum_ugv_controller_replay ${catkin_EXPORTED_TARGETS})

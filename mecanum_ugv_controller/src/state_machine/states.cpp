@@ -1,8 +1,7 @@
-#include <ros/console.h>
-
 #include <cmath>
 #include <utility>
 
+#include "mecanum_ugv_controller/common/core_log.h"
 #include "mecanum_ugv_controller/common/types.h"
 #include "mecanum_ugv_controller/mecanum_ugv_controller.h"
 #include "mecanum_ugv_controller/state_machine/custom1_state.h"
@@ -99,7 +98,7 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
         controller_.setResetHoldReason({});
     } else {
         controller_.setResetHoldReason("no target: reset_pose cache and reset_initial_* missing");
-        ROS_ERROR(
+        MECANUM_LOG_ERROR(
             "[MecanumUgvController] Reset entered without a valid goal; "
             "holding Reset until timeout/Stop or a cached initialPose");
     }
@@ -128,14 +127,14 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
             controller_.setResetHoldReason({});
         } else {
             emitZero(ctx);
-            ROS_ERROR_THROTTLE(
+            MECANUM_LOG_ERROR_THROTTLE(
                 1.0,
                 "[MecanumUgvController] Reset holding with no target (topic=/command "
                 "CONTROL=Reset reject=missing-initialPose)");
             return {};
         }
     }
-    const auto feedback = controller_.resetSession().feedback(ros::Time(now).toNSec(), wall);
+    const auto feedback = controller_.resetSession().feedback(Time(now).toNSec(), wall);
     if (feedback.valid && feedback.status != ugv_reset_safety::ResetSession::RUNNING) {
         emitZero(ctx);
         postDone(ctx, feedback.status == ugv_reset_safety::ResetSession::ARRIVED
@@ -144,7 +143,7 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
         return {};
     }
     ControlCommand command;
-    command.stamp = ros::Time(now);
+    command.stamp = Time(now);
     command.valid = true;
     if (feedback.valid) {
         // Refuse a command outside chassis limits; do not silently saturate.
@@ -221,7 +220,7 @@ Custom1State::Custom1State(MecanumUgvController& controller) : controller_(contr
     const HolonomicTrackOutput output = computeHolonomicTrackCommand(
         controller_.state(), controller_.worldReference(), controller_.config());
     ControlCommand command;
-    command.stamp = ros::Time(controller_.currentTime());
+    command.stamp = Time(controller_.currentTime());
     command.linear_x = output.linear_x;
     command.linear_y = output.linear_y;
     command.angular_z = output.angular_z;
