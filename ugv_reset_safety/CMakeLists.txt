@@ -12,8 +12,17 @@ add_message_files(FILES ResetRequest.msg ResetResponse.msg)
 generate_messages(DEPENDENCIES geometry_msgs std_msgs)
 catkin_package(INCLUDE_DIRS include LIBRARIES ugv_reset_safety_math CATKIN_DEPENDS geometry_msgs std_msgs roscpp message_runtime xgc2_geometry_msgs DEPENDS Eigen3)
 include_directories(include ${catkin_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIRS})
+# ROS-free reset core: geometry, path planning and the (header-only) DWA,
+# fleet schedule and reset session. reset_client.h and scene_projection.h are
+# the ROS edge. The math library's include path is reset from the catkin
+# directory path (which puts the ROS headers on it) to this package's headers
+# and Eigen; it links no ROS library and is linked with -Wl,--no-undefined, so
+# a ROS symbol reaching it fails the link.
 add_library(ugv_reset_safety_math src/reset_geometry.cpp src/reset_path.cpp)
+set_property(TARGET ugv_reset_safety_math PROPERTY INCLUDE_DIRECTORIES "")
+target_include_directories(ugv_reset_safety_math PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ugv_reset_safety_math PUBLIC Eigen3::Eigen)
+set_property(TARGET ugv_reset_safety_math APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--no-undefined")
 add_executable(ugv_reset_coordinator_node src/reset_coordinator_node.cpp)
 add_dependencies(ugv_reset_coordinator_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(ugv_reset_coordinator_node ugv_reset_safety_math ${catkin_LIBRARIES})

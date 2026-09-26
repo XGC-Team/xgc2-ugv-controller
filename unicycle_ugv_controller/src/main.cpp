@@ -3,11 +3,14 @@
 #include <cmath>
 #include <exception>
 
+#include "unicycle_ugv_controller/ros_log_sink.h"
 #include "unicycle_ugv_controller/unicycle_ugv_ros_node.h"
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "unicycle_ugv_controller_node");
     ros::NodeHandle nh;
+    // The controller core logs through common/core_log.h; send it to rosconsole.
+    unicycle_ugv_controller::installRosLogSink();
     ros::NodeHandle private_nh("~");
 
     double control_rate_hz = 500.0;

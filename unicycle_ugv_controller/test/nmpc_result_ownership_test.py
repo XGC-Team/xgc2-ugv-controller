@@ -25,9 +25,11 @@ STUB = r"""
 #define ROS_WARN_THROTTLE(...) ((void)0)
 #define ROS_INFO_THROTTLE(...) ((void)0)
 #define ROS_WARN(...) ((void)0)
+#include "unicycle_ugv_controller/common/time.h"
 namespace ros {
 struct Time {
-    double t=0; Time()=default; explicit Time(double value):t(value){}
+    double t=0; uint32_t sec=0,nsec=0; Time()=default; explicit Time(double value):t(value){}
+    Time(uint32_t s,uint32_t ns):t(s+1e-9*ns),sec(s),nsec(ns){}
     double toSec() const {return t;}
     static Time now(){return Time(1.01);}
 };
@@ -78,7 +80,7 @@ struct ControllerConfig {
 };
 struct UgvState {double speed=0,yaw=0;};
 struct WorldPvaReference{};
-struct ControlCommand {ros::Time stamp;double linear_speed=0,angular_speed=0;bool valid=false;};
+struct ControlCommand {Time stamp;double linear_speed=0,angular_speed=0;bool valid=false;};
 struct FlatnessCommandOutput {bool valid=false;double linear_speed=0,angular_speed=0;};
 inline FlatnessCommandOutput computeFlatnessCommand(const UgvState&,const WorldPvaReference&,double,double,const ControllerConfig&){return {};}
 inline double wrapAngle(double x){return std::atan2(std::sin(x),std::cos(x));}
@@ -91,7 +93,7 @@ public:
 struct Se2Reference {struct {double yaw=0;} state;};
 struct NmpcStateVector {double operator()(int)const{return 0;}};
 struct UnicycleNmpcSolver {static int horizonSteps(){return 10;}};
-struct ReferenceCache {bool sampleHorizon(ros::Time,double,int,std::vector<Se2Reference>& r){r.resize(11);return true;}};
+struct ReferenceCache {bool sampleHorizon(Time,double,int,std::vector<Se2Reference>& r){r.resize(11);return true;}};
 class UnicycleUgvController {
     mutable std::mutex mutex;ControlCommand command_;UgvState state_;ReferenceCache cache;
 public:
@@ -117,7 +119,7 @@ struct ComputeBarrier {
 inline ComputeBarrier barrier;
 struct NmpcTrackingBackend {
     void configure(const ControllerConfig&){} bool enter(){return true;} void exit(){}
-    bool compute(const UgvState&,const std::vector<Se2Reference>&,const ros::Time& t,ControlCommand& c){
+    bool compute(const UgvState&,const std::vector<Se2Reference>&,const Time& t,ControlCommand& c){
         std::unique_lock<std::mutex> lock(barrier.mutex);barrier.entered=true;barrier.cv.notify_all();
         barrier.cv.wait(lock,[]{return barrier.released;});c.stamp=t;c.linear_speed=.8;c.angular_speed=.2;c.valid=true;return true;
     }
@@ -156,7 +158,7 @@ int main(){
         },1);
         state.onEnter(ctx);auto first=request(state,ctx);worker.handle(first);barrier.waitEntered();
         state.onExit(ctx);
-        ControlCommand reset;reset.valid=true;reset.stamp=ros::Time(1);reset.linear_speed=-.25;controller.setCommand(reset);
+        ControlCommand reset;reset.valid=true;reset.stamp=Time(1.0);reset.linear_speed=-.25;controller.setCommand(reset);
         barrier.release();
         sm::Event old=success(0,0);
         {std::unique_lock<std::mutex> lock(mutex);check(cv.wait_for(lock,std::chrono::seconds(3),[&]{return !results.empty();}),"worker result timeout");old=results.front();}
@@ -190,7 +192,7 @@ def main():
         root = Path(tmp)
         (root / "boundary.h").write_text(STUB)
         for name in (
-            "ros/ros.h", "ros/console.h", "geometry_msgs/PoseArray.h", "nav_msgs/Path.h",
+            "ros/ros.h", "ros/console.h", "ros/time.h", "geometry_msgs/PoseArray.h", "nav_msgs/Path.h",
             "state_machine/state_machine.hpp", "state_machine/runtime/event_dispatcher.hpp",
             "unicycle_ugv_controller/common/types.h",
             "unicycle_ugv_controller/state_machine/periodic_gate.h",

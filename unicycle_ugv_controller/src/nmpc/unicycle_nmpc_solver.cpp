@@ -1,10 +1,10 @@
 #include "unicycle_ugv_controller/nmpc/unicycle_nmpc_solver.h"
 
-#include <ros/console.h>
-
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+
+#include "unicycle_ugv_controller/common/core_log.h"
 
 namespace unicycle_ugv_controller {
 
@@ -28,17 +28,17 @@ bool UnicycleNmpcSolver::initialize() {
     }
     if (UNICYCLE_NMPC_NX != 5 || UNICYCLE_NMPC_NU != 2 || UNICYCLE_NMPC_NP != 7 ||
         UNICYCLE_NMPC_NY != 7 || UNICYCLE_NMPC_N != 10) {
-        ROS_ERROR("[UnicycleNmpcSolver] Unexpected generated solver dimensions");
+        UGV_LOG_ERROR("[UnicycleNmpcSolver] Unexpected generated solver dimensions");
         return false;
     }
     capsule_ = unicycle_nmpc_acados_create_capsule();
     if (!capsule_) {
-        ROS_ERROR("[UnicycleNmpcSolver] Failed to create acados capsule");
+        UGV_LOG_ERROR("[UnicycleNmpcSolver] Failed to create acados capsule");
         return false;
     }
     const int status = unicycle_nmpc_acados_create(capsule_);
     if (status != 0) {
-        ROS_ERROR("[UnicycleNmpcSolver] unicycle_nmpc_acados_create failed: %d", status);
+        UGV_LOG_ERROR("[UnicycleNmpcSolver] unicycle_nmpc_acados_create failed: %d", status);
         cleanup();
         return false;
     }
@@ -59,7 +59,7 @@ bool UnicycleNmpcSolver::configureBounds(double min_linear_speed, double max_lin
         max_linear_acceleration <= 0.0 || !std::isfinite(max_angular_speed) ||
         max_angular_speed <= 0.0 || !std::isfinite(max_angular_acceleration) ||
         max_angular_acceleration <= 0.0) {
-        ROS_ERROR(
+        UGV_LOG_ERROR(
             "[UnicycleNmpcSolver] Invalid runtime bounds speed=[%.3f, %.3f] accel=%.3f "
             "omega=%.3f angular_accel=%.3f",
             min_linear_speed, max_linear_speed, max_linear_acceleration, max_angular_speed,
@@ -97,7 +97,7 @@ bool UnicycleNmpcSolver::configureWeights(const NmpcCostWeights& weights) {
         !std::isfinite(weights.terminal_position_y) || weights.terminal_position_y <= 0.0 ||
         !std::isfinite(weights.terminal_yaw) || weights.terminal_yaw <= 0.0 ||
         !std::isfinite(weights.terminal_speed) || weights.terminal_speed <= 0.0) {
-        ROS_ERROR(
+        UGV_LOG_ERROR(
             "[UnicycleNmpcSolver] Invalid NMPC weights pos=[%.3f, %.3f] yaw=%.3f speed=%.3f "
             "omega=%.3f u=[%.3f, %.3f] terminal_pos=[%.3f, %.3f] terminal_yaw=%.3f "
             "terminal_speed=%.3f",
@@ -146,7 +146,8 @@ bool UnicycleNmpcSolver::solve(const NmpcStateVector& x0, const std::vector<Se2R
     const auto t1 = std::chrono::steady_clock::now();
     solve_time_ms_ = std::chrono::duration<double, std::milli>(t1 - t0).count();
     if (solver_status_ != 0) {
-        ROS_WARN_THROTTLE(1.0, "[UnicycleNmpcSolver] Solve failed with status %d", solver_status_);
+        UGV_LOG_WARN_THROTTLE(1.0, "[UnicycleNmpcSolver] Solve failed with status %d",
+                              solver_status_);
         return false;
     }
     readSolution();
@@ -189,10 +190,10 @@ bool UnicycleNmpcSolver::applyRuntimeBounds() {
                                                 state_upper_bounds_.data());
     }
     if (status != 0) {
-        ROS_ERROR("[UnicycleNmpcSolver] Failed to apply runtime input/state bounds");
+        UGV_LOG_ERROR("[UnicycleNmpcSolver] Failed to apply runtime input/state bounds");
         return false;
     }
-    ROS_INFO(
+    UGV_LOG_INFO(
         "[UnicycleNmpcSolver] Runtime bounds speed=[%.3f, %.3f] omega=%.3f accel=%.3f "
         "angular_accel=%.3f",
         state_lower_bounds_[0], state_upper_bounds_[0], state_upper_bounds_[1],
@@ -229,10 +230,10 @@ bool UnicycleNmpcSolver::applyRuntimeWeights() {
     }
     status |= ocp_nlp_cost_model_set(config, dims, in, UNICYCLE_NMPC_N, "W", terminal_w.data());
     if (status != 0) {
-        ROS_ERROR("[UnicycleNmpcSolver] Failed to apply runtime NMPC weights");
+        UGV_LOG_ERROR("[UnicycleNmpcSolver] Failed to apply runtime NMPC weights");
         return false;
     }
-    ROS_INFO(
+    UGV_LOG_INFO(
         "[UnicycleNmpcSolver] Runtime weights pos=[%.3f, %.3f] yaw=%.3f speed=%.3f "
         "omega=%.3f u=[%.3f, %.3f] terminal_pos=[%.3f, %.3f] terminal_yaw=%.3f "
         "terminal_speed=%.3f",

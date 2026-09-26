@@ -1,13 +1,12 @@
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
 
-#include <ros/console.h>
-
 #include <cmath>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
 
-#include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
+#include "unicycle_ugv_controller/common/core_log.h"
+#include "unicycle_ugv_controller/common/rigid_estimate_health.h"
 #include "unicycle_ugv_controller/state_machine/custom1_state.h"
 #include "unicycle_ugv_controller/state_machine/health_monitor_state.h"
 #include "unicycle_ugv_controller/state_machine/ready_state.h"
@@ -33,6 +32,7 @@ UnicycleUgvController::UnicycleUgvController(const UgvState& state) : state_(sta
 
 void UnicycleUgvController::update(double now_sec) {
     current_time_sec_ = now_sec;
+    setCoreTime(now_sec);
     maybeUpdatePoseVelocity();
     maybeAutoStartCustom1();
     if (machine_) {
@@ -55,7 +55,7 @@ void UnicycleUgvController::update(double now_sec) {
         last_reset_admission_miss_ = std::string("Failed to post command event: ") +
                                      status.message + " source=" + pending_reset_source_ +
                                      " CONTROL=" + machine_->currentStateName(region_type::CONTROL);
-        ROS_ERROR("[UnicycleUgvController] %s", last_reset_admission_miss_.c_str());
+        UGV_LOG_ERROR("[UnicycleUgvController] %s", last_reset_admission_miss_.c_str());
     }
     return status;
 }
@@ -74,7 +74,7 @@ void UnicycleUgvController::noteResetAdmissionAfterUpdate() {
         return;
     }
     last_reset_admission_miss_ = describeResetAdmissionMiss(pending_reset_source_);
-    ROS_ERROR("[UnicycleUgvController] %s", last_reset_admission_miss_.c_str());
+    UGV_LOG_ERROR("[UnicycleUgvController] %s", last_reset_admission_miss_.c_str());
 }
 
 std::string UnicycleUgvController::describeResetAdmissionMiss(const std::string& source) const {
@@ -107,7 +107,7 @@ void UnicycleUgvController::setConfig(const ControllerConfig& config) {
 
 bool UnicycleUgvController::healthReady() const {
     const auto cfg = config();
-    if (!stateFresh(state_, ros::Time(current_time_sec_), cfg.state_timeout) ||
+    if (!stateFresh(state_, Time(current_time_sec_), cfg.state_timeout) ||
         !insideFence(state_, cfg)) {
         return false;
     }
@@ -332,8 +332,8 @@ void UnicycleUgvController::maybeAutoStartCustom1() {
     event.category = ::state_machine::EventCategory::kInput;
     const auto status = machine_->postEvent(std::move(event));
     if (!status.ok()) {
-        ROS_WARN("[UnicycleUgvController] Failed to post auto Custom1 event: %s",
-                 status.message.c_str());
+        UGV_LOG_WARN("[UnicycleUgvController] Failed to post auto Custom1 event: %s",
+                     status.message.c_str());
     }
 }
 

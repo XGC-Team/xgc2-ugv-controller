@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
+#include "unicycle_ugv_controller/ros_time_conversion.h"
 
 namespace unicycle_ugv_controller {
 
@@ -28,7 +29,7 @@ void StateInputProducer::stateCallback(
         return;
     }
     const UnicycleProjection planar = projectRigidToUnicycle(*msg);
-    state_.stamp = msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
+    state_.stamp = toCoreTime(msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp);
     state_.x = planar.x;
     state_.y = planar.y;
     state_.yaw = planar.yaw;
@@ -40,7 +41,7 @@ void StateInputProducer::stateCallback(
     state_.estimator_flags = msg->flags;
     state_.received = true;
     state_.velocity_valid = std::isfinite(state_.vx) && std::isfinite(state_.vy);
-    post(event_type::INPUT_STATE_UPDATED, "state_estimate", state_.stamp);
+    post(event_type::INPUT_STATE_UPDATED, "state_estimate", toRosTime(state_.stamp));
 }
 
 void StateInputProducer::poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
@@ -60,11 +61,11 @@ void StateInputProducer::poseCallback(const geometry_msgs::PoseStamped::ConstPtr
     state_.x = msg->pose.position.x;
     state_.y = msg->pose.position.y;
     state_.yaw = yaw;
-    state_.stamp = msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
+    state_.stamp = toCoreTime(msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp);
     state_.estimator_state = 0U;
     state_.estimator_flags = 0U;
     state_.received = true;
-    post(event_type::INPUT_STATE_UPDATED, "platform_pose", state_.stamp);
+    post(event_type::INPUT_STATE_UPDATED, "platform_pose", toRosTime(state_.stamp));
 }
 
 void StateInputProducer::post(::state_machine::EventId id, const char* source,

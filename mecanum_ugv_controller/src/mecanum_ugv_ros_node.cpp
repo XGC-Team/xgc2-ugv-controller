@@ -12,11 +12,27 @@
 #include <string>
 #include <utility>
 
+#include "mecanum_ugv_controller/common/core_log.h"
 #include "mecanum_ugv_controller/mecanum_ugv_controller.h"
+#include "mecanum_ugv_controller/ros_time_conversion.h"
 #include "mecanum_ugv_controller/state_machine/periodic_gate.h"
 
 namespace mecanum_ugv_controller {
 namespace {
+
+void rosLogSink(LogLevel level, const char* message) {
+    switch (level) {
+        case LogLevel::kError:
+            ROS_ERROR("%s", message);
+            break;
+        case LogLevel::kWarn:
+            ROS_WARN("%s", message);
+            break;
+        default:
+            ROS_INFO("%s", message);
+            break;
+    }
+}
 
 constexpr uint32_t kMinQueueSize = 1U;
 
@@ -81,7 +97,7 @@ class MecanumUgvRosNode {
                     controller_.resetSession().noteApplied({}, ros::Time::now().toNSec());
                 }
             }
-            reset_client_.update({state_.x, state_.y, state_.yaw}, state_.stamp,
+            reset_client_.update({state_.x, state_.y, state_.yaw}, toRosTime(state_.stamp),
                                  controller_.healthReady());
             if (status_gate_.due(now, 1.0 / config_.status_publish_rate_hz)) {
                 std_msgs::String status;
@@ -211,7 +227,8 @@ class MecanumUgvRosNode {
         state_.x = msg->pose.position.x;
         state_.y = msg->pose.position.y;
         state_.yaw = yaw;
-        state_.stamp = msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
+        state_.stamp =
+            toCoreTime(msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp);
         state_.received = true;
         ::state_machine::Event event(event_type::INPUT_STATE_UPDATED,
                                      ::state_machine::EventTimestamp{state_.stamp.toSec()});
@@ -238,7 +255,7 @@ class MecanumUgvRosNode {
             return;
         }
         WorldVelocityReference reference;
-        reference.stamp = ros::Time::now();
+        reference.stamp = toCoreTime(ros::Time::now());
         reference.vx = msg->twist.linear.x;
         reference.vy = msg->twist.linear.y;
         reference.valid = true;
@@ -302,6 +319,8 @@ class MecanumUgvRosNode {
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "mecanum_ugv_controller");
+    // The controller core logs through common/core_log.h; send it to rosconsole.
+    mecanum_ugv_controller::setLogSink(&mecanum_ugv_controller::rosLogSink);
     ros::NodeHandle nh;
     mecanum_ugv_controller::MecanumUgvRosNode node(nh);
     node.run();

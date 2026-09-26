@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "unicycle_ugv_controller/common/types.h"
+#include "unicycle_ugv_controller/ros_time_conversion.h"
 
 namespace unicycle_ugv_controller {
 namespace {
@@ -69,7 +70,7 @@ bool NmpcOutputConsumer::handle(const ::state_machine::Event& event) {
     }
 
     const ControllerConfig config = controller_.config();
-    const ros::Time now(event.timestamp > 0.0 ? event.timestamp : ros::Time::now().toSec());
+    const Time now(event.timestamp > 0.0 ? event.timestamp : ros::Time::now().toSec());
     Request request;
     request.sequence = event.correlation_id;
     request.now = now;
@@ -129,7 +130,7 @@ void NmpcOutputConsumer::workerLoop() {
         const bool ok =
             entered && backend_.compute(request.state, request.references, request.now, command);
         if (ok) {
-            publishPrediction(request.now);
+            publishPrediction(toRosTime(request.now));
             ROS_INFO_THROTTLE(1.0,
                               "[UgvNmpcOutputConsumer] Solve ok seq=%lu linear=%.3f angular=%.3f "
                               "solve=%.3f ms",

@@ -1,13 +1,12 @@
 #include "mecanum_ugv_controller/mecanum_ugv_controller.h"
 
-#include <ros/console.h>
-
 #include <cmath>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
+#include "mecanum_ugv_controller/common/core_log.h"
 #include "mecanum_ugv_controller/state_machine/custom1_state.h"
 #include "mecanum_ugv_controller/state_machine/health_monitor_state.h"
 #include "mecanum_ugv_controller/state_machine/ready_state.h"
@@ -33,6 +32,7 @@ MecanumUgvController::MecanumUgvController(const UgvState& state) : state_(state
 
 void MecanumUgvController::update(double now_sec) {
     current_time_sec_ = now_sec;
+    setCoreTime(now_sec);
     maybeAutoStartCustom1();
     if (machine_) {
         (void)machine_->update();
@@ -54,7 +54,7 @@ void MecanumUgvController::update(double now_sec) {
         last_reset_admission_miss_ = std::string("Failed to post command event: ") +
                                      status.message + " source=" + pending_reset_source_ +
                                      " CONTROL=" + machine_->currentStateName(region_type::CONTROL);
-        ROS_ERROR("[MecanumUgvController] %s", last_reset_admission_miss_.c_str());
+        MECANUM_LOG_ERROR("[MecanumUgvController] %s", last_reset_admission_miss_.c_str());
     }
     return status;
 }
@@ -73,7 +73,7 @@ void MecanumUgvController::noteResetAdmissionAfterUpdate() {
         return;
     }
     last_reset_admission_miss_ = describeResetAdmissionMiss(pending_reset_source_);
-    ROS_ERROR("[MecanumUgvController] %s", last_reset_admission_miss_.c_str());
+    MECANUM_LOG_ERROR("[MecanumUgvController] %s", last_reset_admission_miss_.c_str());
 }
 
 std::string MecanumUgvController::describeResetAdmissionMiss(const std::string& source) const {
@@ -106,7 +106,7 @@ void MecanumUgvController::setConfig(const ControllerConfig& config) {
 
 bool MecanumUgvController::healthReady() const {
     const auto cfg = config();
-    return stateFresh(state_, ros::Time(current_time_sec_), cfg.state_timeout) &&
+    return stateFresh(state_, Time(current_time_sec_), cfg.state_timeout) &&
            insideFence(state_, cfg);
 }
 

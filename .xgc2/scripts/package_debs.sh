@@ -89,7 +89,8 @@ copy_ros_package() {
 for ros_package in "${ROS_PACKAGES[@]}"; do
   copy_ros_package "${ros_package}"
 done
-copy_path "${PREFIX_ROOT}/lib/libunicycle_ugv_controller_nmpc_runtime.so" "${pkg_root}"
+copy_path "${PREFIX_ROOT}/lib/libunicycle_ugv_controller_core.so" "${pkg_root}"
+copy_path "${PREFIX_ROOT}/lib/libmecanum_ugv_controller_core.so" "${pkg_root}"
 copy_path "${PREFIX_ROOT}/lib/libugv_reset_safety_math.so" "${pkg_root}"
 
 mkdir -p "${pkg_root}/DEBIAN" "${pkg_root}/usr/share/doc/${PACKAGE}"

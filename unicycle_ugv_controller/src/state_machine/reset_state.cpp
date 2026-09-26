@@ -1,9 +1,8 @@
 #include "unicycle_ugv_controller/state_machine/reset_state.h"
 
-#include <ros/console.h>
-
 #include <cmath>
 
+#include "unicycle_ugv_controller/common/core_log.h"
 #include "unicycle_ugv_controller/common/types.h"
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
 
@@ -22,7 +21,7 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
         controller_.setResetHoldReason({});
     } else {
         controller_.setResetHoldReason("no target: reset_pose cache and reset_initial_* missing");
-        ROS_ERROR(
+        UGV_LOG_ERROR(
             "[UnicycleUgvController] Reset entered without a valid goal; "
             "holding Reset until timeout/Stop or a cached initialPose");
     }
@@ -51,14 +50,14 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
             controller_.setResetHoldReason({});
         } else {
             emitZero(ctx);
-            ROS_ERROR_THROTTLE(
+            UGV_LOG_ERROR_THROTTLE(
                 1.0,
                 "[UnicycleUgvController] Reset holding with no target (topic=/command "
                 "CONTROL=Reset reject=missing-initialPose)");
             return {};
         }
     }
-    const auto feedback = controller_.resetSession().feedback(ros::Time(now).toNSec(), wall);
+    const auto feedback = controller_.resetSession().feedback(Time(now).toNSec(), wall);
     if (feedback.valid && feedback.status != ugv_reset_safety::ResetSession::RUNNING) {
         emitZero(ctx);
         postDone(ctx, feedback.status == ugv_reset_safety::ResetSession::ARRIVED
@@ -67,7 +66,7 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
         return {};
     }
     ControlCommand command;
-    command.stamp = ros::Time(now);
+    command.stamp = Time(now);
     command.valid = true;
     if (feedback.valid) {
         // Refuse a command outside chassis limits; do not silently saturate.

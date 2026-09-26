@@ -66,20 +66,22 @@ ownership:
   - /opt/ros/melodic/include/unicycle_ugv_controller
   - /opt/ros/melodic/lib/unicycle_reference_trajectory
   - /opt/ros/melodic/lib/unicycle_ugv_controller
-  - /opt/ros/melodic/lib/libunicycle_ugv_controller_nmpc_runtime.so
+  - /opt/ros/melodic/lib/libunicycle_ugv_controller_core.so
   - /opt/ros/noetic/share/unicycle_reference_trajectory
   - /opt/ros/noetic/share/unicycle_ugv_controller
   - /opt/ros/noetic/include/unicycle_reference_trajectory
   - /opt/ros/noetic/include/unicycle_ugv_controller
   - /opt/ros/noetic/lib/unicycle_reference_trajectory
   - /opt/ros/noetic/lib/unicycle_ugv_controller
-  - /opt/ros/noetic/lib/libunicycle_ugv_controller_nmpc_runtime.so
+  - /opt/ros/noetic/lib/libunicycle_ugv_controller_core.so
   - /opt/ros/melodic/share/mecanum_ugv_controller
   - /opt/ros/melodic/include/mecanum_ugv_controller
   - /opt/ros/melodic/lib/mecanum_ugv_controller
+  - /opt/ros/melodic/lib/libmecanum_ugv_controller_core.so
   - /opt/ros/noetic/share/mecanum_ugv_controller
   - /opt/ros/noetic/include/mecanum_ugv_controller
   - /opt/ros/noetic/lib/mecanum_ugv_controller
+  - /opt/ros/noetic/lib/libmecanum_ugv_controller_core.so
   - /opt/ros/melodic/share/ugv_reset_safety
   - /opt/ros/melodic/include/ugv_reset_safety
   - /opt/ros/melodic/lib/ugv_reset_safety

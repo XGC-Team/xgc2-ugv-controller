@@ -15,6 +15,7 @@
 #include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
 #include "unicycle_ugv_controller/common/types.h"
 #include "unicycle_ugv_controller/nmpc/unicycle_nmpc_solver.h"
+#include "unicycle_ugv_controller/ros_reference_conversion.h"
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
 
 namespace unicycle_ugv_controller {
@@ -28,7 +29,7 @@ bool hasOutputEvent(UnicycleUgvController& controller, ::state_machine::EventId 
 
 void setPose(UgvState& state, double t, double x, double y, double yaw) {
     state.received = true;
-    state.stamp = ros::Time(t);
+    state.stamp = Time(t);
     state.x = x;
     state.y = y;
     state.yaw = yaw;
@@ -43,7 +44,7 @@ void postCommand(UnicycleUgvController& controller, ::state_machine::EventId id,
 
 void goReadyEstimator(UnicycleUgvController& controller, UgvState& state, double t) {
     state.received = true;
-    state.stamp = ros::Time(t);
+    state.stamp = Time(t);
     state.estimator_state = rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING;
     state.estimator_flags = 0U;
     controller.update(t);
@@ -70,9 +71,9 @@ void makeCustom1Ready(UnicycleUgvController& controller, UgvState& state) {
     reference.start_time = ros::Time(1.0);
     reference.duration = 10.0;
     reference.origin.orientation.w = 1.0;
-    ASSERT_TRUE(controller.referenceCache().updateAnalytic(reference));
+    ASSERT_TRUE(controller.referenceCache().updateAnalytic(toCoreReference(reference)));
     postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.01);
-    state.stamp = ros::Time(1.01);
+    state.stamp = Time(1.01);
     controller.update(1.01);
     ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Custom1);
 }
@@ -83,7 +84,7 @@ void stepUnicyclePlant(UgvState& state, const ControlCommand& command, double dt
     state.x += v * std::cos(state.yaw) * dt;
     state.y += v * std::sin(state.yaw) * dt;
     state.yaw = wrapAngle(state.yaw + omega * dt);
-    state.stamp = ros::Time(state.stamp.toSec() + dt);
+    state.stamp = Time(state.stamp.toSec() + dt);
 }
 
 TEST(UnicycleSm, StartsInSelfCheckAndPublishesZero) {
@@ -215,7 +216,7 @@ TEST(UnicycleSm, Custom1StopReturnsReady) {
     UnicycleUgvController controller(state);
     makeCustom1Ready(controller, state);
     postCommand(controller, event_type::STOP_REQUESTED, 1.02);
-    state.stamp = ros::Time(1.02);
+    state.stamp = Time(1.02);
     controller.update(1.02);
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
 }
@@ -230,7 +231,7 @@ TEST(UnicycleSm, Custom1CanReset) {
     goal.valid = true;
     controller.setResetTarget(goal);
     postCommand(controller, event_type::RESET_REQUESTED, 1.02);
-    state.stamp = ros::Time(1.02);
+    state.stamp = Time(1.02);
     controller.update(1.02);
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
 }
@@ -360,7 +361,7 @@ TEST(UnicycleSm, FlatnessRetainsCommandWhenClockDoesNotAdvance) {
     setPose(state, 1.02, 0.0, 0.0, 0.0);
     controller.update(1.02);
     WorldPvaReference reference;
-    reference.stamp = ros::Time(1.02);
+    reference.stamp = Time(1.02);
     reference.x = 0.1;
     reference.vx = 0.3;
     reference.valid = true;
@@ -482,7 +483,7 @@ TEST(UnicycleSm, RepeatedNmpcFailuresKeepIdlePublicationCadence) {
     int failure_count = 0;
     for (int tick = 0; tick < 1000; ++tick) {
         const double now = 1.012 + tick * 0.002;
-        state.stamp = ros::Time(now);
+        state.stamp = Time(now);
         if (pending_sequence != 0U) {
             ::state_machine::Event failure(event_type::INPUT_NMPC_SOLVE_FAILED,
                                            ::state_machine::EventTimestamp{now});
@@ -508,7 +509,7 @@ TEST(UnicycleSm, RepeatedNmpcFailuresKeepIdlePublicationCadence) {
 TEST(UnicycleLaw, PvaDoesNotValidateAlgorithmTimestamp) {
     WorldPvaReference reference;
     reference.valid = true;
-    reference.stamp = ros::Time(1.1);
+    reference.stamp = Time(1.1);
     reference.x = 2.0;
     reference.vx = 0.5;
     ASSERT_TRUE(worldPvaReady(reference));
@@ -517,7 +518,7 @@ TEST(UnicycleLaw, PvaDoesNotValidateAlgorithmTimestamp) {
     EXPECT_DOUBLE_EQ(held.x, reference.x);
     EXPECT_DOUBLE_EQ(held.vx, reference.vx);
 
-    reference.stamp = ros::Time(1001.0);
+    reference.stamp = Time(1001.0);
     EXPECT_TRUE(worldPvaReady(reference));
     EXPECT_TRUE(liftWorldPva(reference, 1.0).valid);
 }
@@ -529,10 +530,10 @@ TEST(UnicycleUgvControllerRuntime, ProductHealthTimeoutIsHalfSecond) {
 TEST(UnicycleUgvControllerRuntime, StateFreshRejectsExcessivelyFutureStamp) {
     UgvState state;
     state.received = true;
-    state.stamp = ros::Time(1.04);
-    EXPECT_TRUE(stateFresh(state, ros::Time(1.0), 0.2));
-    state.stamp = ros::Time(1.051);
-    EXPECT_FALSE(stateFresh(state, ros::Time(1.0), 0.2));
+    state.stamp = Time(1.04);
+    EXPECT_TRUE(stateFresh(state, Time(1.0), 0.2));
+    state.stamp = Time(1.051);
+    EXPECT_FALSE(stateFresh(state, Time(1.0), 0.2));
 }
 
 TEST(UnicycleUgvControllerRuntime, VrpnQuaternionValidationRejectsZeroAndNonFiniteValues) {
@@ -574,9 +575,9 @@ TEST(UnicycleUgvControllerRuntime, AutoStartCustom1WhenStateAndReferenceAreReady
     reference.start_time = ros::Time(1.0);
     reference.duration = 10.0;
     reference.origin.orientation.w = 1.0;
-    ASSERT_TRUE(controller.referenceCache().updateAnalytic(reference));
+    ASSERT_TRUE(controller.referenceCache().updateAnalytic(toCoreReference(reference)));
     state.received = true;
-    state.stamp = ros::Time(1.0);
+    state.stamp = Time(1.0);
     state.estimator_state = rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING;
     controller.update(1.0);
     controller.update(1.01);
@@ -593,7 +594,7 @@ TEST(UnicycleUgvControllerRuntime, TransientNmpcFailureKeepsFreshCommand) {
     controller.setConfig(config);
     makeCustom1Ready(controller, state);
     ControlCommand command;
-    command.stamp = ros::Time(1.02);
+    command.stamp = Time(1.02);
     command.linear_speed = 0.8;
     command.angular_speed = -0.2;
     command.valid = true;
@@ -618,7 +619,7 @@ TEST(UnicycleUgvControllerRuntime, SustainedNmpcFailureInvalidatesStaleCommandAn
     controller.setConfig(config);
     makeCustom1Ready(controller, state);
     ControlCommand command;
-    command.stamp = ros::Time(1.02);
+    command.stamp = Time(1.02);
     command.linear_speed = 0.8;
     command.angular_speed = -0.2;
     command.valid = true;
@@ -646,9 +647,9 @@ TEST(UnicycleUgvControllerRuntime, SampledNmpcHorizonKeepsYawContinuousAcrossPi)
     reference.duration = 30.0;
     reference.origin.orientation.w = 1.0;
     reference.params = {3.0, 1.0, 0.0, 0.0, 0.0};
-    ASSERT_TRUE(cache.updateAnalytic(reference));
+    ASSERT_TRUE(cache.updateAnalytic(toCoreReference(reference)));
     std::vector<xgc2_math::control::Se2Reference> refs;
-    ASSERT_TRUE(cache.sampleHorizon(ros::Time(4.5), 0.1, 10, refs));
+    ASSERT_TRUE(cache.sampleHorizon(Time(4.5), 0.1, 10, refs));
     ASSERT_EQ(refs.size(), 11U);
     for (size_t i = 1; i < refs.size(); ++i) {
         EXPECT_LT(std::abs(refs[i].state.yaw - refs[i - 1].state.yaw), 0.1);
@@ -677,9 +678,9 @@ TEST(UnicycleUgvControllerRuntime, ExplicitSampledPlanarKinematicsPreservesRever
         point.vy = 0.0;
         reference.points.push_back(point);
     }
-    ASSERT_TRUE(cache.updateSampled(reference));
+    ASSERT_TRUE(cache.updateSampled(toCoreReference(reference)));
     std::vector<xgc2_math::control::Se2Reference> refs;
-    ASSERT_TRUE(cache.sampleHorizon(ros::Time(1.0), 0.25, 4, refs));
+    ASSERT_TRUE(cache.sampleHorizon(Time(1.0), 0.25, 4, refs));
     ASSERT_EQ(refs.size(), 5U);
     for (const auto& ref : refs) {
         EXPECT_NEAR(ref.state.yaw, 0.0, 1.0e-12);

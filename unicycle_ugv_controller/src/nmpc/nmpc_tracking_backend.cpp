@@ -1,10 +1,9 @@
 #include "unicycle_ugv_controller/nmpc/nmpc_tracking_backend.h"
 
-#include <ros/console.h>
-
 #include <cmath>
 #include <limits>
 
+#include "unicycle_ugv_controller/common/core_log.h"
 #include "unicycle_ugv_controller/common/types.h"
 
 namespace unicycle_ugv_controller {
@@ -67,7 +66,7 @@ void NmpcTrackingBackend::exit() {
 }
 
 bool NmpcTrackingBackend::compute(const UgvState& state, const std::vector<Se2Reference>& refs,
-                                  const ros::Time& now, ControlCommand& command) {
+                                  const Time& now, ControlCommand& command) {
     if (!entered_ && !enter()) {
         status_ = -100;
         return false;
@@ -89,7 +88,7 @@ bool NmpcTrackingBackend::compute(const UgvState& state, const std::vector<Se2Re
                                     initial_yaw_rate_error)) {
         status_ = -102;
         solver_.resetWarmStart();
-        ROS_ERROR_THROTTLE(
+        UGV_LOG_ERROR_THROTTLE(
             1.0,
             "[UgvNmpcBackend] Reject NMPC solution because stage-0 equality constraint "
             "is not satisfied: pos=%.9f yaw=%.9f speed=%.9f yaw_rate=%.9f",

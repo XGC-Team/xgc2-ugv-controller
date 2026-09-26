@@ -1,11 +1,10 @@
 #pragma once
 
-#include <geometry_msgs/Twist.h>
-#include <ros/time.h>
-
 #include <cstdint>
 #include <limits>
 #include <state_machine/state_machine.hpp>
+
+#include "mecanum_ugv_controller/common/time.h"
 
 namespace mecanum_ugv_controller {
 
@@ -31,7 +30,7 @@ struct ControllerConfig {
 };
 
 struct UgvState {
-    ros::Time stamp;
+    Time stamp;
     double x{0.0};
     double y{0.0};
     double yaw{0.0};
@@ -39,7 +38,7 @@ struct UgvState {
 };
 
 struct ControlCommand {
-    ros::Time stamp;
+    Time stamp;
     double linear_x{0.0};
     double linear_y{0.0};
     double angular_z{0.0};
@@ -54,7 +53,7 @@ struct ResetTarget {
 };
 
 struct WorldVelocityReference {
-    ros::Time stamp;
+    Time stamp;
     double vx{0.0};
     double vy{0.0};
     bool valid{false};
@@ -106,7 +105,7 @@ double wrapAngle(double value);
 double yawFromQuaternion(double x, double y, double z, double w);
 bool tryYawFromQuaternion(double x, double y, double z, double w, double& yaw);
 bool finitePose(const UgvState& state);
-bool stateFresh(const UgvState& state, const ros::Time& now, double timeout);
+bool stateFresh(const UgvState& state, const Time& now, double timeout);
 bool insideFence(const UgvState& state, const ControllerConfig& config);
 double clamp(double value, double min_value, double max_value);
 void worldVelocityToBody(double yaw, double v_wx, double v_wy, double& v_bx, double& v_by);
