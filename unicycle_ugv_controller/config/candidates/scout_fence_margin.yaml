@@ -1,0 +1,8 @@
+# Optional geometric proposal for a venue that can contain this complete box.
+# Never loaded by the default Scout launch. Session controlBounds remain authoritative.
+# A 0.5 m geometric margin is not a stopping-distance certificate.
+fence:
+  x_max: 12.5
+  x_min: -12.5
+  y_max: 7.5
+  y_min: -7.5

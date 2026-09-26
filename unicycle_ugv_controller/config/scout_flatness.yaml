@@ -9,15 +9,11 @@ chassis:
 cmd_vel_topic: cmd_vel
 command_publish_rate_hz: 30.0
 control_rate_hz: 500.0
-# Both Scout planner scenes use x=[-12,12], y=[-7,7]. Reserve 0.5 m
-# per face for tracking/localization excursions before the controller stops.
-# Deployment requires venue approval: this is not a stopping-distance proof,
-# and the expanded control box must still lie inside the physical safe area.
 fence:
-  x_max: 12.5
-  x_min: -12.5
-  y_max: 7.5
-  y_min: -7.5
+  x_max: 12.0
+  x_min: -12.0
+  y_max: 7.0
+  y_min: -7.0
 filter:
   dt_max: 0.2
   dt_min: 0.0001
