@@ -52,6 +52,18 @@ if(CATKIN_ENABLE_TESTING)
       ${catkin_LIBRARIES}
       gtest_main)
   endif()
+  # Deterministic closed-loop replay of the controller core (test/replay/): the
+  # refactor gate. Two builds are compared with `cmp` on its output.
+  add_executable(mecanum_ugv_controller_replay
+    test/replay/mecanum_replay.cpp
+    src/common_types.cpp
+    src/mecanum_ugv_controller.cpp
+    src/state_machine/states.cpp)
+  add_dependencies(mecanum_ugv_controller_replay ${catkin_EXPORTED_TARGETS})
+  target_link_libraries(mecanum_ugv_controller_replay
+    xgc2_state_machine::state_machine
+    xgc2_math::algebra
+    ${catkin_LIBRARIES})
   find_package(rostest QUIET)
   if(rostest_FOUND)
     add_rostest_gtest(mecanum_ugv_ros_sandbox_test
