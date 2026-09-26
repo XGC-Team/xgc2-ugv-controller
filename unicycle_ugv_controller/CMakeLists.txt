@@ -148,6 +148,7 @@ set_target_properties(unicycle_ugv_controller_nmpc_generated PROPERTIES POSITION
 
 add_library(unicycle_ugv_controller_nmpc_runtime
   src/common_types.cpp
+  src/core_log.cpp
   src/nmpc/unicycle_nmpc_solver.cpp
   src/nmpc/nmpc_tracking_backend.cpp)
 add_dependencies(unicycle_ugv_controller_nmpc_runtime unicycle_ugv_controller_nmpc_generated ${catkin_EXPORTED_TARGETS})
@@ -162,6 +163,7 @@ target_link_libraries(unicycle_ugv_controller_nmpc_runtime
 
 add_executable(${PROJECT_NAME}_node
   src/main.cpp
+  src/ros_log_sink.cpp
   src/reference_cache.cpp
   src/unicycle_ugv_controller.cpp
   src/unicycle_ugv_ros_node.cpp

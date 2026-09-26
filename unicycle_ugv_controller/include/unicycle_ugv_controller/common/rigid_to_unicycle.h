@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstdint>
 
+#include "unicycle_ugv_controller/common/rigid_estimate_health.h"
+
 namespace unicycle_ugv_controller {
 namespace rigid_to_unicycle_detail {
 
@@ -40,9 +42,11 @@ inline UnicycleProjection projectRigidToUnicycle(
     return out;
 }
 
-inline bool rigidEstimateHealthy(uint8_t estimator_state, uint32_t flags) {
-    return estimator_state == rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING &&
-           (flags & rigid_state_estimator_msgs::RigidStateEstimate::FLAG_FAULT) == 0U;
-}
+static_assert(kRigidEstimatorStateRunning ==
+                  rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING,
+              "core estimator state value differs from the message");
+static_assert(kRigidEstimatorFlagFault ==
+                  rigid_state_estimator_msgs::RigidStateEstimate::FLAG_FAULT,
+              "core estimator fault flag differs from the message");
 
 }  // namespace unicycle_ugv_controller
