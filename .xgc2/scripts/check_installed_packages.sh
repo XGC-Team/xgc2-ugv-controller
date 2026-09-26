@@ -40,7 +40,8 @@ test -f "/opt/ros/${ROS_DISTRO}/share/unicycle_ugv_controller/config/unicycle_ug
 test -f "/opt/ros/${ROS_DISTRO}/share/unicycle_ugv_controller/launch/ugv_unicycle_nmpc_controller.launch"
 test -f "/opt/ros/${ROS_DISTRO}/include/unicycle_ugv_controller/unicycle_ugv_controller.h"
 test -x "/opt/ros/${ROS_DISTRO}/lib/unicycle_ugv_controller/unicycle_ugv_controller_node"
-test -f "/opt/ros/${ROS_DISTRO}/lib/libunicycle_ugv_controller_nmpc_runtime.so"
+test -f "/opt/ros/${ROS_DISTRO}/lib/libunicycle_ugv_controller_core.so"
+test -f "/opt/ros/${ROS_DISTRO}/lib/libmecanum_ugv_controller_core.so"
 test -f "/opt/ros/${ROS_DISTRO}/share/mecanum_ugv_controller/config/mecanum_ugv_controller.yaml"
 test -f "/opt/ros/${ROS_DISTRO}/share/mecanum_ugv_controller/launch/ugv_mecanum_reset_controller.launch"
 test -x "/opt/ros/${ROS_DISTRO}/lib/mecanum_ugv_controller/mecanum_ugv_controller_node"
@@ -62,7 +63,8 @@ done < <(find "/opt/ros/${ROS_DISTRO}/lib/unicycle_ugv_controller" \
   "/opt/ros/${ROS_DISTRO}/lib/mecanum_ugv_controller" \
   "/opt/ros/${ROS_DISTRO}/lib/ugv_reset_safety" \
   "/opt/ros/${ROS_DISTRO}/lib/libugv_reset_safety_math.so" \
-  "/opt/ros/${ROS_DISTRO}/lib/libunicycle_ugv_controller_nmpc_runtime.so" -type f 2>/dev/null | sort -u)
+  "/opt/ros/${ROS_DISTRO}/lib/libunicycle_ugv_controller_core.so" \
+  "/opt/ros/${ROS_DISTRO}/lib/libmecanum_ugv_controller_core.so" -type f 2>/dev/null | sort -u)
 
 test -x "/opt/ros/${ROS_DISTRO}/lib/ugv_reset_safety/ugv_reset_coordinator_node"
 rosmsg show ugv_reset_safety/ResetRequest | grep -q "^uint32 generation$"
