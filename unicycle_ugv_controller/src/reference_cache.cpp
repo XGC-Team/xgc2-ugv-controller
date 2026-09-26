@@ -1,12 +1,9 @@
 #include "unicycle_ugv_controller/common/reference_cache.h"
 
-#include <geometry_msgs/Quaternion.h>
-
 #include <algorithm>
 #include <cmath>
 
 #include "unicycle_ugv_controller/common/types.h"
-#include "unicycle_ugv_controller/ros_time_conversion.h"
 
 namespace unicycle_ugv_controller {
 namespace {
@@ -14,14 +11,13 @@ namespace {
 namespace control = xgc2_math::control;
 namespace trajectory = xgc2_math::trajectory;
 
-double paramAt(const unicycle_reference_trajectory_msgs::AnalyticReference& msg, size_t index,
-               double fallback) {
+double paramAt(const reference::AnalyticReference& msg, size_t index, double fallback) {
     return msg.params.size() > index && std::isfinite(msg.params[index]) ? msg.params[index]
                                                                          : fallback;
 }
 
 std::unique_ptr<trajectory::TrajectoryEvaluator2> buildAnalytic(
-    const unicycle_reference_trajectory_msgs::AnalyticReference& msg, uint32_t& flags) {
+    const reference::AnalyticReference& msg, uint32_t& flags) {
     flags = msg.flags;
     const double duration = msg.duration > 0.0 ? msg.duration : 60.0;
     const Eigen::Vector2d origin(msg.origin.position.x, msg.origin.position.y);
@@ -36,7 +32,7 @@ std::unique_ptr<trajectory::TrajectoryEvaluator2> buildAnalytic(
 
     std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator;
     switch (msg.analytic_type) {
-        case unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_HOLD: {
+        case reference::AnalyticReference::ANALYTIC_HOLD: {
             trajectory::HoldCurveParameters2 params;
             params.flags = msg.flags;
             params.duration = duration;
@@ -45,7 +41,7 @@ std::unique_ptr<trajectory::TrajectoryEvaluator2> buildAnalytic(
             evaluator = std::make_unique<trajectory::HoldCurveEvaluator2>(params);
             break;
         }
-        case unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_CIRCLE: {
+        case reference::AnalyticReference::ANALYTIC_CIRCLE: {
             trajectory::CircleCurveParameters2 params;
             params.flags = msg.flags;
             params.duration = duration;
@@ -55,7 +51,7 @@ std::unique_ptr<trajectory::TrajectoryEvaluator2> buildAnalytic(
             evaluator = std::make_unique<trajectory::CircleCurveEvaluator2>(params);
             break;
         }
-        case unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_FIGURE_EIGHT: {
+        case reference::AnalyticReference::ANALYTIC_FIGURE_EIGHT: {
             trajectory::FigureEightCurveParameters2 params;
             params.flags = msg.flags;
             params.duration = duration;
@@ -65,7 +61,7 @@ std::unique_ptr<trajectory::TrajectoryEvaluator2> buildAnalytic(
             evaluator = std::make_unique<trajectory::FigureEightCurveEvaluator2>(params);
             break;
         }
-        case unicycle_reference_trajectory_msgs::AnalyticReference::ANALYTIC_CIRCLE_ENTRY:
+        case reference::AnalyticReference::ANALYTIC_CIRCLE_ENTRY:
         default: {
             trajectory::CircleEntryCurveParameters2 params;
             params.flags = msg.flags;
@@ -93,7 +89,7 @@ std::unique_ptr<trajectory::TrajectoryEvaluator2> buildAnalytic(
                : nullptr;
 }
 
-bool fillPolynomial(const unicycle_reference_trajectory_msgs::ActivePolynomialReference& msg,
+bool fillPolynomial(const reference::ActivePolynomialReference& msg,
                     trajectory::PiecewisePolynomialEvaluator2& evaluator, uint32_t& flags) {
     flags = msg.flags;
     const size_t coeff_count = static_cast<size_t>(msg.order) + 1U;
@@ -130,8 +126,8 @@ bool fillPolynomial(const unicycle_reference_trajectory_msgs::ActivePolynomialRe
     return (flags & (trajectory::kFlagInvalidInput | trajectory::kFlagNonFinite)) == 0U;
 }
 
-bool fillSampled(const unicycle_reference_trajectory_msgs::SampledReference& msg,
-                 trajectory::SampledEvaluator2& evaluator, uint32_t& flags) {
+bool fillSampled(const reference::SampledReference& msg, trajectory::SampledEvaluator2& evaluator,
+                 uint32_t& flags) {
     flags = msg.flags;
     std::vector<trajectory::SampledPoint2> samples;
     samples.reserve(msg.points.size());
@@ -151,9 +147,7 @@ bool fillSampled(const unicycle_reference_trajectory_msgs::SampledReference& msg
         samples.push_back(sample);
     }
     const bool preserve_explicit_planar_kinematics =
-        (msg.flags &
-         unicycle_reference_trajectory_msgs::SampledReference::FLAG_EXPLICIT_PLANAR_KINEMATICS) !=
-        0U;
+        (msg.flags & reference::SampledReference::FLAG_EXPLICIT_PLANAR_KINEMATICS) != 0U;
     if (!evaluator.setSamples(std::move(samples), preserve_explicit_planar_kinematics)) {
         flags |= trajectory::kFlagInvalidInput;
         return false;
@@ -179,8 +173,7 @@ control::Se2Reference toSample(const trajectory::PlanarReference2& ref) {
 
 }  // namespace
 
-bool ReferenceCache::updateAnalytic(
-    const unicycle_reference_trajectory_msgs::AnalyticReference& msg) {
+bool ReferenceCache::updateAnalytic(const reference::AnalyticReference& msg) {
     uint32_t flags = 0U;
     auto evaluator = buildAnalytic(msg, flags);
     if (!evaluator) {
@@ -188,15 +181,14 @@ bool ReferenceCache::updateAnalytic(
     }
     std::lock_guard<std::mutex> lock(mutex_);
     evaluator_ = std::shared_ptr<const trajectory::TrajectoryEvaluator2>(std::move(evaluator));
-    start_time_ = toCoreTime(msg.start_time);
+    start_time_ = msg.start_time;
     trajectory_id_ = msg.trajectory_id;
     revision_ = msg.revision;
     flags_ = flags;
     return true;
 }
 
-bool ReferenceCache::updatePolynomial(
-    const unicycle_reference_trajectory_msgs::ActivePolynomialReference& msg) {
+bool ReferenceCache::updatePolynomial(const reference::ActivePolynomialReference& msg) {
     auto evaluator = std::make_unique<trajectory::PiecewisePolynomialEvaluator2>();
     uint32_t flags = 0U;
     if (!fillPolynomial(msg, *evaluator, flags)) {
@@ -204,15 +196,14 @@ bool ReferenceCache::updatePolynomial(
     }
     std::lock_guard<std::mutex> lock(mutex_);
     evaluator_ = std::shared_ptr<const trajectory::TrajectoryEvaluator2>(std::move(evaluator));
-    start_time_ = toCoreTime(msg.start_time);
+    start_time_ = msg.start_time;
     trajectory_id_ = msg.trajectory_id;
     revision_ = msg.revision;
     flags_ = flags;
     return true;
 }
 
-bool ReferenceCache::updateSampled(
-    const unicycle_reference_trajectory_msgs::SampledReference& msg) {
+bool ReferenceCache::updateSampled(const reference::SampledReference& msg) {
     auto evaluator = std::make_unique<trajectory::SampledEvaluator2>();
     uint32_t flags = 0U;
     if (!fillSampled(msg, *evaluator, flags)) {
@@ -220,7 +211,7 @@ bool ReferenceCache::updateSampled(
     }
     std::lock_guard<std::mutex> lock(mutex_);
     evaluator_ = std::shared_ptr<const trajectory::TrajectoryEvaluator2>(std::move(evaluator));
-    start_time_ = toCoreTime(msg.start_time);
+    start_time_ = msg.start_time;
     trajectory_id_ = msg.trajectory_id;
     revision_ = msg.revision;
     flags_ = flags;

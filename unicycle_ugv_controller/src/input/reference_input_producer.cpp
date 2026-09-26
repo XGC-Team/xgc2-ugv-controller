@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "unicycle_ugv_controller/common/types.h"
+#include "unicycle_ugv_controller/ros_reference_conversion.h"
 
 namespace unicycle_ugv_controller {
 
@@ -22,7 +23,7 @@ ReferenceInputProducer::ReferenceInputProducer(ros::NodeHandle& nh, ReferenceCac
 
 void ReferenceInputProducer::analyticCallback(
     const unicycle_reference_trajectory_msgs::AnalyticReference::ConstPtr& msg) {
-    if (!msg || !cache_.updateAnalytic(*msg)) {
+    if (!msg || !cache_.updateAnalytic(toCoreReference(*msg))) {
         ROS_WARN_THROTTLE(1.0, "[UgvReferenceInputProducer] Rejected active analytic reference");
         return;
     }
@@ -31,7 +32,7 @@ void ReferenceInputProducer::analyticCallback(
 
 void ReferenceInputProducer::polynomialCallback(
     const unicycle_reference_trajectory_msgs::ActivePolynomialReference::ConstPtr& msg) {
-    if (!msg || !cache_.updatePolynomial(*msg)) {
+    if (!msg || !cache_.updatePolynomial(toCoreReference(*msg))) {
         ROS_WARN_THROTTLE(1.0, "[UgvReferenceInputProducer] Rejected active polynomial reference");
         return;
     }
@@ -40,7 +41,7 @@ void ReferenceInputProducer::polynomialCallback(
 
 void ReferenceInputProducer::sampledCallback(
     const unicycle_reference_trajectory_msgs::SampledReference::ConstPtr& msg) {
-    if (!msg || !cache_.updateSampled(*msg)) {
+    if (!msg || !cache_.updateSampled(toCoreReference(*msg))) {
         ROS_WARN_THROTTLE(1.0, "[UgvReferenceInputProducer] Rejected active sampled reference");
         return;
     }

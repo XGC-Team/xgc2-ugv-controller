@@ -15,6 +15,7 @@
 #include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
 #include "unicycle_ugv_controller/common/types.h"
 #include "unicycle_ugv_controller/nmpc/unicycle_nmpc_solver.h"
+#include "unicycle_ugv_controller/ros_reference_conversion.h"
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
 
 namespace unicycle_ugv_controller {
@@ -70,7 +71,7 @@ void makeCustom1Ready(UnicycleUgvController& controller, UgvState& state) {
     reference.start_time = ros::Time(1.0);
     reference.duration = 10.0;
     reference.origin.orientation.w = 1.0;
-    ASSERT_TRUE(controller.referenceCache().updateAnalytic(reference));
+    ASSERT_TRUE(controller.referenceCache().updateAnalytic(toCoreReference(reference)));
     postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.01);
     state.stamp = Time(1.01);
     controller.update(1.01);
@@ -574,7 +575,7 @@ TEST(UnicycleUgvControllerRuntime, AutoStartCustom1WhenStateAndReferenceAreReady
     reference.start_time = ros::Time(1.0);
     reference.duration = 10.0;
     reference.origin.orientation.w = 1.0;
-    ASSERT_TRUE(controller.referenceCache().updateAnalytic(reference));
+    ASSERT_TRUE(controller.referenceCache().updateAnalytic(toCoreReference(reference)));
     state.received = true;
     state.stamp = Time(1.0);
     state.estimator_state = rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING;
@@ -646,7 +647,7 @@ TEST(UnicycleUgvControllerRuntime, SampledNmpcHorizonKeepsYawContinuousAcrossPi)
     reference.duration = 30.0;
     reference.origin.orientation.w = 1.0;
     reference.params = {3.0, 1.0, 0.0, 0.0, 0.0};
-    ASSERT_TRUE(cache.updateAnalytic(reference));
+    ASSERT_TRUE(cache.updateAnalytic(toCoreReference(reference)));
     std::vector<xgc2_math::control::Se2Reference> refs;
     ASSERT_TRUE(cache.sampleHorizon(Time(4.5), 0.1, 10, refs));
     ASSERT_EQ(refs.size(), 11U);
@@ -677,7 +678,7 @@ TEST(UnicycleUgvControllerRuntime, ExplicitSampledPlanarKinematicsPreservesRever
         point.vy = 0.0;
         reference.points.push_back(point);
     }
-    ASSERT_TRUE(cache.updateSampled(reference));
+    ASSERT_TRUE(cache.updateSampled(toCoreReference(reference)));
     std::vector<xgc2_math::control::Se2Reference> refs;
     ASSERT_TRUE(cache.sampleHorizon(Time(1.0), 0.25, 4, refs));
     ASSERT_EQ(refs.size(), 5U);

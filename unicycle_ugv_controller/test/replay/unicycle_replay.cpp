@@ -27,9 +27,6 @@
 // Usage: unicycle_replay OUT.txt
 
 #include <ros/time.h>
-#include <unicycle_reference_trajectory_msgs/ActivePolynomialReference.h>
-#include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
-#include <unicycle_reference_trajectory_msgs/SampledReference.h>
 
 #include <cinttypes>
 #include <cmath>
@@ -39,6 +36,7 @@
 #include <utility>
 #include <vector>
 
+#include "unicycle_ugv_controller/common/reference_types.h"
 #include "unicycle_ugv_controller/common/types.h"
 #include "unicycle_ugv_controller/nmpc/nmpc_tracking_backend.h"
 #include "unicycle_ugv_controller/nmpc/unicycle_nmpc_solver.h"
@@ -47,7 +45,7 @@
 namespace unicycle_ugv_controller {
 namespace {
 
-namespace refmsg = unicycle_reference_trajectory_msgs;
+namespace refmsg = reference;
 
 constexpr double kDt = 0.002;             // 500 Hz control rate
 constexpr uint8_t kEstimatorRunning = 3;  // RigidStateEstimate::STATE_RUNNING
@@ -64,12 +62,9 @@ void d(double v) {
     std::fprintf(out, " %016" PRIx64, bits(v));
 }
 
-// Stamps from harness seconds: the core's own, and a reference message's.
+// The core's stamp, from harness seconds.
 Time stampAt(double t) {
     return Time(t);
-}
-ros::Time msgStampAt(double t) {
-    return ros::Time(t);
 }
 
 struct Plant {
@@ -281,7 +276,7 @@ refmsg::AnalyticReference analytic(uint16_t type, double start, double duration,
     msg.trajectory_id = 7U;
     msg.revision = 1U;
     msg.analytic_type = type;
-    msg.start_time = msgStampAt(start);
+    msg.start_time = stampAt(start);
     msg.duration = duration;
     msg.origin.orientation.w = 1.0;
     msg.params = std::move(params);
@@ -325,7 +320,7 @@ void runSampled() {
     msg.trajectory_id = 9U;
     msg.revision = 2U;
     msg.flags = refmsg::SampledReference::FLAG_EXPLICIT_PLANAR_KINEMATICS;
-    msg.start_time = msgStampAt(30.004);
+    msg.start_time = stampAt(30.004);
     msg.sample_dt = 0.05;
     // A constant-curvature arc: speed 0.5 m/s, yaw rate 0.25 rad/s.
     const double v = 0.5, w = 0.25;
@@ -361,7 +356,7 @@ void runPolynomialPose() {
     refmsg::ActivePolynomialReference msg;
     msg.trajectory_id = 11U;
     msg.revision = 1U;
-    msg.start_time = msgStampAt(40.004);
+    msg.start_time = stampAt(40.004);
     msg.order = 3U;
     msg.segment_durations = {4.0, 4.0};
     msg.duration = 8.0;
