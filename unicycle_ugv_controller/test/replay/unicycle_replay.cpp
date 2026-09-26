@@ -64,8 +64,11 @@ void d(double v) {
     std::fprintf(out, " %016" PRIx64, bits(v));
 }
 
-// The stamp type of the core, from harness seconds.
-ros::Time stampAt(double t) {
+// Stamps from harness seconds: the core's own, and a reference message's.
+Time stampAt(double t) {
+    return Time(t);
+}
+ros::Time msgStampAt(double t) {
     return ros::Time(t);
 }
 
@@ -192,7 +195,7 @@ class Run {
     void solve(const ::state_machine::Event& request) {
         const ControllerConfig config = controller_.config();
         const double t = request.timestamp > 0.0 ? request.timestamp : t_;
-        const ros::Time now = stampAt(t);
+        const Time now = stampAt(t);
         const UgvState state = controller_.state();
         const double stage_dt =
             config.prediction_horizon / static_cast<double>(UnicycleNmpcSolver::horizonSteps());
@@ -278,7 +281,7 @@ refmsg::AnalyticReference analytic(uint16_t type, double start, double duration,
     msg.trajectory_id = 7U;
     msg.revision = 1U;
     msg.analytic_type = type;
-    msg.start_time = stampAt(start);
+    msg.start_time = msgStampAt(start);
     msg.duration = duration;
     msg.origin.orientation.w = 1.0;
     msg.params = std::move(params);
@@ -322,7 +325,7 @@ void runSampled() {
     msg.trajectory_id = 9U;
     msg.revision = 2U;
     msg.flags = refmsg::SampledReference::FLAG_EXPLICIT_PLANAR_KINEMATICS;
-    msg.start_time = stampAt(30.004);
+    msg.start_time = msgStampAt(30.004);
     msg.sample_dt = 0.05;
     // A constant-curvature arc: speed 0.5 m/s, yaw rate 0.25 rad/s.
     const double v = 0.5, w = 0.25;
@@ -358,7 +361,7 @@ void runPolynomialPose() {
     refmsg::ActivePolynomialReference msg;
     msg.trajectory_id = 11U;
     msg.revision = 1U;
-    msg.start_time = stampAt(40.004);
+    msg.start_time = msgStampAt(40.004);
     msg.order = 3U;
     msg.segment_durations = {4.0, 4.0};
     msg.duration = 8.0;

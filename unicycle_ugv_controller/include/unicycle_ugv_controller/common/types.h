@@ -1,7 +1,6 @@
 #pragma once
 
 #include <geometry_msgs/Twist.h>
-#include <ros/time.h>
 
 #include <Eigen/Dense>
 #include <cstdint>
@@ -9,6 +8,7 @@
 #include <state_machine/state_machine.hpp>
 
 #include "unicycle_ugv_controller/common/heading_recovery.h"
+#include "unicycle_ugv_controller/common/time.h"
 
 namespace unicycle_ugv_controller {
 
@@ -91,7 +91,7 @@ struct ControllerConfig {
 };
 
 struct UgvState {
-    ros::Time stamp;
+    Time stamp;
     double x{0.0};
     double y{0.0};
     double yaw{0.0};
@@ -106,7 +106,7 @@ struct UgvState {
 };
 
 struct ControlCommand {
-    ros::Time stamp;
+    Time stamp;
     double linear_speed{0.0};
     double angular_speed{0.0};
     bool valid{false};
@@ -120,7 +120,7 @@ struct ResetTarget {
 };
 
 struct WorldPvaReference {
-    ros::Time stamp;
+    Time stamp;
     double x{0.0};
     double y{0.0};
     double yaw{0.0};
@@ -159,7 +159,7 @@ struct PoseVelocityEstimator {
 
 struct NmpcSolveResult {
     uint64_t sequence{0U};
-    ros::Time stamp;
+    Time stamp;
     bool success{false};
     int solver_status{-1};
     double solve_time_ms{0.0};
@@ -213,7 +213,7 @@ double yawFromQuaternion(double x, double y, double z, double w);
 bool tryYawFromQuaternion(double x, double y, double z, double w, double& yaw);
 bool finitePose(const UgvState& state);
 bool finiteState(const UgvState& state);
-bool stateFresh(const UgvState& state, const ros::Time& now, double timeout);
+bool stateFresh(const UgvState& state, const Time& now, double timeout);
 bool insideFence(const UgvState& state, const ControllerConfig& config);
 double clamp(double value, double min_value, double max_value);
 void boxSaturateUnicycle(double& linear_speed, double& angular_speed, double max_linear_speed,

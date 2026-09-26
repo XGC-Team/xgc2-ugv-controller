@@ -32,7 +32,7 @@ class NmpcOutputConsumer final : public ::state_machine::runtime::EventConsumer 
    private:
     struct Request {
         uint64_t sequence{0U};
-        ros::Time now;
+        Time now;
         UgvState state;
         std::vector<Se2Reference> references;
         ControllerConfig config;

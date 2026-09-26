@@ -61,7 +61,7 @@ Custom1State::Custom1State(UnicycleUgvController& controller) : controller_(cont
                 const double age = controller_.currentTime() - *stamp;
                 if (age >= -0.05 && age <= cfg.result_timeout) {
                     ControlCommand command;
-                    command.stamp = ros::Time(*stamp);
+                    command.stamp = Time(*stamp);
                     command.linear_speed = *speed;
                     command.angular_speed = *yaw_rate;
                     command.valid = true;
@@ -124,7 +124,7 @@ void Custom1State::tickFlatness(::state_machine::StateContext& ctx) {
     }
     body_speed_ = output.linear_speed;
     ControlCommand command;
-    command.stamp = ros::Time(now);
+    command.stamp = Time(now);
     command.linear_speed = output.linear_speed;
     command.angular_speed = output.angular_speed;
     command.valid = true;

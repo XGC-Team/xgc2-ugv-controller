@@ -58,7 +58,7 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
             return {};
         }
     }
-    const auto feedback = controller_.resetSession().feedback(ros::Time(now).toNSec(), wall);
+    const auto feedback = controller_.resetSession().feedback(Time(now).toNSec(), wall);
     if (feedback.valid && feedback.status != ugv_reset_safety::ResetSession::RUNNING) {
         emitZero(ctx);
         postDone(ctx, feedback.status == ugv_reset_safety::ResetSession::ARRIVED
@@ -67,7 +67,7 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
         return {};
     }
     ControlCommand command;
-    command.stamp = ros::Time(now);
+    command.stamp = Time(now);
     command.valid = true;
     if (feedback.valid) {
         // Refuse a command outside chassis limits; do not silently saturate.

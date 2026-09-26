@@ -93,7 +93,7 @@ bool finiteState(const UgvState& state) {
     return finitePose(state) && std::isfinite(state.speed) && std::isfinite(state.yaw_rate);
 }
 
-bool stateFresh(const UgvState& state, const ros::Time& now, double timeout) {
+bool stateFresh(const UgvState& state, const Time& now, double timeout) {
     constexpr double kFutureStampTolerance = 0.05;
     const double age = (now - state.stamp).toSec();
     return state.received && finitePose(state) && timeout > 0.0 && std::isfinite(age) &&

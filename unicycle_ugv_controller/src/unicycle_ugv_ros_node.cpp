@@ -9,6 +9,7 @@
 #include "unicycle_ugv_controller/common/heading_recovery_ros.h"
 #include "unicycle_ugv_controller/output/cmd_vel_output_consumer.h"
 #include "unicycle_ugv_controller/output/nmpc_output_consumer.h"
+#include "unicycle_ugv_controller/ros_time_conversion.h"
 
 namespace unicycle_ugv_controller {
 namespace {
@@ -256,7 +257,8 @@ void UnicycleUgvRosNode::updateOnce() {
         ROS_ERROR("[UnicycleUgvRosNode] %s", last_logged_reset_miss_.c_str());
     }
     dispatchOutputEvents(controller_.stateMachine().currentOutputEvents());
-    reset_client_.update({state_.x, state_.y, state_.yaw}, state_.stamp, controller_.healthReady());
+    reset_client_.update({state_.x, state_.y, state_.yaw}, toRosTime(state_.stamp),
+                         controller_.healthReady());
     const auto control_state = controller_.stateMachine().currentState(region_type::CONTROL);
     const auto health_state = controller_.stateMachine().currentState(region_type::HEALTH);
     logStateChanges(control_state, health_state);

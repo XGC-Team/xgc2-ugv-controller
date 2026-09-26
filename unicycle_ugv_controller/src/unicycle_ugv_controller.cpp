@@ -107,7 +107,7 @@ void UnicycleUgvController::setConfig(const ControllerConfig& config) {
 
 bool UnicycleUgvController::healthReady() const {
     const auto cfg = config();
-    if (!stateFresh(state_, ros::Time(current_time_sec_), cfg.state_timeout) ||
+    if (!stateFresh(state_, Time(current_time_sec_), cfg.state_timeout) ||
         !insideFence(state_, cfg)) {
         return false;
     }

@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "unicycle_ugv_controller/common/types.h"
+#include "unicycle_ugv_controller/ros_time_conversion.h"
 
 namespace unicycle_ugv_controller {
 
@@ -23,7 +24,7 @@ void PvaReferenceInputProducer::callback(
         return;
     }
     WorldPvaReference reference;
-    reference.stamp = ros::Time::now();
+    reference.stamp = toCoreTime(ros::Time::now());
     reference.x = msg->x;
     reference.y = msg->y;
     reference.yaw = std::isfinite(msg->yaw) ? wrapAngle(msg->yaw) : 0.0;
@@ -33,7 +34,7 @@ void PvaReferenceInputProducer::callback(
     reference.ay = msg->ay;
     reference.valid = true;
     controller_.setWorldPva(reference);
-    post(event_type::INPUT_REFERENCE_UPDATED, "reference_pva", reference.stamp);
+    post(event_type::INPUT_REFERENCE_UPDATED, "reference_pva", toRosTime(reference.stamp));
 }
 
 void PvaReferenceInputProducer::post(::state_machine::EventId id, const char* source,

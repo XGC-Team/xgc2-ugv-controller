@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include "unicycle_ugv_controller/common/types.h"
+#include "unicycle_ugv_controller/ros_time_conversion.h"
 
 namespace unicycle_ugv_controller {
 namespace {
@@ -187,7 +188,7 @@ bool ReferenceCache::updateAnalytic(
     }
     std::lock_guard<std::mutex> lock(mutex_);
     evaluator_ = std::shared_ptr<const trajectory::TrajectoryEvaluator2>(std::move(evaluator));
-    start_time_ = msg.start_time;
+    start_time_ = toCoreTime(msg.start_time);
     trajectory_id_ = msg.trajectory_id;
     revision_ = msg.revision;
     flags_ = flags;
@@ -203,7 +204,7 @@ bool ReferenceCache::updatePolynomial(
     }
     std::lock_guard<std::mutex> lock(mutex_);
     evaluator_ = std::shared_ptr<const trajectory::TrajectoryEvaluator2>(std::move(evaluator));
-    start_time_ = msg.start_time;
+    start_time_ = toCoreTime(msg.start_time);
     trajectory_id_ = msg.trajectory_id;
     revision_ = msg.revision;
     flags_ = flags;
@@ -219,7 +220,7 @@ bool ReferenceCache::updateSampled(
     }
     std::lock_guard<std::mutex> lock(mutex_);
     evaluator_ = std::shared_ptr<const trajectory::TrajectoryEvaluator2>(std::move(evaluator));
-    start_time_ = msg.start_time;
+    start_time_ = toCoreTime(msg.start_time);
     trajectory_id_ = msg.trajectory_id;
     revision_ = msg.revision;
     flags_ = flags;
@@ -229,7 +230,7 @@ bool ReferenceCache::updateSampled(
 void ReferenceCache::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     evaluator_.reset();
-    start_time_ = ros::Time{};
+    start_time_ = Time{};
     trajectory_id_ = 0U;
     revision_ = 0U;
     flags_ = 0U;
@@ -248,13 +249,13 @@ bool ReferenceCache::valid() const {
     return activeLocked();
 }
 
-bool ReferenceCache::sampleHorizon(const ros::Time& now, double stage_dt, int horizon_steps,
+bool ReferenceCache::sampleHorizon(const Time& now, double stage_dt, int horizon_steps,
                                    std::vector<control::Se2Reference>& refs) const {
     if (horizon_steps <= 0 || !std::isfinite(stage_dt) || stage_dt <= 0.0) {
         return false;
     }
     std::shared_ptr<const trajectory::TrajectoryEvaluator2> evaluator;
-    ros::Time start_time;
+    Time start_time;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!activeLocked()) {

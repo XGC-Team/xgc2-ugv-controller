@@ -67,7 +67,7 @@ void NmpcTrackingBackend::exit() {
 }
 
 bool NmpcTrackingBackend::compute(const UgvState& state, const std::vector<Se2Reference>& refs,
-                                  const ros::Time& now, ControlCommand& command) {
+                                  const Time& now, ControlCommand& command) {
     if (!entered_ && !enter()) {
         status_ = -100;
         return false;
