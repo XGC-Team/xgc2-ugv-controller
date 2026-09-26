@@ -242,6 +242,24 @@ if(CATKIN_ENABLE_TESTING)
       ${catkin_LIBRARIES}
       gtest_main)
   endif()
+  # Deterministic closed-loop replay of the controller core (test/replay/): the
+  # refactor gate. Two builds are compared with `cmp` on its output.
+  add_executable(unicycle_ugv_controller_replay
+    test/replay/unicycle_replay.cpp
+    src/reference_cache.cpp
+    src/unicycle_ugv_controller.cpp
+    src/state_machine/health_monitor_state.cpp
+    src/state_machine/self_check_state.cpp
+    src/state_machine/ready_state.cpp
+    src/state_machine/reset_state.cpp
+    src/state_machine/custom1_state.cpp)
+  add_dependencies(unicycle_ugv_controller_replay ${catkin_EXPORTED_TARGETS})
+  target_link_libraries(unicycle_ugv_controller_replay
+    unicycle_ugv_controller_nmpc_runtime
+    xgc2_state_machine::state_machine
+    xgc2_math::control
+    xgc2_math::trajectory
+    ${catkin_LIBRARIES})
   find_package(rostest QUIET)
   if(rostest_FOUND)
     add_rostest_gtest(unicycle_ugv_public_command_reset_test
