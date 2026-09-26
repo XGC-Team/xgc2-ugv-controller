@@ -118,7 +118,7 @@ endif()
 
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES unicycle_ugv_controller_nmpc_runtime
+  LIBRARIES unicycle_ugv_controller_core
   CATKIN_DEPENDS geometry_msgs nav_msgs rigid_state_estimator_msgs roscpp ros1_utils std_msgs ugv_reset_safety
                  unicycle_reference_trajectory_msgs
   CFG_EXTRAS unicycle_ugv_controller-dependencies.cmake
@@ -146,26 +146,57 @@ target_include_directories(unicycle_ugv_controller_nmpc_generated PUBLIC
 target_link_libraries(unicycle_ugv_controller_nmpc_generated ${UGV_ACADOS_LIBRARIES} m)
 set_target_properties(unicycle_ugv_controller_nmpc_generated PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-add_library(unicycle_ugv_controller_nmpc_runtime
+# ROS-free controller core: the controller, its state machine states, the
+# reference cache, the NMPC solver and tracking backend, the flatness law and
+# the core log. It takes plain types and explicit time; ROS stays in the node
+# (input producers, output consumers, rosconsole sink).
+#
+# The directory-level include path (catkin, which puts the ROS headers on it)
+# is reset to the core's real dependencies: this package's headers, the
+# generated NMPC code, acados, Eigen and the header-only ugv_reset_safety
+# session. It links no ROS library and is linked with -Wl,--no-undefined, so a
+# ROS symbol reaching the core fails the link.
+find_path(UGV_RESET_SAFETY_CORE_INCLUDE_DIR ugv_reset_safety/reset_session.h
+  PATHS ${catkin_INCLUDE_DIRS} NO_DEFAULT_PATH)
+if(NOT UGV_RESET_SAFETY_CORE_INCLUDE_DIR)
+  message(FATAL_ERROR "ugv_reset_safety/reset_session.h not found")
+endif()
+
+add_library(unicycle_ugv_controller_core
   src/common_types.cpp
   src/core_log.cpp
   src/nmpc/unicycle_nmpc_solver.cpp
-  src/nmpc/nmpc_tracking_backend.cpp)
-add_dependencies(unicycle_ugv_controller_nmpc_runtime unicycle_ugv_controller_nmpc_generated ${catkin_EXPORTED_TARGETS})
-target_link_libraries(unicycle_ugv_controller_nmpc_runtime
+  src/nmpc/nmpc_tracking_backend.cpp
+  src/reference_cache.cpp
+  src/unicycle_ugv_controller.cpp
+  src/state_machine/health_monitor_state.cpp
+  src/state_machine/self_check_state.cpp
+  src/state_machine/ready_state.cpp
+  src/state_machine/reset_state.cpp
+  src/state_machine/custom1_state.cpp)
+set_property(TARGET unicycle_ugv_controller_core PROPERTY INCLUDE_DIRECTORIES "")
+target_include_directories(unicycle_ugv_controller_core PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${UGV_NMPC_GENERATED_DIR}
+  ${UGV_ACADOS_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
+  ${UGV_RESET_SAFETY_CORE_INCLUDE_DIR})
+add_dependencies(unicycle_ugv_controller_core unicycle_ugv_controller_nmpc_generated)
+target_link_libraries(unicycle_ugv_controller_core
   unicycle_ugv_controller_nmpc_generated
   xgc2_math::control
-  ${catkin_LIBRARIES}
+  xgc2_math::trajectory
+  xgc2_state_machine::state_machine
   "-Wl,--no-as-needed"
   ${UGV_ACADOS_LIBRARIES}
   "-Wl,--as-needed"
-  m)
+  m
+  pthread)
+set_property(TARGET unicycle_ugv_controller_core APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--no-undefined")
 
 add_executable(${PROJECT_NAME}_node
   src/main.cpp
   src/ros_log_sink.cpp
-  src/reference_cache.cpp
-  src/unicycle_ugv_controller.cpp
   src/unicycle_ugv_ros_node.cpp
   src/input/command_input_producer.cpp
   src/input/pva_reference_input_producer.cpp
@@ -173,24 +204,16 @@ add_executable(${PROJECT_NAME}_node
   src/input/reset_target_input_producer.cpp
   src/input/state_input_producer.cpp
   src/output/cmd_vel_output_consumer.cpp
-  src/output/nmpc_output_consumer.cpp
-  src/state_machine/health_monitor_state.cpp
-  src/state_machine/self_check_state.cpp
-  src/state_machine/ready_state.cpp
-  src/state_machine/reset_state.cpp
-  src/state_machine/custom1_state.cpp)
+  src/output/nmpc_output_consumer.cpp)
 add_dependencies(${PROJECT_NAME}_node
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS})
 target_link_libraries(${PROJECT_NAME}_node
-  unicycle_ugv_controller_nmpc_runtime
-  xgc2_state_machine::state_machine
-  xgc2_math::control
-  xgc2_math::trajectory
+  unicycle_ugv_controller_core
   ${catkin_LIBRARIES}
   pthread)
 
-install(TARGETS unicycle_ugv_controller_nmpc_runtime ${PROJECT_NAME}_node
+install(TARGETS unicycle_ugv_controller_core ${PROJECT_NAME}_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
@@ -216,7 +239,7 @@ if(CATKIN_ENABLE_TESTING)
   catkin_add_gtest(heading_recovery_runtime_test test/heading_recovery_runtime_test.cpp)
   if(TARGET heading_recovery_runtime_test)
     target_link_libraries(heading_recovery_runtime_test
-      unicycle_ugv_controller_nmpc_runtime ${catkin_LIBRARIES} gtest_main)
+      unicycle_ugv_controller_core ${catkin_LIBRARIES} gtest_main)
   endif()
   # Diagnostic replay uses the production law; no second controller formula.
   add_executable(flatness_reference_replay tools/flatness_reference_replay.cpp)
@@ -225,43 +248,23 @@ if(CATKIN_ENABLE_TESTING)
       $<TARGET_FILE:flatness_reference_replay>)
   add_dependencies(flatness_reference_replay ${catkin_EXPORTED_TARGETS})
   target_link_libraries(flatness_reference_replay
-    unicycle_ugv_controller_nmpc_runtime ${catkin_LIBRARIES})
+    unicycle_ugv_controller_core ${catkin_LIBRARIES})
   catkin_add_gtest(unicycle_ugv_controller_runtime_test
-    test/unicycle_ugv_controller_runtime_test.cpp
-    src/reference_cache.cpp
-    src/unicycle_ugv_controller.cpp
-    src/state_machine/health_monitor_state.cpp
-    src/state_machine/self_check_state.cpp
-    src/state_machine/ready_state.cpp
-    src/state_machine/reset_state.cpp
-    src/state_machine/custom1_state.cpp)
+    test/unicycle_ugv_controller_runtime_test.cpp)
   if(TARGET unicycle_ugv_controller_runtime_test)
     target_link_libraries(unicycle_ugv_controller_runtime_test
-      unicycle_ugv_controller_nmpc_runtime
-      xgc2_state_machine::state_machine
-      xgc2_math::control
-      xgc2_math::trajectory
+      unicycle_ugv_controller_core
       ${catkin_LIBRARIES}
       gtest_main)
   endif()
   # Deterministic closed-loop replay of the controller core (test/replay/): the
-  # refactor gate. Two builds are compared with `cmp` on its output.
-  add_executable(unicycle_ugv_controller_replay
-    test/replay/unicycle_replay.cpp
-    src/reference_cache.cpp
-    src/unicycle_ugv_controller.cpp
-    src/state_machine/health_monitor_state.cpp
-    src/state_machine/self_check_state.cpp
-    src/state_machine/ready_state.cpp
-    src/state_machine/reset_state.cpp
-    src/state_machine/custom1_state.cpp)
-  add_dependencies(unicycle_ugv_controller_replay ${catkin_EXPORTED_TARGETS})
-  target_link_libraries(unicycle_ugv_controller_replay
-    unicycle_ugv_controller_nmpc_runtime
-    xgc2_state_machine::state_machine
-    xgc2_math::control
-    xgc2_math::trajectory
-    ${catkin_LIBRARIES})
+  # refactor gate. Two builds are compared with `cmp` on its output. It has no
+  # ROS on its include path or link line, so it also keeps the core usable
+  # without ROS.
+  add_executable(unicycle_ugv_controller_replay test/replay/unicycle_replay.cpp)
+  set_property(TARGET unicycle_ugv_controller_replay PROPERTY INCLUDE_DIRECTORIES "")
+  target_link_libraries(unicycle_ugv_controller_replay unicycle_ugv_controller_core)
+  set_property(TARGET unicycle_ugv_controller_replay APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--no-undefined")
   find_package(rostest QUIET)
   if(rostest_FOUND)
     add_rostest_gtest(unicycle_ugv_public_command_reset_test

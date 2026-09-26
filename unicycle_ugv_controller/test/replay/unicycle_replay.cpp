@@ -26,8 +26,6 @@
 //
 // Usage: unicycle_replay OUT.txt
 
-#include <ros/time.h>
-
 #include <cinttypes>
 #include <cmath>
 #include <cstdio>
@@ -426,7 +424,6 @@ int main(int argc, char** argv) {
     out = std::fopen(argv[1], "w");
     if (!out)
         return 2;
-    ros::Time::init();  // simulated time: the harness sets every stamp
     runAnalyticCircle();
     runFigureEightStopRestart();
     runSampled();
