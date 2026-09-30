@@ -7,7 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(catkin REQUIRED COMPONENTS geometry_msgs roscpp std_msgs ugv_reset_safety)
 find_package(xgc2_state_machine REQUIRED CONFIG)
-find_package(xgc2_math REQUIRED CONFIG)
+find_package(xgc2_math 0.5.12 REQUIRED CONFIG)
 
 catkin_package(
   INCLUDE_DIRS include

@@ -17,7 +17,7 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(Eigen3 REQUIRED)
 find_package(xgc2_acados REQUIRED CONFIG)
 find_package(xgc2_state_machine REQUIRED CONFIG)
-find_package(xgc2_math REQUIRED CONFIG)
+find_package(xgc2_math 0.5.12 REQUIRED CONFIG)
 
 if(COMMAND xgc2_acados_require)
   xgc2_acados_require()

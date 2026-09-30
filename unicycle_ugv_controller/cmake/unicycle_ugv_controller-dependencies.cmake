@@ -2,7 +2,7 @@ include(CMakeFindDependencyMacro)
 
 find_dependency(Eigen3 CONFIG)
 find_dependency(xgc2_acados CONFIG)
-find_dependency(xgc2_math CONFIG)
+find_dependency(xgc2_math 0.5.12 CONFIG)
 find_dependency(xgc2_state_machine CONFIG)
 
 list(APPEND unicycle_ugv_controller_INCLUDE_DIRS
