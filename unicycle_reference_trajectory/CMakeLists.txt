@@ -49,22 +49,11 @@ target_link_libraries(unicycle_reference_trajectory_node
   pthread
 )
 
-add_executable(unicycle_target_replanner_node
-  src/target_replanner_main.cpp
-  src/target_replanner_node.cpp
-)
-add_dependencies(unicycle_target_replanner_node ${${PROJECT_NAME}_EXPORTED_TARGETS}
-                                                ${catkin_EXPORTED_TARGETS})
-target_link_libraries(unicycle_target_replanner_node
-  xgc2_math::trajectory
-  ${catkin_LIBRARIES}
-)
-
 install(DIRECTORY include/${PROJECT_NAME}/
   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
 )
 
-install(TARGETS unicycle_reference_trajectory_node unicycle_target_replanner_node
+install(TARGETS unicycle_reference_trajectory_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

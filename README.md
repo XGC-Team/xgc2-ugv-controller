@@ -36,22 +36,7 @@ roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch
 roslaunch --files mecanum_ugv_controller ugv_mecanum_reset_controller.launch
 ```
 
-## Shuttle rail (no U-turn)
-
-`unicycle_target_replanner` can hold a fixed `X` and shuttle along `Y`.
-Rail heading is the nearer of `+Y` / `-Y` to the current body yaw. Body
-speed is `vy * sin(yaw)`, so a nose already on `-Y` goes forward toward
-`-Y` instead of spinning 180° onto `+Y`. Off-rail poses within
-`shuttle_capture_radius` (default 30 m of the finite rail segment) get a
-geometric SE2 plan onto a rail entry pose if MINCO fails. Reverse Y-legs
-are published only after the robot is on the rail (X and a rail-axis yaw).
-Poses farther than the capture radius are refused.
-
-```bash
-roslaunch unicycle_reference_trajectory ugv_unicycle_target_replanner.launch \
-  ns:=ugv1 \
-  config_file:=$(rospack find unicycle_reference_trajectory)/config/unicycle_shuttle.yaml
-```
+## NMPC tracking
 
 The runtime model keeps yaw rate as a state and commands angular acceleration:
 
@@ -86,3 +71,8 @@ The controller supports two configured state providers:
 `unicycle_ugv_controller.yaml` selects estimator-backed NMPC.
 `unicycle_nmpc_active.yaml` additionally enables automatic tracking for the
 corresponding process definition. Each chassis controller owns its `cmd_vel`.
+
+The old target/shuttle replanner is retired. Analytic and sampled references,
+fixed-time seventh-order waypoint interpolation, UGV polynomial and PVA
+inputs, NMPC/flatness tracking, Reset and DWA remain available. The waypoint
+producer and consumer require the 1.4 message contract and a coordinated rebuild.

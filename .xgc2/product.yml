@@ -1,7 +1,7 @@
 schema: xgc2.product.v1
 id: xgc2-ugv-controller
 name: XGC2 UGV Controller
-version: 1.3.0-22
+version: 1.3.0-23
 kind: ros1-apt
 summary: ROS1 unicycle NMPC, planar reference trajectory, and reusable Mecanum
   chassis controller (health, Reset, first-order Custom1) for XGC2 robots.
@@ -35,14 +35,14 @@ apt:
   - ros-melodic-xgc2-geometry-msgs (>= 1.2.0-1)
   - ros-noetic-xgc2-geometry-msgs (>= 1.2.0-1)
   - libxgc2-state-machine-dev (>= 0.1.3-4~focal)
-  - libxgc2-math-dev (>= 0.5.6-18~focal)
+  - libxgc2-math-dev (>= 0.5.12-1~)
   - xgc2-acados (>= 0.1.0-10~focal)
   - ros-melodic-xgc2-ros1-utils (>= 1.1.1-3)
   - ros-noetic-xgc2-ros1-utils (>= 1.1.1-3)
   - ros-melodic-xgc2-estimator-rigid-state-msgs (>= 1.2.0-3)
   - ros-noetic-xgc2-estimator-rigid-state-msgs (>= 1.2.0-3)
-  - ros-melodic-xgc2-unicycle-reference-trajectory-msgs (>= 1.3.0-17)
-  - ros-noetic-xgc2-unicycle-reference-trajectory-msgs (>= 1.3.0-17)
+  - ros-melodic-xgc2-unicycle-reference-trajectory-msgs (>= 1.4.0-1)
+  - ros-noetic-xgc2-unicycle-reference-trajectory-msgs (>= 1.4.0-1)
 usage:
   install: 'sudo apt update
 
@@ -103,5 +103,5 @@ release:
     xgc2-scene-generation: rebuild
     xgc2-ros1-utils: rebuild
   apt_versions:
-    bionic: 1.3.0-22
-    focal: 1.3.0-22
+    bionic: 1.3.0-23
+    focal: 1.3.0-23

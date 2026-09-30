@@ -62,20 +62,6 @@ double paramAt(const unicycle_reference_trajectory_msgs::AnalyticReference& msg,
                                                                          : fallback;
 }
 
-trajectory::WaypointConstraintType2 constraintType(uint8_t value) {
-    switch (value) {
-        case unicycle_reference_trajectory_msgs::WaypointReferenceRequest::CONSTRAINT_SPHERE:
-            return trajectory::WaypointConstraintType2::kSphere;
-        case unicycle_reference_trajectory_msgs::WaypointReferenceRequest::CONSTRAINT_BOX:
-            return trajectory::WaypointConstraintType2::kBox;
-        case unicycle_reference_trajectory_msgs::WaypointReferenceRequest::CONSTRAINT_GATE:
-            return trajectory::WaypointConstraintType2::kGate;
-        case unicycle_reference_trajectory_msgs::WaypointReferenceRequest::CONSTRAINT_POINT:
-        default:
-            return trajectory::WaypointConstraintType2::kPoint;
-    }
-}
-
 void appendCoefficients(const std::vector<double>& input, std::vector<double>& output) {
     output.insert(output.end(), input.begin(), input.end());
 }
@@ -226,7 +212,7 @@ bool ReferenceTrajectoryRuntime::planPendingWaypoint() {
     }
 
     auto evaluator = std::make_unique<trajectory::PiecewisePolynomialEvaluator2>();
-    trajectory::MincoWaypointSolver2 solver;
+    trajectory::SepticWaypointInterpolator2 solver;
     if (!solver.solve(problem, *evaluator, &flags)) {
         flags_ |= flags;
         pending_kind_ = PendingKind::kNone;
@@ -501,20 +487,11 @@ bool ReferenceTrajectoryRuntime::buildWaypointProblem(
     problem.end_velocity = vectorToEigen(msg.end_velocity);
     problem.end_acceleration = vectorToEigen(msg.end_acceleration);
     problem.desired_speed = msg.desired_speed > 0.0 ? msg.desired_speed : 1.0;
-    problem.time_weight = msg.time_weight > 0.0 ? msg.time_weight : 1.0;
-    problem.max_iterations = msg.max_iterations > 0U ? static_cast<int>(msg.max_iterations) : 80;
-    problem.rel_cost_tol = msg.rel_cost_tol > 0.0 ? msg.rel_cost_tol : 1.0e-5;
-    problem.dynamic_penalty_weight = 1000.0;
     problem.limits.max_velocity = msg.max_velocity;
     problem.limits.max_acceleration =
         msg.max_linear_acceleration > 0.0 ? msg.max_linear_acceleration : msg.max_acceleration;
     problem.limits.max_yaw_rate = msg.max_yaw_rate;
     problem.validation_sample_dt = config_.validation_sample_dt;
-    if ((!msg.constraint_types.empty() && msg.constraint_types.size() != msg.waypoints.size()) ||
-        (!msg.region_size.empty() && msg.region_size.size() != msg.waypoints.size())) {
-        flags |= trajectory::kFlagInvalidInput;
-        return false;
-    }
     problem.constraints.reserve(msg.waypoints.size());
     for (size_t i = 0; i < msg.waypoints.size(); ++i) {
         trajectory::WaypointConstraint2 constraint;
@@ -522,11 +499,6 @@ bool ReferenceTrajectoryRuntime::buildWaypointProblem(
         constraint.yaw = yawFromQuaternion(msg.waypoints[i].orientation);
         if (!problem.constraints.empty()) {
             constraint.yaw = unwrapYaw(constraint.yaw, problem.constraints.back().yaw);
-        }
-        constraint.type = msg.constraint_types.empty() ? trajectory::WaypointConstraintType2::kPoint
-                                                       : constraintType(msg.constraint_types[i]);
-        if (!msg.region_size.empty()) {
-            constraint.size = vectorToEigen(msg.region_size[i]);
         }
         problem.constraints.push_back(std::move(constraint));
     }
