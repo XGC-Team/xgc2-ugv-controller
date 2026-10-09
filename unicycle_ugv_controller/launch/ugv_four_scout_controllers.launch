@@ -1,23 +1,16 @@
-<?xml version="1.0"?>
+<?xml version='1.0' encoding='utf-8'?>
 <launch>
-    <arg name="ugv1_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml"/>
-    <arg name="ugv2_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml"/>
-    <arg name="ugv3_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml"/>
-    <arg name="ugv4_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml"/>
-    <include file="$(find unicycle_ugv_controller)/launch/ugv_unicycle_nmpc_controller.launch">
-        <arg name="ns" value="ugv1"/>
-        <arg name="config_file" value="$(arg ugv1_config_file)"/>
-    </include>
-    <include file="$(find unicycle_ugv_controller)/launch/ugv_unicycle_nmpc_controller.launch">
-        <arg name="ns" value="ugv2"/>
-        <arg name="config_file" value="$(arg ugv2_config_file)"/>
-    </include>
-    <include file="$(find unicycle_ugv_controller)/launch/ugv_unicycle_nmpc_controller.launch">
-        <arg name="ns" value="ugv3"/>
-        <arg name="config_file" value="$(arg ugv3_config_file)"/>
-    </include>
-    <include file="$(find unicycle_ugv_controller)/launch/ugv_unicycle_nmpc_controller.launch">
-        <arg name="ns" value="ugv4"/>
-        <arg name="config_file" value="$(arg ugv4_config_file)"/>
+    <arg name="ugv1_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml" />
+    <arg name="ugv2_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml" />
+    <arg name="ugv3_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml" />
+    <arg name="ugv4_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml" />
+    <arg name="bootstrap_input" />
+    <rosparam command="load" file="$(arg ugv1_config_file)" ns="/ugv1/unicycle_ugv_controller" />
+    <rosparam command="load" file="$(arg ugv2_config_file)" ns="/ugv2/unicycle_ugv_controller" />
+    <rosparam command="load" file="$(arg ugv3_config_file)" ns="/ugv3/unicycle_ugv_controller" />
+    <rosparam command="load" file="$(arg ugv4_config_file)" ns="/ugv4/unicycle_ugv_controller" />
+    <include file="$(find ugv_fleet_host)/launch/ugv_fleet_host.launch">
+        <arg name="fleet_config" value="$(find ugv_reset_safety)/config/four_scout.yaml" />
+        <arg name="bootstrap_input" value="$(arg bootstrap_input)" />
     </include>
 </launch>

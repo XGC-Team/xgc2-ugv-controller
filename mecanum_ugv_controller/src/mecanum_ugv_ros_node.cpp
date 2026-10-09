@@ -2,9 +2,9 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
 #include <geometry_msgs/TwistStamped.h>
+#include <mecanum_ugv_controller/mecanum_ugv_ros_node.h>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_safety/reset_client.h>
 
 #include <algorithm>
 #include <cctype>
@@ -48,13 +48,10 @@ std::string normalize(std::string value) {
 
 }  // namespace
 
-class MecanumUgvRosNode {
+class MecanumUgvRosNode : public ugv_reset_safety::FleetEdge {
    public:
-    explicit MecanumUgvRosNode(ros::NodeHandle& nh)
-        : nh_(nh),
-          private_nh_("~"),
-          controller_(state_),
-          reset_client_(nh_, controller_.resetSession()) {
+    MecanumUgvRosNode(ros::NodeHandle& nh, ros::NodeHandle private_nh)
+        : nh_(nh), private_nh_(std::move(private_nh)), controller_(state_) {
         loadParams();
         controller_.setConfig(config_);
         seedResetTarget();
@@ -74,41 +71,72 @@ class MecanumUgvRosNode {
                  cmd_vel_topic_.c_str(), config_.control_rate_hz);
     }
 
-    void run() {
-        ros::WallRate rate(finitePositiveOr(config_.control_rate_hz, 500.0));
-        while (ros::ok()) {
-            ros::spinOnce();
-            const double now = ros::Time::now().toSec();
-            controller_.update(now);
-            if (!controller_.lastResetAdmissionMiss().empty() &&
-                controller_.lastResetAdmissionMiss() != last_logged_reset_miss_) {
-                last_logged_reset_miss_ = controller_.lastResetAdmissionMiss();
-                ROS_ERROR("[MecanumUgvRosNode] %s", last_logged_reset_miss_.c_str());
-            }
-            for (const auto& event : controller_.stateMachine().currentOutputEvents()) {
-                if (event.id == output_event_type::PUBLISH_CMD_VEL) {
-                    const auto command = makeTwist(controller_.command());
-                    cmd_vel_pub_.publish(command);
-                    controller_.resetSession().noteApplied(
-                        {command.linear.x, command.linear.y, command.angular.z},
-                        ros::Time::now().toNSec());
-                } else if (event.id == output_event_type::PUBLISH_ZERO_CMD_VEL) {
-                    cmd_vel_pub_.publish(geometry_msgs::Twist{});
-                    controller_.resetSession().noteApplied({}, ros::Time::now().toNSec());
-                }
-            }
-            reset_client_.update({state_.x, state_.y, state_.yaw}, toRosTime(state_.stamp),
-                                 controller_.healthReady());
-            if (status_gate_.due(now, 1.0 / config_.status_publish_rate_hz)) {
-                std_msgs::String status;
-                status.data = controller_.stateMachine().currentStateName(region_type::CONTROL);
-                if (status.data.empty()) {
-                    status.data = "Unknown";
-                }
-                control_state_pub_.publish(status);
-            }
-            rate.sleep();
+    void updateOnce() override {
+        const double now = ros::Time::now().toSec();
+        controller_.update(now);
+        if (!controller_.lastResetAdmissionMiss().empty() &&
+            controller_.lastResetAdmissionMiss() != last_logged_reset_miss_) {
+            last_logged_reset_miss_ = controller_.lastResetAdmissionMiss();
+            ROS_ERROR("[MecanumUgvRosNode] %s", last_logged_reset_miss_.c_str());
         }
+        for (const auto& event : controller_.stateMachine().currentOutputEvents()) {
+            if (event.id == output_event_type::PUBLISH_CMD_VEL) {
+                const auto command = makeTwist(controller_.command());
+                cmd_vel_pub_.publish(command);
+                controller_.resetSession().noteApplied(
+                    {command.linear.x, command.linear.y, command.angular.z},
+                    ros::Time::now().toNSec());
+            } else if (event.id == output_event_type::PUBLISH_ZERO_CMD_VEL) {
+                cmd_vel_pub_.publish(geometry_msgs::Twist{});
+                controller_.resetSession().noteApplied({}, ros::Time::now().toNSec());
+            }
+        }
+        if (status_gate_.due(now, 1.0 / config_.status_publish_rate_hz)) {
+            std_msgs::String status;
+            status.data = controller_.stateMachine().currentStateName(region_type::CONTROL);
+            if (status.data.empty()) {
+                status.data = "Unknown";
+            }
+            control_state_pub_.publish(status);
+        }
+    }
+    double controlRate() const override {
+        return config_.control_rate_hz;
+    }
+    ugv_reset_safety::ResetSession& resetSession() override {
+        return controller_.resetSession();
+    }
+    ugv_reset_safety::scene_model::PoseSample poseSample() const override {
+        ugv_reset_safety::scene_model::PoseSample result;
+        result.header.stamp.nanoseconds = state_.stamp.toNSec();
+        result.pose.position = {state_.x, state_.y, 0};
+        result.pose.orientation = {0, 0, std::sin(state_.yaw / 2), std::cos(state_.yaw / 2)};
+        return result;
+    }
+    std::string controlState() const override {
+        return const_cast<MecanumUgvController&>(controller_)
+            .stateMachine()
+            .currentStateName(region_type::CONTROL);
+    }
+    bool healthReady() const override {
+        return controller_.healthReady();
+    }
+    bool reset() override {
+        ::state_machine::Event event(event_type::RESET_REQUESTED,
+                                     ::state_machine::EventTimestamp{ros::Time::now().toSec()});
+        event.source = "xrpc.reset.reset";
+        event.category = ::state_machine::EventCategory::kInput;
+        return controller_.postEvent(std::move(event)).ok();
+    }
+    bool stop() override {
+        ::state_machine::Event event(event_type::STOP_REQUESTED,
+                                     ::state_machine::EventTimestamp{ros::Time::now().toSec()});
+        event.source = "xrpc.reset.stop";
+        event.category = ::state_machine::EventCategory::kInput;
+        return controller_.postEvent(std::move(event)).ok();
+    }
+    bool admissionRejected() const override {
+        return !controller_.lastResetAdmissionMiss().empty();
     }
 
    private:
@@ -296,7 +324,6 @@ class MecanumUgvRosNode {
     ros::NodeHandle private_nh_;
     UgvState state_;
     MecanumUgvController controller_;
-    ugv_reset_safety::ResetClient reset_client_;
     ControllerConfig config_{};
     uint32_t queue_size_{10U};
     std::string pose_topic_{"pose"};
@@ -315,14 +342,9 @@ class MecanumUgvRosNode {
     PeriodicGate status_gate_{};
 };
 
-}  // namespace mecanum_ugv_controller
-
-int main(int argc, char** argv) {
-    ros::init(argc, argv, "mecanum_ugv_controller");
-    // The controller core logs through common/core_log.h; send it to rosconsole.
-    mecanum_ugv_controller::setLogSink(&mecanum_ugv_controller::rosLogSink);
-    ros::NodeHandle nh;
-    mecanum_ugv_controller::MecanumUgvRosNode node(nh);
-    node.run();
-    return 0;
+std::unique_ptr<ugv_reset_safety::FleetEdge> createFleetEdge(ros::NodeHandle& nh,
+                                                             ros::NodeHandle private_nh) {
+    setLogSink(&rosLogSink);
+    return std::make_unique<MecanumUgvRosNode>(nh, std::move(private_nh));
 }
+}  // namespace mecanum_ugv_controller

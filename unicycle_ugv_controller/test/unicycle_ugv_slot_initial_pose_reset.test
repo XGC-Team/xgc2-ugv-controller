@@ -1,9 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<launch>
-    <param name="/use_sim_time" value="false" />
-    <include file="$(find unicycle_ugv_controller)/launch/ugv_unicycle_nmpc_controller.launch">
-        <arg name="ns" value="ugv_test" />
-        <arg name="config_file" value="$(find unicycle_ugv_controller)/config/launch/unicycle_ugv_slot_initial_pose_reset_unicycle_ugv_controller.yaml" />
-    </include>
-    <test test-name="unicycle_ugv_slot_initial_pose_reset_test" pkg="unicycle_ugv_controller" type="unicycle_ugv_slot_initial_pose_reset_test" time-limit="30.0" />
-</launch>

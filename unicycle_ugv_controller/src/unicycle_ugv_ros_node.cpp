@@ -10,6 +10,7 @@
 #include "unicycle_ugv_controller/output/cmd_vel_output_consumer.h"
 #include "unicycle_ugv_controller/output/nmpc_output_consumer.h"
 #include "unicycle_ugv_controller/ros_time_conversion.h"
+#include "unicycle_ugv_controller/unicycle_fleet_edge.h"
 
 namespace unicycle_ugv_controller {
 namespace {
@@ -22,12 +23,9 @@ double finitePositiveOr(double value, double fallback) {
 
 }  // namespace
 
-UnicycleUgvRosNode::UnicycleUgvRosNode(ros::NodeHandle& nh)
-    : nh_(nh),
-      private_nh_("~"),
-      controller_(state_),
-      reset_client_(nh_, controller_.resetSession()),
-      output_executor_(nh_) {
+UnicycleUgvRosNode::UnicycleUgvRosNode(ros::NodeHandle& nh, ros::NodeHandle private_nh,
+                                       ugv_reset_safety::FixedExecutor& executor, std::size_t slot)
+    : nh_(nh), private_nh_(std::move(private_nh)), controller_(state_) {
     loadParams();
     controller_.setConfig(config_);
     seedResetTarget();
@@ -36,11 +34,11 @@ UnicycleUgvRosNode::UnicycleUgvRosNode(ros::NodeHandle& nh)
         return controller_.postEvent(std::move(event));
     };
 
-    output_dispatcher_.addConsumer(std::make_unique<CmdVelOutputConsumer>(
-        nh_, output_executor_, controller_, cmd_vel_topic_, queue_size_));
+    output_dispatcher_.addConsumer(
+        std::make_unique<CmdVelOutputConsumer>(nh_, controller_, cmd_vel_topic_, queue_size_));
     if (config_.tracking_strategy == TrackingStrategy::NMPC) {
-        output_dispatcher_.addConsumer(
-            std::make_unique<NmpcOutputConsumer>(nh_, controller_, post_input_event, queue_size_));
+        output_dispatcher_.addConsumer(std::make_unique<NmpcOutputConsumer>(
+            nh_, controller_, post_input_event, queue_size_, executor, slot));
         reference_input_ = std::make_unique<ReferenceInputProducer>(
             nh_, controller_.referenceCache(), active_analytic_topic_, active_polynomial_topic_,
             active_sampled_topic_, post_input_event, queue_size_);
@@ -58,7 +56,6 @@ UnicycleUgvRosNode::UnicycleUgvRosNode(ros::NodeHandle& nh)
     reset_target_input_ = std::make_unique<ResetTargetInputProducer>(
         nh_, controller_, reset_pose_topic_, post_input_event, queue_size_);
 
-    output_executor_.start();
     ROS_INFO(
         "[UnicycleUgvRosNode] Initialized: strategy=%s state_source=%s state=%s pose=%s "
         "pva=%s reset_pose=%s cmd_vel=%s",
@@ -68,19 +65,33 @@ UnicycleUgvRosNode::UnicycleUgvRosNode(ros::NodeHandle& nh)
         reset_pose_topic_.c_str(), cmd_vel_topic_.c_str());
 }
 
-UnicycleUgvRosNode::~UnicycleUgvRosNode() {
-    output_executor_.stop();
-}
+UnicycleUgvRosNode::~UnicycleUgvRosNode() = default;
 
-void UnicycleUgvRosNode::run(double frequency_hz) {
-    const double frequency = finitePositiveOr(frequency_hz, config_.control_rate_hz);
-    ROS_INFO("[UnicycleUgvRosNode] Starting main loop at %.1f Hz", frequency);
-    ros::WallRate rate(frequency);
-    while (ros::ok()) {
-        ros::spinOnce();
-        updateOnce();
-        rate.sleep();
-    }
+ugv_reset_safety::scene_model::PoseSample UnicycleUgvRosNode::poseSample() const {
+    ugv_reset_safety::scene_model::PoseSample result;
+    result.header.stamp.nanoseconds = state_.stamp.toNSec();
+    result.pose.position = {state_.x, state_.y, 0};
+    result.pose.orientation = {0, 0, std::sin(state_.yaw / 2), std::cos(state_.yaw / 2)};
+    return result;
+}
+std::string UnicycleUgvRosNode::controlState() const {
+    return const_cast<UnicycleUgvController&>(controller_)
+        .stateMachine()
+        .currentStateName(region_type::CONTROL);
+}
+bool UnicycleUgvRosNode::reset() {
+    ::state_machine::Event event(event_type::RESET_REQUESTED,
+                                 ::state_machine::EventTimestamp{ros::Time::now().toSec()});
+    event.source = "xrpc.reset.reset";
+    event.category = ::state_machine::EventCategory::kInput;
+    return controller_.postEvent(std::move(event)).ok();
+}
+bool UnicycleUgvRosNode::stop() {
+    ::state_machine::Event event(event_type::STOP_REQUESTED,
+                                 ::state_machine::EventTimestamp{ros::Time::now().toSec()});
+    event.source = "xrpc.reset.stop";
+    event.category = ::state_machine::EventCategory::kInput;
+    return controller_.postEvent(std::move(event)).ok();
 }
 
 void UnicycleUgvRosNode::loadParams() {
@@ -257,8 +268,6 @@ void UnicycleUgvRosNode::updateOnce() {
         ROS_ERROR("[UnicycleUgvRosNode] %s", last_logged_reset_miss_.c_str());
     }
     dispatchOutputEvents(controller_.stateMachine().currentOutputEvents());
-    reset_client_.update({state_.x, state_.y, state_.yaw}, toRosTime(state_.stamp),
-                         controller_.healthReady());
     const auto control_state = controller_.stateMachine().currentState(region_type::CONTROL);
     const auto health_state = controller_.stateMachine().currentState(region_type::HEALTH);
     logStateChanges(control_state, health_state);
@@ -308,4 +317,9 @@ void UnicycleUgvRosNode::logStateChanges(::state_machine::StateId control_state,
     }
 }
 
+std::unique_ptr<ugv_reset_safety::FleetEdge> createFleetEdge(
+    ros::NodeHandle& nh, ros::NodeHandle private_nh, ugv_reset_safety::FixedExecutor& executor,
+    std::size_t slot) {
+    return std::make_unique<UnicycleUgvRosNode>(nh, std::move(private_nh), executor, slot);
+}
 }  // namespace unicycle_ugv_controller

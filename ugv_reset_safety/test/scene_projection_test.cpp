@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include <ugv_reset_safety/scene_projection.h>
+#include <xgc2_geometry_msgs/SceneSnapshot.h>
+#include <xgc2_geometry_msgs/SceneState.h>
 
 #include <algorithm>
 #include <limits>

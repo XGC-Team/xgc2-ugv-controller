@@ -7,11 +7,9 @@
 #include "unicycle_ugv_controller/common/types.h"
 
 namespace unicycle_ugv_controller {
-CmdVelOutputConsumer::CmdVelOutputConsumer(
-    ros::NodeHandle& nh, ::state_machine::runtime::AsyncTaskExecutor<ros::NodeHandle>& executor,
-    UnicycleUgvController& controller, const std::string& cmd_vel_topic, uint32_t queue_size)
+CmdVelOutputConsumer::CmdVelOutputConsumer(ros::NodeHandle& nh, UnicycleUgvController& controller,
+                                           const std::string& cmd_vel_topic, uint32_t queue_size)
     : controller_(controller) {
-    (void)executor;
     (void)queue_size;
     cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>(cmd_vel_topic, 1);
 }

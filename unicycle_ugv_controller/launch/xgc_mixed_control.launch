@@ -1,40 +1,42 @@
-<?xml version="1.0"?>
+<?xml version='1.0' encoding='utf-8'?>
 <launch>
-    <arg name="world_boundary_json"/>
-    <arg name="uav_config_file" default="$(find px4_multirotor_controller)/config/px4_local_1m.yaml"/>
-    <arg name="ugv1_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml"/>
-    <arg name="ugv2_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml"/>
-    <arg name="ugv3_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml"/>
-    <arg name="ugv4_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml"/>
+    <arg name="world_boundary_json" />
+    <arg name="uav_config_file" default="$(find px4_multirotor_controller)/config/px4_local_1m.yaml" />
+    <arg name="ugv1_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml" />
+    <arg name="ugv2_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml" />
+    <arg name="ugv3_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml" />
+    <arg name="ugv4_config_file" default="$(find unicycle_ugv_controller)/config/scout_flatness.yaml" />
+    <arg name="bootstrap_input" />
     <include file="$(find unicycle_ugv_controller)/launch/ugv_four_scout_controllers.launch">
-        <arg name="ugv1_config_file" value="$(arg ugv1_config_file)"/>
-        <arg name="ugv2_config_file" value="$(arg ugv2_config_file)"/>
-        <arg name="ugv3_config_file" value="$(arg ugv3_config_file)"/>
-        <arg name="ugv4_config_file" value="$(arg ugv4_config_file)"/>
+        <arg name="ugv1_config_file" value="$(arg ugv1_config_file)" />
+        <arg name="ugv2_config_file" value="$(arg ugv2_config_file)" />
+        <arg name="ugv3_config_file" value="$(arg ugv3_config_file)" />
+        <arg name="ugv4_config_file" value="$(arg ugv4_config_file)" />
+        <arg name="bootstrap_input" value="$(arg bootstrap_input)" />
     </include>
     <include file="$(find px4_multirotor_controller)/launch/uav_nmpc_controller.launch">
-        <arg name="world_boundary_json" value="$(arg world_boundary_json)"/>
-        <arg name="ns" value="uav1"/><arg name="config_file" value="$(arg uav_config_file)"/>
-
+        <arg name="world_boundary_json" value="$(arg world_boundary_json)" />
+        <arg name="ns" value="uav1" />
+        <arg name="config_file" value="$(arg uav_config_file)" />
     </include>
     <include file="$(find px4_multirotor_controller)/launch/uav_nmpc_controller.launch">
-        <arg name="world_boundary_json" value="$(arg world_boundary_json)"/>
-        <arg name="ns" value="uav2"/><arg name="config_file" value="$(arg uav_config_file)"/>
-
+        <arg name="world_boundary_json" value="$(arg world_boundary_json)" />
+        <arg name="ns" value="uav2" />
+        <arg name="config_file" value="$(arg uav_config_file)" />
     </include>
     <include file="$(find px4_multirotor_controller)/launch/uav_nmpc_controller.launch">
-        <arg name="world_boundary_json" value="$(arg world_boundary_json)"/>
-        <arg name="ns" value="uav3"/><arg name="config_file" value="$(arg uav_config_file)"/>
-
+        <arg name="world_boundary_json" value="$(arg world_boundary_json)" />
+        <arg name="ns" value="uav3" />
+        <arg name="config_file" value="$(arg uav_config_file)" />
     </include>
     <include file="$(find px4_multirotor_controller)/launch/uav_nmpc_controller.launch">
-        <arg name="world_boundary_json" value="$(arg world_boundary_json)"/>
-        <arg name="ns" value="uav4"/><arg name="config_file" value="$(arg uav_config_file)"/>
-
+        <arg name="world_boundary_json" value="$(arg world_boundary_json)" />
+        <arg name="ns" value="uav4" />
+        <arg name="config_file" value="$(arg uav_config_file)" />
     </include>
     <include file="$(find px4_multirotor_controller)/launch/uav_nmpc_controller.launch">
-        <arg name="world_boundary_json" value="$(arg world_boundary_json)"/>
-        <arg name="ns" value="uav5"/><arg name="config_file" value="$(arg uav_config_file)"/>
-
+        <arg name="world_boundary_json" value="$(arg world_boundary_json)" />
+        <arg name="ns" value="uav5" />
+        <arg name="config_file" value="$(arg uav_config_file)" />
     </include>
 </launch>

@@ -119,6 +119,11 @@ void ResetState::emitZero(::state_machine::StateContext& ctx, bool force) {
 }
 
 void ResetState::postDone(::state_machine::StateContext& ctx, ::state_machine::EventId id) {
+    using Completion = ugv_reset_safety::ResetSession::Completion;
+    controller_.resetSession().complete(
+        id == event_type::RESET_ARRIVED
+            ? Completion::Arrived
+            : id == event_type::RESET_TIMEOUT ? Completion::Expired : Completion::Rejected);
     ::state_machine::Event event(id, ::state_machine::EventTimestamp{controller_.currentTime()});
     event.source = "reset_state";
     event.category = ::state_machine::EventCategory::kInternal;

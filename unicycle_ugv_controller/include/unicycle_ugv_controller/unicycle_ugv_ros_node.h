@@ -2,10 +2,10 @@
 
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_safety/reset_client.h>
+#include <ugv_reset_safety/fixed_executor.h>
+#include <ugv_reset_safety/fleet_edge.h>
 
 #include <memory>
-#include <state_machine/runtime/async_task_executor.hpp>
 #include <state_machine/runtime/event_dispatcher.hpp>
 #include <state_machine/state_machine.hpp>
 #include <string>
@@ -20,17 +20,33 @@
 
 namespace unicycle_ugv_controller {
 
-class UnicycleUgvRosNode {
+class UnicycleUgvRosNode : public ugv_reset_safety::FleetEdge {
    public:
-    explicit UnicycleUgvRosNode(ros::NodeHandle& nh);
+    UnicycleUgvRosNode(ros::NodeHandle& nh, ros::NodeHandle private_nh,
+                       ugv_reset_safety::FixedExecutor& executor, std::size_t slot);
     ~UnicycleUgvRosNode();
 
-    void run(double frequency_hz);
+    void updateOnce() override;
+    double controlRate() const override {
+        return config_.control_rate_hz;
+    }
+    ugv_reset_safety::ResetSession& resetSession() override {
+        return controller_.resetSession();
+    }
+    ugv_reset_safety::scene_model::PoseSample poseSample() const override;
+    std::string controlState() const override;
+    bool healthReady() const override {
+        return controller_.healthReady();
+    }
+    bool reset() override;
+    bool stop() override;
+    bool admissionRejected() const override {
+        return !controller_.lastResetAdmissionMiss().empty();
+    }
 
    private:
     void loadParams();
     void seedResetTarget();
-    void updateOnce();
     void dispatchOutputEvents(const std::vector<::state_machine::Event>& events);
     void publishStatusIfDue(const ros::Time& now);
     void logStateChanges(::state_machine::StateId control_state,
@@ -40,8 +56,6 @@ class UnicycleUgvRosNode {
     ros::NodeHandle private_nh_;
     UgvState state_;
     UnicycleUgvController controller_;
-    ugv_reset_safety::ResetClient reset_client_;
-    ::state_machine::runtime::AsyncTaskExecutor<ros::NodeHandle> output_executor_;
     ::state_machine::runtime::EventDispatcher output_dispatcher_;
     std::unique_ptr<CommandInputProducer> command_input_;
     std::unique_ptr<StateInputProducer> state_input_;

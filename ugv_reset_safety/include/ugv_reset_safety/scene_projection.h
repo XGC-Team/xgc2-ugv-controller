@@ -1,7 +1,5 @@
 #pragma once
 #include <ugv_reset_safety/reset_geometry.h>
-#include <xgc2_geometry_msgs/SceneSnapshot.h>
-#include <xgc2_geometry_msgs/SceneState.h>
 
 #include <Eigen/Geometry>
 #include <algorithm>
@@ -20,31 +18,36 @@ inline constexpr double occupancyHorizon() {
 inline bool supportedMotion(const std::string& type) {
     return type == "hold" || type == "constant_twist" || type == "ping_pong" || type == "circle";
 }
-inline std::string motionType(const xgc2_geometry_msgs::SceneObstacle& obstacle) {
+template <class Obstacle>
+inline std::string motionType(const Obstacle& obstacle) {
     if (obstacle.motion_type.empty()) {
         return obstacle.dynamic ? std::string() : std::string("hold");
     }
     return obstacle.motion_type;
 }
-inline Eigen::Quaterniond rotation(const geometry_msgs::Quaternion& q) {
+template <class Quaternion>
+inline Eigen::Quaterniond rotation(const Quaternion& q) {
     Eigen::Quaterniond r(q.w, q.x, q.y, q.z);
     if (!r.coeffs().allFinite() || r.norm() < 1e-9)
         throw std::invalid_argument("invalid scene rotation");
     return r.normalized();
 }
-inline Eigen::Vector3d point(const geometry_msgs::Point& p) {
+template <class Point>
+inline Eigen::Vector3d point(const Point& p) {
     Eigen::Vector3d v(p.x, p.y, p.z);
     if (!v.allFinite())
         throw std::invalid_argument("nonfinite scene position");
     return v;
 }
-inline Eigen::Vector3d vector(const geometry_msgs::Vector3& v) {
+template <class Vector>
+inline Eigen::Vector3d vector(const Vector& v) {
     Eigen::Vector3d value(v.x, v.y, v.z);
     if (!value.allFinite())
         throw std::invalid_argument("nonfinite scene twist");
     return value;
 }
-inline double support(const xgc2_geometry_msgs::SceneGeometry& g, const Eigen::Vector3d& d) {
+template <class Geometry>
+inline double support(const Geometry& g, const Eigen::Vector3d& d) {
     const auto positive = [](double v) {
         if (!std::isfinite(v) || v <= 0)
             throw std::invalid_argument("invalid geometry dimension");
@@ -81,8 +84,8 @@ struct BodyState {
     Eigen::Vector3d linear = Eigen::Vector3d::Zero();
     Eigen::Vector3d angular = Eigen::Vector3d::Zero();
 };
-inline ConvexObstacle projectPart(const xgc2_geometry_msgs::SceneObstacle& obstacle,
-                                  const xgc2_geometry_msgs::ScenePart& part, const BodyState& body,
+template <class Obstacle, class Part>
+inline ConvexObstacle projectPart(const Obstacle& obstacle, const Part& part, const BodyState& body,
                                   double extra) {
     if (part.id.empty())
         throw std::invalid_argument("duplicate/empty scene part id");
@@ -122,8 +125,8 @@ inline ConvexObstacle projectPart(const xgc2_geometry_msgs::SceneObstacle& obsta
         throw std::invalid_argument("degenerate scene projection");
     return projected;
 }
-inline void validateObstacle(const xgc2_geometry_msgs::SceneObstacle& obstacle,
-                             std::set<std::string>* obstacle_ids) {
+template <class Obstacle>
+inline void validateObstacle(const Obstacle& obstacle, std::set<std::string>* obstacle_ids) {
     if (obstacle.id.empty() || !obstacle_ids->insert(obstacle.id).second || obstacle.parts.empty())
         throw std::invalid_argument("invalid obstacle identity or empty parts");
     const std::string type = motionType(obstacle);
@@ -141,13 +144,15 @@ inline void validateObstacle(const xgc2_geometry_msgs::SceneObstacle& obstacle,
         point(part.pose.position);
     }
 }
-inline BodyState snapshotBody(const xgc2_geometry_msgs::SceneObstacle& obstacle) {
+template <class Obstacle>
+inline BodyState snapshotBody(const Obstacle& obstacle) {
     BodyState body;
     body.orientation = rotation(obstacle.pose.orientation);
     body.position = point(obstacle.pose.position);
     return body;
 }
-inline BodyState liveBody(const xgc2_geometry_msgs::SceneObstacleState& state) {
+template <class State>
+inline BodyState liveBody(const State& state) {
     BodyState body;
     body.orientation = rotation(state.pose.orientation);
     body.position = point(state.pose.position);
@@ -161,7 +166,8 @@ inline double radiusBound(const ConvexObstacle& projected) {
         rho = std::max(rho, (vertex - projected.origin).norm());
     return rho;
 }
-inline std::vector<ConvexObstacle> projectBodies(const xgc2_geometry_msgs::SceneSnapshot& scene,
+template <class Scene>
+inline std::vector<ConvexObstacle> projectBodies(const Scene& scene,
                                                  const std::map<std::string, BodyState>& bodies,
                                                  const std::string& frame, bool occupancy) {
     if (scene.epoch.empty() || scene.header.frame_id != frame)
@@ -190,15 +196,15 @@ inline std::vector<ConvexObstacle> projectBodies(const xgc2_geometry_msgs::Scene
               [](const auto& a, const auto& b) { return a.id < b.id; });
     return result;
 }
-inline std::map<std::string, BodyState> snapshotBodies(
-    const xgc2_geometry_msgs::SceneSnapshot& scene) {
+template <class Scene>
+inline std::map<std::string, BodyState> snapshotBodies(const Scene& scene) {
     std::map<std::string, BodyState> bodies;
     for (const auto& obstacle : scene.obstacles)
         bodies.emplace(obstacle.id, snapshotBody(obstacle));
     return bodies;
 }
-inline std::map<std::string, BodyState> liveBodies(const xgc2_geometry_msgs::SceneSnapshot& scene,
-                                                   const xgc2_geometry_msgs::SceneState& state) {
+template <class Scene, class State>
+inline std::map<std::string, BodyState> liveBodies(const Scene& scene, const State& state) {
     if (state.epoch != scene.epoch || state.revision != scene.revision)
         throw std::invalid_argument("scene state epoch/revision mismatch");
     if (state.header.frame_id != scene.header.frame_id)
@@ -215,8 +221,8 @@ inline std::map<std::string, BodyState> liveBodies(const xgc2_geometry_msgs::Sce
     return bodies;
 }
 // Rest-pose projection of a hold-only snapshot. Dynamic motion requires live().
-inline std::vector<ConvexObstacle> project(const xgc2_geometry_msgs::SceneSnapshot& scene,
-                                           const std::string& frame) {
+template <class Scene>
+inline std::vector<ConvexObstacle> project(const Scene& scene, const std::string& frame) {
     std::set<std::string> ids;
     for (const auto& obstacle : scene.obstacles) {
         validateObstacle(obstacle, &ids);
@@ -230,8 +236,8 @@ struct SceneGeometry {
     std::vector<ConvexObstacle> live;
     std::vector<ConvexObstacle> occupancy;
 };
-inline SceneGeometry live(const xgc2_geometry_msgs::SceneSnapshot& scene,
-                          const xgc2_geometry_msgs::SceneState& state, const std::string& frame) {
+template <class Scene, class State>
+inline SceneGeometry live(const Scene& scene, const State& state, const std::string& frame) {
     if (scene.epoch.empty() || scene.header.frame_id != frame)
         throw std::invalid_argument("scene epoch/frame mismatch");
     const auto bodies = liveBodies(scene, state);

@@ -25,6 +25,7 @@ class ResetSession {
         double x{0}, y{0}, yaw{0};
     };
     enum Status : uint8_t { RUNNING = 0, ARRIVED = 1, REJECTED = 2 };
+    enum class Completion : uint8_t { None, Arrived, Rejected, Expired, Cancelled };
     struct Feedback {
         bool valid{false};
         Status status{RUNNING};
@@ -46,10 +47,15 @@ class ResetSession {
             return;
         }
         ++generation_;
+        completion_ = Completion::None;
         target_ = target;
         active_ = true;
     }
     void cancel() {
+        if (active_ && completion_ == Completion::None) {
+            completion_ = Completion::Cancelled;
+            completion_publication_floor_ = applied_serial_ + 1;
+        }
         active_ = false;
         feedback_ = {};
         issued_.clear();
@@ -62,16 +68,39 @@ class ResetSession {
     uint32_t generation() const {
         return generation_;
     }
+    // Native completion survives onExit/cancel; Ready alone carries no result.
+    void complete(Completion result) {
+        if (active_ && result != Completion::None) {
+            completion_ = result;
+            completion_publication_floor_ = applied_serial_ + 1;
+        }
+    }
+    Completion completion() const {
+        return completion_;
+    }
+    uint64_t completionPublicationFloor() const {
+        return completion_publication_floor_;
+    }
     Pose target() const {
         return target_;
+    }
+    Command appliedCommand() const {
+        return applied_command_;
+    }
+    uint64_t appliedStamp() const {
+        return applied_stamp_;
+    }
+    uint64_t appliedSerial() const {
+        return applied_serial_;
     }
 
     // Called by the sole native publisher, after publish(), including zero.
     // Receiving a safe proposal must never advance the executed slew state.
     void noteApplied(Command command, uint64_t stamp) {
-        if (!finite(command) || stamp == 0) {
+        if (!finite(command)) {
             return;
         }
+        ++applied_serial_;
         applied_command_ = command;
         applied_stamp_ = stamp;
     }
@@ -153,8 +182,9 @@ class ResetSession {
     double response_wall_{0};
     Pose target_;
     Command applied_command_;
-    uint64_t applied_stamp_{0};
+    uint64_t applied_stamp_{0}, applied_serial_{0}, completion_publication_floor_{0};
     Feedback feedback_;
+    Completion completion_{Completion::None};
     std::deque<Issued> issued_;
 };
 
