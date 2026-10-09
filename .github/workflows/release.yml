@@ -92,7 +92,7 @@ jobs:
     needs: validate-release-inputs
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.8@sha256:fce2d76fddf4f6439bf0a188249b731650febdc163befc360bed186b269d252a
+    container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.10@sha256:20b1a11b74fd9114d95f75e43508909d9206d043c64669aeaa42214fd99d8f45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -101,7 +101,7 @@ jobs:
     name: Source build and tests
     needs: validate-release-inputs
     runs-on: ubuntu-latest
-    container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.8@sha256:fce2d76fddf4f6439bf0a188249b731650febdc163befc360bed186b269d252a
+    container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.10@sha256:20b1a11b74fd9114d95f75e43508909d9206d043c64669aeaa42214fd99d8f45
     steps:
       - name: Skip source tests
         if: ${{ !inputs.run_source_tests }}
@@ -117,12 +117,12 @@ jobs:
             arch: amd64
             distribution: focal
             runner: ubuntu-latest
-            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.8@sha256:fce2d76fddf4f6439bf0a188249b731650febdc163befc360bed186b269d252a
+            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.10@sha256:20b1a11b74fd9114d95f75e43508909d9206d043c64669aeaa42214fd99d8f45
           - name: arm64-focal
             arch: arm64
             distribution: focal
             runner: ubuntu-24.04-arm
-            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.8@sha256:fce2d76fddf4f6439bf0a188249b731650febdc163befc360bed186b269d252a
+            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.10@sha256:20b1a11b74fd9114d95f75e43508909d9206d043c64669aeaa42214fd99d8f45
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
