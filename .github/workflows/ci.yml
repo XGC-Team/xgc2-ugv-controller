@@ -7,10 +7,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-env:
-  CC: clang-10
-  CXX: clang++-10
-
 defaults:
   run:
     shell: bash
@@ -33,6 +29,9 @@ jobs:
         run: python3 unicycle_ugv_controller/test/nmpc_result_ownership_test.py
 
   cpp-quality:
+    env:
+      CC: clang-10
+      CXX: clang++-10
     name: C++ quality
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -52,6 +51,9 @@ jobs:
         run: .xgc2/scripts/check_cpp_quality.sh
 
   source-tests:
+    env:
+      CC: clang-10
+      CXX: clang++-10
     name: Source build and tests
     runs-on: ubuntu-latest
     container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.8@sha256:fce2d76fddf4f6439bf0a188249b731650febdc163befc360bed186b269d252a
