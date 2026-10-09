@@ -39,6 +39,8 @@ if(NOT UGV_FLEET_WITH_ROS OR CATKIN_ENABLE_TESTING)
     add_test(NAME ${case} COMMAND ugv_fleet_${case}_test)
     set_tests_properties(${case} PROPERTIES TIMEOUT 30)
   endforeach()
+  # All 12 production-profile scenarios share one CTest process.
+  set_tests_properties(reset_scenarios PROPERTIES TIMEOUT 120)
 endif()
 
 if(UGV_FLEET_WITH_ROS)
