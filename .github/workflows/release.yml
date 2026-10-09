@@ -34,15 +34,13 @@ permissions:
   actions: read
   contents: read
 
-env:
-  CC: clang-10
-  CXX: clang++-10
-
 defaults:
   run:
     shell: bash
 
 env:
+  CC: clang-10
+  CXX: clang++-10
   XGC2_APT_OVERLAY_URL: ${{ inputs.apt_overlay_url }}
   XGC2_DEPENDENCY_SET_DIGEST: ${{ inputs.dependency_set_digest }}
 
