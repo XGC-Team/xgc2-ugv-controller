@@ -12,10 +12,10 @@ ROS_PACKAGES=(
   unicycle_ugv_controller
   mecanum_ugv_controller
   ugv_reset_safety
+  ugv_fleet_host
 )
 
 product_version() {
-  # mawk (bionic) does not implement POSIX [[:space:]].
   awk '/^version:/ {print $2; exit}' "${REPO_ROOT}/.xgc2/product.yml"
 }
 
@@ -92,6 +92,8 @@ done
 copy_path "${PREFIX_ROOT}/lib/libunicycle_ugv_controller_core.so" "${pkg_root}"
 copy_path "${PREFIX_ROOT}/lib/libmecanum_ugv_controller_core.so" "${pkg_root}"
 copy_path "${PREFIX_ROOT}/lib/libugv_reset_safety_math.so" "${pkg_root}"
+copy_path "${PREFIX_ROOT}/lib/libunicycle_ugv_controller_edge.so" "${pkg_root}"
+copy_path "${PREFIX_ROOT}/lib/libmecanum_ugv_controller_edge.so" "${pkg_root}"
 
 mkdir -p "${pkg_root}/DEBIAN" "${pkg_root}/usr/share/doc/${PACKAGE}"
 cat > "${pkg_root}/DEBIAN/control" <<EOF
@@ -101,7 +103,7 @@ Section: misc
 Priority: optional
 Architecture: ${ARCH}
 Maintainer: XGC2 <apt@example.com>
-Depends: python3-rospkg-modules, python3-yaml, python3-defusedxml, ros-${ROS_DISTRO}-roslaunch, libeigen3-dev, libxgc2-state-machine-dev (>= 0.1.3-4~focal), libxgc2-math-dev (>= 0.5.12-1~), xgc2-acados (>= 0.1.0-10~focal), ros-${ROS_DISTRO}-xgc2-ros1-utils (>= 1.1.1-3), ros-${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs (>= 1.2.0-3), ros-${ROS_DISTRO}-xgc2-unicycle-reference-trajectory-msgs (>= 1.4.0-1), ros-${ROS_DISTRO}-xgc2-geometry-msgs (>= 1.2.0-1), ros-${ROS_DISTRO}-message-runtime, ros-${ROS_DISTRO}-roscpp, ros-${ROS_DISTRO}-rospy, ros-${ROS_DISTRO}-std-msgs, ros-${ROS_DISTRO}-geometry-msgs, ros-${ROS_DISTRO}-nav-msgs
+Depends: libxgc2-xrpc1 (>= 0.1.0-1~focal), libjsoncpp1, python3-rospkg-modules, python3-yaml, python3-defusedxml, ros-${ROS_DISTRO}-roslaunch, libeigen3-dev, libxgc2-state-machine-dev (>= 0.1.3-4~focal), libxgc2-math-dev (>= 0.5.12-1~), xgc2-acados (>= 0.1.0-10~focal), ros-${ROS_DISTRO}-xgc2-ros1-utils (>= 1.1.1-3), ros-${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs (>= 1.2.0-3), ros-${ROS_DISTRO}-xgc2-unicycle-reference-trajectory-msgs (>= 1.4.0-1), ros-${ROS_DISTRO}-xgc2-geometry-msgs (>= 1.2.0-1), ros-${ROS_DISTRO}-message-runtime, ros-${ROS_DISTRO}-roscpp, ros-${ROS_DISTRO}-rospy, ros-${ROS_DISTRO}-std-msgs, ros-${ROS_DISTRO}-geometry-msgs, ros-${ROS_DISTRO}-nav-msgs
 Replaces: ros-${ROS_DISTRO}-xgc2-controller (<< 1.3.2-1)
 Breaks: ros-${ROS_DISTRO}-xgc2-controller (<< 1.3.2-1)
 Description: XGC2 ROS1 UGV controller and reference trajectory packages

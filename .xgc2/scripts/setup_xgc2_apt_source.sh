@@ -22,10 +22,13 @@ if ! dpkg -s ca-certificates >/dev/null 2>&1; then
   echo "image is missing ca-certificates; use xgc2-build-focal-ros-noetic" >&2
   exit 1
 fi
-apt-get update
-echo "deb [trusted=yes arch=${arch}] ${source_url} ${distribution} ${component}" > "${list_file}"
-if [[ -n "${overlay_url}" ]]; then
-  echo "deb [trusted=yes arch=${arch}] ${overlay_url%/} ${distribution} ${component}" \
-    > /etc/apt/sources.list.d/00-xgc2-release-train.list
-fi
-apt-get update
+[[ "${distribution}" == focal ]] || { echo "UGV fleet release requires Focal" >&2; exit 1; }
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL --retry 5 https://xgc2.apt.xiaokang.ink/xgc2-archive-keyring.gpg \
+  -o /etc/apt/keyrings/xgc2-archive-keyring.gpg
+chmod 0644 /etc/apt/keyrings/xgc2-archive-keyring.gpg
+if [[ -n "${overlay_url}" ]]; then source_url="${overlay_url%/}"; fi
+rm -f /etc/apt/sources.list.d/00-xgc2-release-train.list
+printf 'deb [arch=%s signed-by=/etc/apt/keyrings/xgc2-archive-keyring.gpg] %s %s %s\n' \
+  "${arch}" "${source_url}" "${distribution}" "${component}" > "${list_file}"
+apt-get update -o Dir::Etc::sourcelist="${list_file}" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"

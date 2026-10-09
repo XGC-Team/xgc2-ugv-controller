@@ -1,72 +1,54 @@
 schema: xgc2.product.v1
 id: xgc2-ugv-controller
 name: XGC2 UGV Controller
-version: 1.3.0-23
+version: 1.3.0-24
 kind: ros1-apt
-summary: ROS1 unicycle NMPC, planar reference trajectory, and reusable Mecanum
-  chassis controller (health, Reset, first-order Custom1) for XGC2 robots.
+summary: ROS1 unicycle NMPC, planar reference trajectory, and reusable Mecanum chassis controller (health, Reset, first-order Custom1) for XGC2 robots.
 ros:
-  distro: melodic,noetic
+  distro: noetic
   packages:
   - unicycle_reference_trajectory
   - unicycle_ugv_controller
   - mecanum_ugv_controller
   - ugv_reset_safety
+  - ugv_fleet_host
 apt:
-  distribution: bionic,focal
+  distribution: focal
   install:
-  - ros-melodic-xgc2-ugv-controller
   - ros-noetic-xgc2-ugv-controller
   package_distributions:
-    ros-melodic-xgc2-ugv-controller:
-    - bionic
     ros-noetic-xgc2-ugv-controller:
     - focal
   packages:
-  - ros-melodic-xgc2-ugv-controller
   - ros-noetic-xgc2-ugv-controller
   depends:
   - python3-rospkg-modules
   - python3-yaml
   - python3-defusedxml
-  - ros-melodic-roslaunch
   - ros-noetic-roslaunch
   - libeigen3-dev
-  - ros-melodic-xgc2-geometry-msgs (>= 1.2.0-1)
   - ros-noetic-xgc2-geometry-msgs (>= 1.2.0-1)
   - libxgc2-state-machine-dev (>= 0.1.3-4~focal)
   - libxgc2-math-dev (>= 0.5.12-1~)
   - xgc2-acados (>= 0.1.0-10~focal)
-  - ros-melodic-xgc2-ros1-utils (>= 1.1.1-3)
   - ros-noetic-xgc2-ros1-utils (>= 1.1.1-3)
-  - ros-melodic-xgc2-estimator-rigid-state-msgs (>= 1.2.0-3)
   - ros-noetic-xgc2-estimator-rigid-state-msgs (>= 1.2.0-3)
-  - ros-melodic-xgc2-unicycle-reference-trajectory-msgs (>= 1.4.0-1)
   - ros-noetic-xgc2-unicycle-reference-trajectory-msgs (>= 1.4.0-1)
+  - libxgc2-xrpc1 (>= 0.1.0-1~focal)
+  - libjsoncpp1
 usage:
   install: 'sudo apt update
-
-    sudo apt install ros-melodic-xgc2-ugv-controller
 
     sudo apt install ros-noetic-xgc2-ugv-controller
 
     '
   smoke_test: 'roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch
 
-    roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch
-
-    roslaunch --files mecanum_ugv_controller ugv_mecanum_reset_controller.launch
+    roslaunch ugv_fleet_host ugv_fleet_host.launch fleet_config:=/run/xgc2/ugv/fleet.yaml bootstrap_input:=/run/xgc2/ugv/bootstrap-input.json
 
     '
 ownership:
   paths:
-  - /opt/ros/melodic/share/unicycle_reference_trajectory
-  - /opt/ros/melodic/share/unicycle_ugv_controller
-  - /opt/ros/melodic/include/unicycle_reference_trajectory
-  - /opt/ros/melodic/include/unicycle_ugv_controller
-  - /opt/ros/melodic/lib/unicycle_reference_trajectory
-  - /opt/ros/melodic/lib/unicycle_ugv_controller
-  - /opt/ros/melodic/lib/libunicycle_ugv_controller_core.so
   - /opt/ros/noetic/share/unicycle_reference_trajectory
   - /opt/ros/noetic/share/unicycle_ugv_controller
   - /opt/ros/noetic/include/unicycle_reference_trajectory
@@ -74,27 +56,22 @@ ownership:
   - /opt/ros/noetic/lib/unicycle_reference_trajectory
   - /opt/ros/noetic/lib/unicycle_ugv_controller
   - /opt/ros/noetic/lib/libunicycle_ugv_controller_core.so
-  - /opt/ros/melodic/share/mecanum_ugv_controller
-  - /opt/ros/melodic/include/mecanum_ugv_controller
-  - /opt/ros/melodic/lib/mecanum_ugv_controller
-  - /opt/ros/melodic/lib/libmecanum_ugv_controller_core.so
   - /opt/ros/noetic/share/mecanum_ugv_controller
   - /opt/ros/noetic/include/mecanum_ugv_controller
   - /opt/ros/noetic/lib/mecanum_ugv_controller
   - /opt/ros/noetic/lib/libmecanum_ugv_controller_core.so
-  - /opt/ros/melodic/share/ugv_reset_safety
-  - /opt/ros/melodic/include/ugv_reset_safety
-  - /opt/ros/melodic/lib/ugv_reset_safety
-  - /opt/ros/melodic/lib/libugv_reset_safety_math.so
-  - /opt/ros/melodic/lib/pkgconfig/ugv_reset_safety.pc
-  - /opt/ros/melodic/lib/python2.7/dist-packages/ugv_reset_safety
   - /opt/ros/noetic/share/ugv_reset_safety
   - /opt/ros/noetic/include/ugv_reset_safety
   - /opt/ros/noetic/lib/ugv_reset_safety
   - /opt/ros/noetic/lib/libugv_reset_safety_math.so
   - /opt/ros/noetic/lib/pkgconfig/ugv_reset_safety.pc
-  - /opt/ros/noetic/lib/python3/dist-packages/ugv_reset_safety
+  - /opt/ros/noetic/share/ugv_fleet_host
+  - /opt/ros/noetic/lib/ugv_fleet_host
+  - /opt/ros/noetic/lib/libunicycle_ugv_controller_edge.so
+  - /opt/ros/noetic/lib/libmecanum_ugv_controller_edge.so
 release:
+  requires:
+  - xgc2-xrpc
   dependency_policy:
     libxgc2-math-dev: rebuild
     libxgc2-state-machine-dev: rebuild
@@ -102,6 +79,6 @@ release:
     xgc2-ros-msgs: rebuild
     xgc2-scene-generation: rebuild
     xgc2-ros1-utils: rebuild
+    xgc2-xrpc: rebuild
   apt_versions:
-    bionic: 1.3.0-23
-    focal: 1.3.0-23
+    focal: 1.3.0-24

@@ -31,6 +31,9 @@ if git ls-files | grep -E '(^|/)(build|devel|install|\.catkin_tools|\.work|debs)
 fi
 
 required_files=(
+  ugv_fleet_host/CMakeLists.txt
+  ugv_fleet_host/package.xml
+  ugv_fleet_host/launch/ugv_fleet_host.launch
   .clang-format
   .clang-tidy
   .github/workflows/ci.yml
@@ -48,7 +51,6 @@ required_files=(
   .xgc2/scripts/setup_xgc2_apt_source.sh
   unicycle_ugv_controller/CMakeLists.txt
   unicycle_ugv_controller/package.xml
-  unicycle_ugv_controller/launch/ugv_unicycle_nmpc_controller.launch
   unicycle_ugv_controller/config/unicycle_ugv_controller.yaml
   unicycle_reference_trajectory/CMakeLists.txt
   unicycle_reference_trajectory/package.xml
@@ -56,11 +58,9 @@ required_files=(
   unicycle_reference_trajectory/launch/ugv_unicycle_reference_trajectory.launch
   ugv_reset_safety/CMakeLists.txt
   ugv_reset_safety/package.xml
-  ugv_reset_safety/launch/ugv_reset_coordinator.launch
   ugv_reset_safety/config/mixed_pair.yaml
   mecanum_ugv_controller/CMakeLists.txt
   mecanum_ugv_controller/package.xml
-  mecanum_ugv_controller/launch/ugv_mecanum_reset_controller.launch
   mecanum_ugv_controller/config/mecanum_ugv_controller.yaml
 )
 

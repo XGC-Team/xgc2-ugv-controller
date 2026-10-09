@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-DOCKER_IMAGE="${DOCKER_IMAGE:-ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0}"
+DOCKER_IMAGE="${DOCKER_IMAGE:-ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.8@sha256:fce2d76fddf4f6439bf0a188249b731650febdc163befc360bed186b269d252a}"
 WORK_DIR="${WORK_DIR:-${REPO_ROOT}/.work/docker}"
 OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/debs}"
 INSTALL_CHECK="${INSTALL_CHECK:-true}"
@@ -72,9 +72,14 @@ docker run --rm \
 
     export DEBIAN_FRONTEND=noninteractive
     : "${ROS_DISTRO:?ROS_DISTRO must be set in the image}"
+    [[ "${ROS_DISTRO}" == noetic ]] || { echo "UGV fleet release requires Noetic/Focal" >&2; exit 1; }
+    export CC=clang-10 CXX=clang++-10
     for pkg in \
       build-essential \
       ca-certificates \
+      curl \
+      clang-10 \
+      libjsoncpp-dev \
       cmake \
       dpkg-dev \
       fakeroot \

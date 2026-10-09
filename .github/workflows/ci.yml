@@ -7,6 +7,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  CC: clang-10
+  CXX: clang++-10
+
 defaults:
   run:
     shell: bash
@@ -32,7 +36,7 @@ jobs:
     name: C++ quality
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
+    container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.8@sha256:fce2d76fddf4f6439bf0a188249b731650febdc163befc360bed186b269d252a
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,7 +54,7 @@ jobs:
   source-tests:
     name: Source build and tests
     runs-on: ubuntu-latest
-    container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
+    container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.8@sha256:fce2d76fddf4f6439bf0a188249b731650febdc163befc360bed186b269d252a
     steps:
       - uses: actions/checkout@v4
 
@@ -72,22 +76,12 @@ jobs:
             arch: amd64
             distribution: focal
             runner: ubuntu-latest
-            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
+            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.8@sha256:fce2d76fddf4f6439bf0a188249b731650febdc163befc360bed186b269d252a
           - name: arm64-focal-noetic
             arch: arm64
             distribution: focal
             runner: ubuntu-24.04-arm
-            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-ros-noetic:1.0.0
-          - name: amd64-bionic-melodic
-            arch: amd64
-            distribution: bionic
-            runner: ubuntu-latest
-            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-bionic-ros-melodic:1.0.0
-          - name: arm64-bionic-melodic
-            arch: arm64
-            distribution: bionic
-            runner: ubuntu-24.04-arm
-            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-bionic-ros-melodic:1.0.0
+            image: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.8@sha256:fce2d76fddf4f6439bf0a188249b731650febdc163befc360bed186b269d252a
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4

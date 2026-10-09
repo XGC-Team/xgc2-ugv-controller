@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 export DEBIAN_FRONTEND=noninteractive
 ROS_DISTRO="${ROS_DISTRO:-noetic}"
+[[ "${ROS_DISTRO}" == noetic ]] || { echo "UGV fleet release requires Noetic/Focal" >&2; exit 1; }
 if [[ -d "${XGC2_LOCAL_DEB_DIR:-}" ]]; then
   shopt -s nullglob
   local_debs=("${XGC2_LOCAL_DEB_DIR}"/*.deb)
@@ -15,6 +16,7 @@ if [[ -d "${XGC2_LOCAL_DEB_DIR:-}" ]]; then
 fi
 "${SCRIPT_DIR}/setup_xgc2_apt_source.sh"
 apt-get install -y --no-install-recommends \
+  libxgc2-xrpc-dev=0.1.0-1~focal \
   libxgc2-math-dev \
   libxgc2-state-machine-dev \
   xgc2-acados \
