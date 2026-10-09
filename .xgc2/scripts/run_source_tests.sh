@@ -32,7 +32,7 @@ catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" \
   run_tests_unicycle_ugv_controller \
   run_tests_mecanum_ugv_controller \
   run_tests_ugv_reset_safety
-(cd build/ugv_fleet_host && ctest --output-on-failure)
+(cd build/xgc2-ugv-controller/ugv_fleet_host && ctest --output-on-failure)
 catkin_test_results
 DESTDIR="$install_root" catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" install \
   -DCMAKE_INSTALL_PREFIX=/opt/ros/noetic \
