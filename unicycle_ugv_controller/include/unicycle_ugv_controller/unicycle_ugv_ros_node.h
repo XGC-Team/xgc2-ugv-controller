@@ -2,7 +2,7 @@
 
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_safety/reset_client.h>
+#include <ugv_reset_client/reset_client.h>
 
 #include <memory>
 #include <state_machine/runtime/async_task_executor.hpp>
@@ -40,7 +40,7 @@ class UnicycleUgvRosNode {
     ros::NodeHandle private_nh_;
     UgvState state_;
     UnicycleUgvController controller_;
-    ugv_reset_safety::ResetClient reset_client_;
+    ugv_reset_client::ResetClient reset_client_;
     ::state_machine::runtime::AsyncTaskExecutor<ros::NodeHandle> output_executor_;
     ::state_machine::runtime::EventDispatcher output_dispatcher_;
     std::unique_ptr<CommandInputProducer> command_input_;

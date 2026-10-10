@@ -14,6 +14,7 @@
 #include "unicycle_ugv_controller/common/reference_cache.h"
 #include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
 #include "unicycle_ugv_controller/common/types.h"
+#include "unicycle_ugv_controller/common/wall_clock.h"
 #include "unicycle_ugv_controller/nmpc/unicycle_nmpc_solver.h"
 #include "unicycle_ugv_controller/ros_reference_conversion.h"
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
@@ -271,7 +272,7 @@ TEST(UnicycleSm, ResetWithoutTargetStaysResetAndLogs) {
     controller.update(1.02);
     EXPECT_FALSE(hasOutputEvent(controller, output_event_type::PUBLISH_ZERO_CMD_VEL));
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
-    EXPECT_FALSE(controller.resetSession().active());
+    EXPECT_FALSE(controller.resetSession().active);
     EXPECT_NE(controller.lastResetHoldReason().find("no target"), std::string::npos);
     std::cout << controller.lastResetHoldReason() << std::endl;
 }
@@ -778,13 +779,25 @@ TEST(UnicycleUgvControllerRuntime, NmpcSolverRejectsInvalidWeights) {
 
 }  // namespace
 
-TEST(UnicycleSm, ResetHasNoUnfilteredFallbackAndCancelsLateResponses) {
-    ros::Time::init();
-    UgvState state;
-    UnicycleUgvController controller(state);
+namespace {
+
+// The coordinator's response to the request stamped `t`, as the transport hands it over.
+ResetClearance clearanceAt(const ResetSession& session, double t, ResetClearance::Status status,
+                           double linear_x) {
+    ResetClearance clearance;
+    clearance.generation = session.generation;
+    clearance.stamp_ns = Time(t).toNSec();
+    clearance.issue_wall = monotonicSeconds();
+    clearance.status = status;
+    clearance.linear_x = linear_x;
+    clearance.lease_seconds = 0.15;
+    return clearance;
+}
+
+void enterReset(UnicycleUgvController& controller, UgvState& state, double goal_x) {
     goReadyPose(controller, state, 1.0);
     ResetTarget goal;
-    goal.x = 1.0;
+    goal.x = goal_x;
     goal.valid = true;
     controller.setResetTarget(goal);
     postCommand(controller, event_type::RESET_REQUESTED, 1.01);
@@ -792,78 +805,70 @@ TEST(UnicycleSm, ResetHasNoUnfilteredFallbackAndCancelsLateResponses) {
     controller.update(1.01);
     controller.update(1.012);
     ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
+}
+
+}  // namespace
+
+TEST(UnicycleSm, ResetHasNoUnfilteredFallbackAndCancelsLateResponses) {
+    ros::Time::init();
+    UgvState state;
+    UnicycleUgvController controller(state);
+    enterReset(controller, state, 1.0);
     EXPECT_DOUBLE_EQ(controller.command().linear_speed, 0.0);
-    auto& session = controller.resetSession();
-    const double wall = ugv_reset_safety::monotonicSeconds();
-    const auto issued = session.issue({0.0, 0.0, 0.0}, ros::Time(1.012).toNSec(), wall);
-    ASSERT_TRUE(issued.valid);
-    ASSERT_TRUE(
-        session.accept(issued.generation, issued.stamp, 0, {0.1, 0.0, 0.0}, issued.stamp, wall));
+    const ResetSession session = controller.resetSession();
+    ASSERT_TRUE(session.active);
+    EXPECT_DOUBLE_EQ(session.target.x, 1.0);
+    const ResetClearance running = clearanceAt(session, 1.012, ResetClearance::RUNNING, 0.1);
+    controller.setResetClearance(running);
     controller.update(1.014);
     EXPECT_DOUBLE_EQ(controller.command().linear_speed, 0.1);
+    EXPECT_DOUBLE_EQ(controller.cmdVel().linear_x, 0.1);
     postCommand(controller, event_type::STOP_REQUESTED, 1.016);
     controller.update(1.016);
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
-    EXPECT_FALSE(session.active());
-    EXPECT_FALSE(
-        session.accept(issued.generation, issued.stamp, 0, {0.1, 0.0, 0.0}, issued.stamp, wall));
+    EXPECT_FALSE(controller.resetSession().active);
+    // A response that arrives after the session ended never moves the vehicle.
+    controller.setResetClearance(running);
+    controller.update(1.017);
     EXPECT_DOUBLE_EQ(controller.command().linear_speed, 0.0);
+    EXPECT_DOUBLE_EQ(controller.cmdVel().linear_x, 0.0);
     postCommand(controller, event_type::RESET_REQUESTED, 1.018);
     controller.update(1.018);
-    EXPECT_GT(session.generation(), issued.generation);
-    EXPECT_FALSE(
-        session.accept(issued.generation, issued.stamp, 0, {0.1, 0.0, 0.0}, issued.stamp, wall));
+    EXPECT_GT(controller.resetSession().generation, session.generation);
+    // ... nor does it start the next session: it answers the previous one.
+    controller.setResetClearance(running);
+    controller.update(1.020);
+    EXPECT_DOUBLE_EQ(controller.command().linear_speed, 0.0);
+    EXPECT_FALSE(controller.resetFeedback(Time(1.020).toNSec(), monotonicSeconds()).valid);
 }
 
 TEST(UnicycleSm, ResetRequiresCoordinatorArrivalEvenAtTarget) {
     ros::Time::init();
     UgvState state;
     UnicycleUgvController controller(state);
-    goReadyPose(controller, state, 1.0);
-    ResetTarget goal;
-    goal.valid = true;
-    controller.setResetTarget(goal);
-    postCommand(controller, event_type::RESET_REQUESTED, 1.01);
-    setPose(state, 1.01, 0.0, 0.0, 0.0);
-    controller.update(1.01);
-    controller.update(1.012);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
-    auto& session = controller.resetSession();
-    const double wall = ugv_reset_safety::monotonicSeconds();
-    const auto issued = session.issue({0.0, 0.0, 0.0}, ros::Time(1.012).toNSec(), wall);
-    ASSERT_TRUE(session.accept(issued.generation, issued.stamp, 1, {}, issued.stamp, wall));
+    enterReset(controller, state, 0.0);
+    controller.setResetClearance(
+        clearanceAt(controller.resetSession(), 1.012, ResetClearance::ARRIVED, 0.0));
     controller.update(1.014);
     controller.update(1.016);
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
-    EXPECT_FALSE(session.active());
+    EXPECT_FALSE(controller.resetSession().active);
 }
 
 TEST(UnicycleSm, ResetRejectionReturnsReadyAndAcceptsFreshRetry) {
     ros::Time::init();
     UgvState state;
     UnicycleUgvController controller(state);
-    goReadyPose(controller, state, 1.0);
-    ResetTarget goal;
-    goal.x = 1.0;
-    goal.valid = true;
-    controller.setResetTarget(goal);
-    postCommand(controller, event_type::RESET_REQUESTED, 1.01);
-    setPose(state, 1.01, 0.0, 0.0, 0.0);
-    controller.update(1.01);
-    controller.update(1.012);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
-    auto& session = controller.resetSession();
-    const double wall = ugv_reset_safety::monotonicSeconds();
-    const auto rejected = session.issue({0.0, 0.0, 0.0}, ros::Time(1.012).toNSec(), wall);
-    ASSERT_TRUE(rejected.valid);
-    ASSERT_TRUE(session.accept(rejected.generation, rejected.stamp,
-                               ugv_reset_safety::ResetSession::REJECTED, {}, rejected.stamp, wall));
+    enterReset(controller, state, 1.0);
+    const ResetSession first = controller.resetSession();
+    const ResetClearance rejected = clearanceAt(first, 1.012, ResetClearance::REJECTED, 0.0);
+    controller.setResetClearance(rejected);
     setPose(state, 1.014, 0.0, 0.0, 0.0);
     controller.update(1.014);
     controller.update(1.016);
     ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
     EXPECT_TRUE(controller.healthReady());
-    EXPECT_FALSE(session.active());
+    EXPECT_FALSE(controller.resetSession().active);
     EXPECT_DOUBLE_EQ(controller.command().linear_speed, 0.0);
     EXPECT_DOUBLE_EQ(controller.command().angular_speed, 0.0);
 
@@ -876,16 +881,86 @@ TEST(UnicycleSm, ResetRejectionReturnsReadyAndAcceptsFreshRetry) {
     controller.update(1.02);
     controller.update(1.022);
     ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
-    ASSERT_TRUE(session.active());
-    EXPECT_GT(session.generation(), rejected.generation);
-    const auto retry = session.issue({0.0, 0.0, 0.0}, ros::Time(1.022).toNSec(), wall);
-    ASSERT_TRUE(retry.valid);
-    EXPECT_FALSE(session.accept(rejected.generation, rejected.stamp,
-                                ugv_reset_safety::ResetSession::REJECTED, {}, retry.stamp, wall));
-    ASSERT_TRUE(session.accept(retry.generation, retry.stamp,
-                               ugv_reset_safety::ResetSession::RUNNING, {-0.1, 0.0, 0.0},
-                               retry.stamp, wall));
+    const ResetSession retry = controller.resetSession();
+    ASSERT_TRUE(retry.active);
+    EXPECT_GT(retry.generation, first.generation);
+    // The earlier session's rejection does not end the retry.
+    controller.setResetClearance(rejected);
+    controller.update(1.023);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
+    controller.setResetClearance(clearanceAt(retry, 1.022, ResetClearance::RUNNING, -0.1));
     controller.update(1.024);
     EXPECT_DOUBLE_EQ(controller.command().linear_speed, -0.1);
 }
+
+TEST(UnicycleSm, ResetClearanceLeaseExpiresOnEitherClock) {
+    ros::Time::init();
+    UgvState state;
+    UnicycleUgvController controller(state);
+    enterReset(controller, state, 1.0);
+    const ResetSession session = controller.resetSession();
+    const ResetClearance running = clearanceAt(session, 1.012, ResetClearance::RUNNING, 0.1);
+    controller.setResetClearance(running);
+    const uint64_t at = Time(1.012).toNSec();
+    const double wall = running.issue_wall;
+    EXPECT_TRUE(controller.resetFeedback(at, wall).valid);
+    EXPECT_TRUE(controller.resetFeedback(at + 150000000ULL, wall + 0.15).valid);
+    EXPECT_FALSE(controller.resetFeedback(at + 150000001ULL, wall).valid);  // ROS clock
+    EXPECT_FALSE(controller.resetFeedback(at, wall + 0.151).valid);         // wall clock, clock paused
+    EXPECT_FALSE(controller.resetFeedback(at - 1, wall).valid);             // rewound clock
+    EXPECT_FALSE(controller.resetFeedback(at, wall - 0.001).valid);
+    EXPECT_FALSE(controller.resetFeedback(at, std::nan("")).valid);
+    // A command outside the chassis limits is refused, not saturated.
+    ResetClearance fast = running;
+    fast.linear_x = 2.0;
+    controller.setResetClearance(fast);
+    controller.update(1.014);
+    controller.update(1.016);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    EXPECT_DOUBLE_EQ(controller.cmdVel().linear_x, 0.0);
+}
+
+TEST(UnicycleSm, CmdVelSaturatesByMode) {
+    ros::Time::init();
+    UgvState state;
+    UnicycleUgvController controller(state);
+    makeCustom1Ready(controller, state);
+    auto config = controller.config();
+    config.max_linear_speed = 3.0;
+    config.min_linear_speed = -1.5;
+    config.max_angular_speed = 2.5;
+    config.chassis_max_linear_speed = 1.05;
+    config.chassis_max_yaw_rate = 1.05;
+    controller.setConfig(config);
+    ControlCommand command;
+    command.valid = true;
+    command.stamp = Time(1.01);
+    command.linear_speed = 5.0;
+    command.angular_speed = -9.0;
+    controller.setCommand(command);
+    // NMPC tracking is limited by the solver bounds, not by the chassis limits.
+    EXPECT_DOUBLE_EQ(controller.cmdVel().linear_x, 3.0);
+    EXPECT_DOUBLE_EQ(controller.cmdVel().angular_z, -2.5);
+    command.linear_speed = -5.0;
+    controller.setCommand(command);
+    EXPECT_DOUBLE_EQ(controller.cmdVel().linear_x, -1.5);
+    command.valid = false;
+    controller.setCommand(command);
+    EXPECT_DOUBLE_EQ(controller.cmdVel().linear_x, 0.0);
+    EXPECT_DOUBLE_EQ(controller.cmdVel().angular_z, 0.0);
+    command.valid = true;
+    command.linear_speed = std::nan("");
+    controller.setCommand(command);
+    EXPECT_DOUBLE_EQ(controller.cmdVel().linear_x, 0.0);
+
+    // Flatness tracking and everything else outside Custom1 stay within the chassis.
+    config.tracking_strategy = TrackingStrategy::FLATNESS;
+    controller.setConfig(config);
+    command.linear_speed = 5.0;
+    command.angular_speed = -9.0;
+    controller.setCommand(command);
+    EXPECT_DOUBLE_EQ(controller.cmdVel().linear_x, 1.05);
+    EXPECT_DOUBLE_EQ(controller.cmdVel().angular_z, -1.05);
+}
+
 }  // namespace unicycle_ugv_controller

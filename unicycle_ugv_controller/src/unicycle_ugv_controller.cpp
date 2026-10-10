@@ -1,12 +1,15 @@
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
 
 #include <cmath>
+#include <limits>
+#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
 
 #include "unicycle_ugv_controller/common/core_log.h"
 #include "unicycle_ugv_controller/common/rigid_estimate_health.h"
+#include "unicycle_ugv_controller/common/wall_clock.h"
 #include "unicycle_ugv_controller/state_machine/custom1_state.h"
 #include "unicycle_ugv_controller/state_machine/health_monitor_state.h"
 #include "unicycle_ugv_controller/state_machine/ready_state.h"
@@ -26,7 +29,8 @@ void requireOk(const sm::Status& status, const char* operation) {
 
 }  // namespace
 
-UnicycleUgvController::UnicycleUgvController(const UgvState& state) : state_(state) {
+UnicycleUgvController::UnicycleUgvController(const UgvState& state)
+    : state_(state), reset_generation_(std::random_device{}() & 0x7fffffffU) {
     setupMachine();
 }
 
@@ -164,6 +168,81 @@ void UnicycleUgvController::setResetTarget(ResetTarget target) {
 ResetTarget UnicycleUgvController::resetTarget() const {
     std::lock_guard<std::mutex> lock(reset_mutex_);
     return reset_target_;
+}
+
+ResetSession UnicycleUgvController::resetSession() const {
+    std::lock_guard<std::mutex> lock(reset_mutex_);
+    return reset_session_;
+}
+
+void UnicycleUgvController::beginResetSession(const ResetTarget& target) {
+    std::lock_guard<std::mutex> lock(reset_mutex_);
+    reset_session_ = ResetSession{};
+    reset_clearance_ = ResetClearance{};
+    // Refuse wraparound, which could admit a response of an older session.
+    if (reset_generation_ == std::numeric_limits<uint32_t>::max() || !std::isfinite(target.x) ||
+        !std::isfinite(target.y) || !std::isfinite(target.yaw)) {
+        return;
+    }
+    reset_session_ = ResetSession{true, ++reset_generation_, target};
+}
+
+void UnicycleUgvController::cancelResetSession() {
+    std::lock_guard<std::mutex> lock(reset_mutex_);
+    reset_session_ = ResetSession{};
+    reset_clearance_ = ResetClearance{};
+}
+
+void UnicycleUgvController::setResetClearance(const ResetClearance& clearance) {
+    std::lock_guard<std::mutex> lock(reset_mutex_);
+    reset_clearance_ = clearance;
+    reset_clearance_.valid = true;
+}
+
+ResetClearance UnicycleUgvController::resetFeedback(uint64_t now_ns, double wall) const {
+    std::lock_guard<std::mutex> lock(reset_mutex_);
+    const ResetClearance& c = reset_clearance_;
+    const uint64_t lease_ns = static_cast<uint64_t>(std::llround(c.lease_seconds * 1.0e9));
+    // A paused or rewound clock must not renew a moving command: both clocks must hold.
+    if (!reset_session_.active || !c.valid || c.generation != reset_session_.generation ||
+        c.stamp_ns == 0U || now_ns < c.stamp_ns || now_ns - c.stamp_ns > lease_ns ||
+        !std::isfinite(wall) || wall < c.issue_wall || wall - c.issue_wall > c.lease_seconds) {
+        return ResetClearance{};
+    }
+    return c;
+}
+
+CmdVel UnicycleUgvController::cmdVel() const {
+    const ControllerConfig cfg = config();
+    const ControlCommand current = command();
+    CmdVel out;
+    if (!current.valid || !std::isfinite(current.linear_speed) ||
+        !std::isfinite(current.angular_speed)) {
+        return out;
+    }
+    const auto control = machine_->currentState(region_type::CONTROL);
+    if (control == state_type::Reset) {
+        const ResetClearance feedback =
+            resetFeedback(Time(current_time_sec_).toNSec(), monotonicSeconds());
+        if (!feedback.valid || feedback.status != ResetClearance::RUNNING ||
+            std::abs(feedback.linear_x) > cfg.chassis_max_linear_speed || feedback.linear_y != 0.0 ||
+            std::abs(feedback.yaw_rate) > cfg.chassis_max_yaw_rate) {
+            return out;
+        }
+        out.linear_x = feedback.linear_x;
+        out.angular_z = feedback.yaw_rate;
+        return out;
+    }
+    if (control == state_type::Custom1 && cfg.tracking_strategy == TrackingStrategy::NMPC) {
+        out.linear_x = clamp(current.linear_speed, cfg.min_linear_speed, cfg.max_linear_speed);
+        out.angular_z = clamp(current.angular_speed, -cfg.max_angular_speed, cfg.max_angular_speed);
+    } else {
+        out.linear_x =
+            clamp(current.linear_speed, -cfg.chassis_max_linear_speed, cfg.chassis_max_linear_speed);
+        out.angular_z =
+            clamp(current.angular_speed, -cfg.chassis_max_yaw_rate, cfg.chassis_max_yaw_rate);
+    }
+    return out;
 }
 
 bool UnicycleUgvController::worldPvaReady() const {

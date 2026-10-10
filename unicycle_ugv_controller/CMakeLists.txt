@@ -11,7 +11,8 @@ find_package(catkin REQUIRED COMPONENTS
   rigid_state_estimator_msgs
   roscpp
   ros1_utils
-  std_msgs ugv_reset_safety
+  std_msgs
+  ugv_reset_client
   unicycle_reference_trajectory_msgs
 )
 find_package(Eigen3 REQUIRED)
@@ -119,8 +120,8 @@ endif()
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES unicycle_ugv_controller_core
-  CATKIN_DEPENDS geometry_msgs nav_msgs rigid_state_estimator_msgs roscpp ros1_utils std_msgs ugv_reset_safety
-                 unicycle_reference_trajectory_msgs
+  CATKIN_DEPENDS geometry_msgs nav_msgs rigid_state_estimator_msgs roscpp ros1_utils std_msgs
+                 ugv_reset_client unicycle_reference_trajectory_msgs
   CFG_EXTRAS unicycle_ugv_controller-dependencies.cmake
 )
 
@@ -147,26 +148,23 @@ target_link_libraries(unicycle_ugv_controller_nmpc_generated ${UGV_ACADOS_LIBRAR
 set_target_properties(unicycle_ugv_controller_nmpc_generated PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # ROS-free controller core: the controller, its state machine states, the
-# reference cache, the NMPC solver and tracking backend, the flatness law and
-# the core log. It takes plain types and explicit time; ROS stays in the node
-# (input producers, output consumers, rosconsole sink).
+# reference cache, the NMPC solver, tracking backend and execution, the
+# flatness law and the core log. It takes plain types and explicit time; ROS
+# stays in the node (input producers, output consumers, rosconsole sink). The
+# core is one vehicle: its Reset state executes a target and a clearance it is
+# given, and has no part in the station's coordination.
 #
 # The directory-level include path (catkin, which puts the ROS headers on it)
 # is reset to the core's real dependencies: this package's headers, the
-# generated NMPC code, acados, Eigen and the header-only ugv_reset_safety
-# session. It links no ROS library and is linked with -Wl,--no-undefined, so a
-# ROS symbol reaching the core fails the link.
-find_path(UGV_RESET_SAFETY_CORE_INCLUDE_DIR ugv_reset_safety/reset_session.h
-  PATHS ${catkin_INCLUDE_DIRS} NO_DEFAULT_PATH)
-if(NOT UGV_RESET_SAFETY_CORE_INCLUDE_DIR)
-  message(FATAL_ERROR "ugv_reset_safety/reset_session.h not found")
-endif()
+# generated NMPC code, acados and Eigen. It links no ROS library and is linked
+# with -Wl,--no-undefined, so a ROS symbol reaching the core fails the link.
 
 add_library(unicycle_ugv_controller_core
   src/common_types.cpp
   src/core_log.cpp
   src/nmpc/unicycle_nmpc_solver.cpp
   src/nmpc/nmpc_tracking_backend.cpp
+  src/nmpc/nmpc_execution.cpp
   src/reference_cache.cpp
   src/unicycle_ugv_controller.cpp
   src/state_machine/health_monitor_state.cpp
@@ -179,8 +177,7 @@ target_include_directories(unicycle_ugv_controller_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${UGV_NMPC_GENERATED_DIR}
   ${UGV_ACADOS_INCLUDE_DIRS}
-  ${EIGEN3_INCLUDE_DIRS}
-  ${UGV_RESET_SAFETY_CORE_INCLUDE_DIR})
+  ${EIGEN3_INCLUDE_DIRS})
 add_dependencies(unicycle_ugv_controller_core unicycle_ugv_controller_nmpc_generated)
 target_link_libraries(unicycle_ugv_controller_core
   unicycle_ugv_controller_nmpc_generated

@@ -4,12 +4,12 @@
 // Closed-loop runs of UnicycleUgvController against a kinematic unicycle
 // plant, driven through the controller's public API at its 500 Hz control
 // rate. Where the ROS node hands work to its output consumers, the harness
-// does the same work synchronously:
-//   - REQUEST_NMPC_SOLVE: sample the reference horizon, unwrap its yaw against
-//     the state, solve with NmpcTrackingBackend and post the result event,
-//     as NmpcOutputConsumer does on its worker;
-//   - PUBLISH_CMD_VEL / PUBLISH_ZERO_CMD_VEL: saturate the command as
-//     CmdVelOutputConsumer does and apply it to the plant.
+// does the same work synchronously with the same functions:
+//   - REQUEST_NMPC_SOLVE: makeNmpcRequest (sample the reference horizon, unwrap
+//     its yaw against the state), solveNmpcRequest and the result event of
+//     makeNmpcResultEvent, as NmpcExecution does on its worker;
+//   - PUBLISH_CMD_VEL / PUBLISH_ZERO_CMD_VEL: the twist of
+//     UnicycleUgvController::cmdVel, applied to the plant.
 // Runs:
 //   A  NMPC, analytic circle, state-estimator source
 //   B  NMPC, analytic figure eight, then a stop and a restart
@@ -37,6 +37,7 @@
 
 #include "unicycle_ugv_controller/common/reference_types.h"
 #include "unicycle_ugv_controller/common/types.h"
+#include "unicycle_ugv_controller/nmpc/nmpc_execution.h"
 #include "unicycle_ugv_controller/nmpc/nmpc_tracking_backend.h"
 #include "unicycle_ugv_controller/nmpc/unicycle_nmpc_solver.h"
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
@@ -81,21 +82,6 @@ struct Plant {
         yaw = wrapAngle(yaw + omega * dt);
     }
 };
-
-// NmpcOutputConsumer's yaw unwrapping of the sampled horizon.
-void unwrapReferenceYaw(std::vector<Se2Reference>& refs, double anchor_yaw) {
-    if (!std::isfinite(anchor_yaw)) {
-        return;
-    }
-    double previous_yaw = anchor_yaw;
-    for (auto& ref : refs) {
-        if (!std::isfinite(ref.state.yaw)) {
-            continue;
-        }
-        ref.state.yaw = previous_yaw + wrapAngle(ref.state.yaw - previous_yaw);
-        previous_yaw = ref.state.yaw;
-    }
-}
 
 class Run {
    public:
@@ -157,7 +143,7 @@ class Run {
                 solve(event);
             }
             if (event.id == output_event_type::PUBLISH_CMD_VEL) {
-                apply(command);
+                apply();
             }
             if (event.id == output_event_type::PUBLISH_ZERO_CMD_VEL) {
                 linear_ = 0.0;
@@ -194,36 +180,25 @@ class Run {
     }
 
     void solve(const ::state_machine::Event& request) {
-        const ControllerConfig config = controller_.config();
         const double t = request.timestamp > 0.0 ? request.timestamp : t_;
-        const Time now = stampAt(t);
-        const UgvState state = controller_.state();
-        const double stage_dt =
-            config.prediction_horizon / static_cast<double>(UnicycleNmpcSolver::horizonSteps());
-        std::vector<Se2Reference> refs;
-        bool ok = controller_.referenceCache().sampleHorizon(
-            now, stage_dt, UnicycleNmpcSolver::horizonSteps(), refs);
-        ControlCommand command;
-        if (ok) {
-            unwrapReferenceYaw(refs, state.yaw);
-            backend_.configure(config);
-            if (!entered_) {
-                entered_ = backend_.enter();
-            }
-            ok = entered_ && backend_.compute(state, refs, now, command);
+        NmpcRequest nmpc;
+        NmpcOutcome outcome;
+        if (makeNmpcRequest(controller_, request, t_, nmpc)) {
+            outcome = solveNmpcRequest(backend_, entered_, nmpc);
         }
+        const ControlCommand& command = outcome.command;
         std::fprintf(out, "  solve %" PRIu64 " ok %d status %d cmd %d", request.correlation_id,
-                     ok ? 1 : 0, backend_.status(), command.valid ? 1 : 0);
+                     outcome.success ? 1 : 0, backend_.status(), command.valid ? 1 : 0);
         d(command.stamp.toSec());
         d(command.linear_speed);
         d(command.angular_speed);
-        std::fprintf(out, " refs %zu", refs.size());
-        for (const auto& ref : refs) {
+        std::fprintf(out, " refs %zu", nmpc.references.size());
+        for (const auto& ref : nmpc.references) {
             d(ref.state.position.x());
             d(ref.state.position.y());
             d(ref.state.yaw);
         }
-        if (ok) {
+        if (outcome.success) {
             std::fprintf(out, " pred %zu", backend_.predictedStateCount());
             for (size_t i = 0; i < backend_.predictedStateCount(); ++i) {
                 for (int k = 0; k < backend_.predictedStates()[i].size(); ++k) {
@@ -232,43 +207,14 @@ class Run {
             }
         }
         std::fputc('\n', out);
-        const bool success = ok && command.valid;
-        ::state_machine::Event result(
-            success ? event_type::INPUT_NMPC_SOLVE_SUCCEEDED : event_type::INPUT_NMPC_SOLVE_FAILED,
-            ::state_machine::EventTimestamp{t});
-        result.source = "nmpc_output_consumer";
-        result.category = ::state_machine::EventCategory::kInput;
-        result.correlation_id = request.correlation_id;
-        if (success) {
-            result.payload["command_stamp"] = command.stamp.toSec();
-            result.payload["linear_speed"] = command.linear_speed;
-            result.payload["angular_speed"] = command.angular_speed;
-        }
-        (void)controller_.postEvent(std::move(result));
+        (void)controller_.postEvent(makeNmpcResultEvent(request.correlation_id, outcome, t));
     }
 
-    // CmdVelOutputConsumer::makeTwist outside Reset.
-    void apply(const ControlCommand& command) {
-        const auto cfg = controller_.config();
-        linear_ = 0.0;
-        angular_ = 0.0;
-        if (!command.valid || !std::isfinite(command.linear_speed) ||
-            !std::isfinite(command.angular_speed)) {
-            return;
-        }
-        const auto control = controller_.stateMachine().currentState(region_type::CONTROL);
-        if (control == state_type::Reset) {
-            return;
-        }
-        if (control == state_type::Custom1 && cfg.tracking_strategy == TrackingStrategy::NMPC) {
-            linear_ = clamp(command.linear_speed, cfg.min_linear_speed, cfg.max_linear_speed);
-            angular_ = clamp(command.angular_speed, -cfg.max_angular_speed, cfg.max_angular_speed);
-        } else {
-            linear_ = clamp(command.linear_speed, -cfg.chassis_max_linear_speed,
-                            cfg.chassis_max_linear_speed);
-            angular_ =
-                clamp(command.angular_speed, -cfg.chassis_max_yaw_rate, cfg.chassis_max_yaw_rate);
-        }
+    // The twist the chassis would be given.
+    void apply() {
+        const CmdVel twist = controller_.cmdVel();
+        linear_ = twist.linear_x;
+        angular_ = twist.angular_z;
     }
 
     UgvState state_;
