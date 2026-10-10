@@ -10,6 +10,8 @@
 #include <xgc2_math/trajectory/analytic/2d/circle_entry_2d.hpp>
 #include <xgc2_math/trajectory/analytic/2d/figure_eight_2d.hpp>
 
+#include "unicycle_reference_trajectory/ros_reference_conversion.h"
+
 namespace unicycle_reference_trajectory {
 namespace {
 
@@ -82,27 +84,27 @@ ReferenceOutputConsumer::ReferenceOutputConsumer(
 
 bool ReferenceOutputConsumer::handle(const ::state_machine::Event& event) {
     if (event.id == output_event_type::PUBLISH_STATUS) {
-        executor_.pushTask(
-            makePublishTask("PublishReferenceStatus", status_pub_,
-                            runtime_.makeStatus(event.timestamp > 0.0 ? event.timestamp
-                                                                      : ros::Time::now().toSec())));
+        executor_.pushTask(makePublishTask(
+            "PublishReferenceStatus", status_pub_,
+            toRos(runtime_.makeStatus(event.timestamp > 0.0 ? event.timestamp
+                                                            : ros::Time::now().toSec()))));
         return true;
     }
     if (event.id == output_event_type::PUBLISH_ACTIVE_ANALYTIC) {
         executor_.pushTask(makePublishTask("PublishActiveAnalytic", active_analytic_pub_,
-                                           runtime_.activeAnalyticMessage()));
+                                           toRos(runtime_.activeAnalyticMessage())));
         publishReferencePath(event.timestamp);
         return true;
     }
     if (event.id == output_event_type::PUBLISH_ACTIVE_POLYNOMIAL) {
         executor_.pushTask(makePublishTask("PublishActivePolynomial", active_polynomial_pub_,
-                                           runtime_.activePolynomialMessage()));
+                                           toRos(runtime_.activePolynomialMessage())));
         publishReferencePath(event.timestamp);
         return true;
     }
     if (event.id == output_event_type::PUBLISH_ACTIVE_SAMPLED) {
         executor_.pushTask(makePublishTask("PublishActiveSampled", active_sampled_pub_,
-                                           runtime_.activeSampledMessage()));
+                                           toRos(runtime_.activeSampledMessage())));
         publishReferencePath(event.timestamp);
         return true;
     }

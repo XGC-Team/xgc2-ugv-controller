@@ -3,19 +3,33 @@
 #include <algorithm>
 #include <cmath>
 
+#include "unicycle_reference_trajectory/config_loader.h"
+
 namespace unicycle_reference_trajectory {
+namespace {
+
+// The node's private parameters as a configuration source (config_loader.h).
+struct RosParamSource {
+    const ros::NodeHandle& nh;
+
+    template <typename T>
+    bool get(const std::string& key, T& value) const {
+        return nh.getParam(key, value);
+    }
+};
+
+}  // namespace
 
 ReferenceTrajectoryNode::ReferenceTrajectoryNode(ros::NodeHandle& nh)
     : nh_(nh), private_nh_("~"), output_executor_(nh_) {
     loadParams();
-    runtime_.setConfig(config_);
+    driver_.configure(config_, default_analytic_);
     output_dispatcher_.addConsumer(std::make_unique<ReferenceOutputConsumer>(
-        nh_, output_executor_, runtime_, status_topic_, active_analytic_topic_,
+        nh_, output_executor_, driver_.runtime(), status_topic_, active_analytic_topic_,
         active_polynomial_topic_, active_sampled_topic_, reference_path_topic_,
         reference_path_sample_dt_, reference_path_preview_duration_, queue_size_));
     input_producer_ = std::make_unique<ReferenceInputProducer>(
-        nh_, runtime_, analytic_topic_, waypoint_topic_, sampled_topic_, reset_topic_, queue_size_,
-        default_analytic_);
+        nh_, driver_, analytic_topic_, waypoint_topic_, sampled_topic_, reset_topic_, queue_size_);
     output_executor_.start();
     ROS_INFO(
         "[ReferenceTrajectoryNode] Initialized: analytic=%s waypoint=%s sampled=%s "
@@ -36,10 +50,16 @@ void ReferenceTrajectoryNode::run(double main_frequency_hz) {
     ros::Rate rate(frequency);
     while (ros::ok()) {
         ros::spinOnce();
-        const double now_sec = ros::Time::now().toSec();
-        runtime_.update(now_sec);
-        input_producer_->update(now_sec);
-        dispatchOutputEvents(runtime_.stateMachine().currentOutputEvents());
+        const auto update = driver_.update(ros::Time::now().toSec());
+        if (update.default_analytic == ReferenceTrajectoryDriver::Request::kRejected) {
+            ROS_WARN_THROTTLE(1.0, "[ReferenceTrajectoryNode] Rejected default analytic reference");
+        } else if (update.default_analytic == ReferenceTrajectoryDriver::Request::kPostFailed) {
+            ROS_WARN_THROTTLE(1.0,
+                              "[ReferenceTrajectoryNode] Failed to post event from "
+                              "default_analytic_reference: %s",
+                              driver_.postError().c_str());
+        }
+        dispatchOutputEvents(update.events);
         rate.sleep();
     }
 }
@@ -70,53 +90,7 @@ void ReferenceTrajectoryNode::loadParams() {
         reference_path_preview_duration_ = 60.0;
     }
 
-    private_nh_.param("status_rate", config_.status_rate_hz, config_.status_rate_hz);
-    private_nh_.param("active_publish_rate", config_.active_publish_rate_hz,
-                      config_.active_publish_rate_hz);
-    private_nh_.param("validation_sample_dt", config_.validation_sample_dt,
-                      config_.validation_sample_dt);
-    private_nh_.param("trajectory_timeout", config_.trajectory_timeout, config_.trajectory_timeout);
-    private_nh_.param("min_lead_time", config_.min_lead_time, config_.min_lead_time);
-    private_nh_.param("max_velocity", config_.limits.max_velocity, config_.limits.max_velocity);
-    private_nh_.param("max_acceleration", config_.limits.max_acceleration,
-                      config_.limits.max_acceleration);
-    private_nh_.param("max_yaw_rate", config_.limits.max_yaw_rate, config_.limits.max_yaw_rate);
-
-    private_nh_.param("default_analytic/enabled", default_analytic_.enabled,
-                      default_analytic_.enabled);
-    int default_type = static_cast<int>(default_analytic_.analytic_type);
-    int default_request_id = static_cast<int>(default_analytic_.request_id);
-    int default_trajectory_id = static_cast<int>(default_analytic_.trajectory_id);
-    int default_revision = static_cast<int>(default_analytic_.revision);
-    private_nh_.param("default_analytic/analytic_type", default_type, default_type);
-    private_nh_.param("default_analytic/request_id", default_request_id, default_request_id);
-    private_nh_.param("default_analytic/trajectory_id", default_trajectory_id,
-                      default_trajectory_id);
-    private_nh_.param("default_analytic/revision", default_revision, default_revision);
-    private_nh_.param("default_analytic/start_delay", default_analytic_.start_delay,
-                      default_analytic_.start_delay);
-    private_nh_.param("default_analytic/duration", default_analytic_.duration,
-                      default_analytic_.duration);
-    private_nh_.param("default_analytic/origin_x", default_analytic_.origin_x,
-                      default_analytic_.origin_x);
-    private_nh_.param("default_analytic/origin_y", default_analytic_.origin_y,
-                      default_analytic_.origin_y);
-    private_nh_.param("default_analytic/origin_yaw", default_analytic_.origin_yaw,
-                      default_analytic_.origin_yaw);
-    private_nh_.param("default_analytic/radius", default_analytic_.radius,
-                      default_analytic_.radius);
-    private_nh_.param("default_analytic/line_speed", default_analytic_.line_speed,
-                      default_analytic_.line_speed);
-    private_nh_.param("default_analytic/entry_duration", default_analytic_.entry_duration,
-                      default_analytic_.entry_duration);
-    private_nh_.param("default_analytic/center_x", default_analytic_.center_x,
-                      default_analytic_.center_x);
-    private_nh_.param("default_analytic/center_y", default_analytic_.center_y,
-                      default_analytic_.center_y);
-    default_analytic_.analytic_type = static_cast<uint16_t>(std::max(0, default_type));
-    default_analytic_.request_id = static_cast<uint32_t>(std::max(0, default_request_id));
-    default_analytic_.trajectory_id = static_cast<uint32_t>(std::max(0, default_trajectory_id));
-    default_analytic_.revision = static_cast<uint32_t>(std::max(0, default_revision));
+    loadReferenceConfig(RosParamSource{private_nh_}, config_, default_analytic_);
 }
 
 void ReferenceTrajectoryNode::dispatchOutputEvents(

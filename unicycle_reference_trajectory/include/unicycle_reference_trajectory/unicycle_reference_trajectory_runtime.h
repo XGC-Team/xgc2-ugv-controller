@@ -1,15 +1,11 @@
 #pragma once
 
-#include <unicycle_reference_trajectory_msgs/ActivePolynomialReference.h>
-#include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
-#include <unicycle_reference_trajectory_msgs/ReferenceStatus.h>
-#include <unicycle_reference_trajectory_msgs/SampledReference.h>
-#include <unicycle_reference_trajectory_msgs/WaypointReferenceRequest.h>
-
+#include <cstdint>
 #include <memory>
 #include <state_machine/state_machine.hpp>
 #include <xgc2_math/trajectory.hpp>
 
+#include "unicycle_reference_trajectory/reference_types.h"
 #include "unicycle_reference_trajectory/state_machine/event_types.h"
 
 namespace unicycle_reference_trajectory {
@@ -36,9 +32,9 @@ class ReferenceTrajectoryRuntime {
     ::state_machine::Status postEvent(::state_machine::Event event);
     void update(double now_sec);
 
-    bool acceptAnalytic(const unicycle_reference_trajectory_msgs::AnalyticReference& msg);
-    bool acceptSampled(const unicycle_reference_trajectory_msgs::SampledReference& msg);
-    bool acceptWaypoint(const unicycle_reference_trajectory_msgs::WaypointReferenceRequest& msg);
+    bool acceptAnalytic(const reference::AnalyticReference& msg);
+    bool acceptSampled(const reference::SampledReference& msg);
+    bool acceptWaypoint(const reference::WaypointReferenceRequest& msg);
 
     bool activatePending();
     bool planPendingWaypoint();
@@ -67,17 +63,16 @@ class ReferenceTrajectoryRuntime {
         return flags_;
     }
 
-    const unicycle_reference_trajectory_msgs::AnalyticReference& activeAnalyticMessage() const {
+    const reference::AnalyticReference& activeAnalyticMessage() const {
         return active_analytic_;
     }
-    const unicycle_reference_trajectory_msgs::SampledReference& activeSampledMessage() const {
+    const reference::SampledReference& activeSampledMessage() const {
         return active_sampled_;
     }
-    const unicycle_reference_trajectory_msgs::ActivePolynomialReference& activePolynomialMessage()
-        const {
+    const reference::ActivePolynomialReference& activePolynomialMessage() const {
         return active_polynomial_;
     }
-    unicycle_reference_trajectory_msgs::ReferenceStatus makeStatus(double stamp_sec) const;
+    reference::ReferenceStatus makeStatus(double stamp_sec) const;
     const trajectory::TrajectoryEvaluator2* evaluator() const {
         return active_evaluator_.get();
     }
@@ -90,32 +85,31 @@ class ReferenceTrajectoryRuntime {
 
     void setupMachine();
     std::unique_ptr<trajectory::TrajectoryEvaluator2> buildAnalyticEvaluator(
-        const unicycle_reference_trajectory_msgs::AnalyticReference& msg, uint32_t& flags) const;
-    bool buildSampledEvaluator(const unicycle_reference_trajectory_msgs::SampledReference& msg,
+        const reference::AnalyticReference& msg, uint32_t& flags) const;
+    bool buildSampledEvaluator(const reference::SampledReference& msg,
                                trajectory::SampledEvaluator2& evaluator, uint32_t& flags) const;
-    bool buildWaypointProblem(
-        const unicycle_reference_trajectory_msgs::WaypointReferenceRequest& msg,
-        trajectory::WaypointProblem2& problem, uint32_t& flags) const;
-    void setActiveAnalytic(const unicycle_reference_trajectory_msgs::AnalyticReference& msg,
+    bool buildWaypointProblem(const reference::WaypointReferenceRequest& msg,
+                              trajectory::WaypointProblem2& problem, uint32_t& flags) const;
+    void setActiveAnalytic(const reference::AnalyticReference& msg,
                            std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator,
                            uint32_t flags);
-    void setActiveSampled(const unicycle_reference_trajectory_msgs::SampledReference& msg,
+    void setActiveSampled(const reference::SampledReference& msg,
                           std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator,
                           uint32_t flags);
-    void setActivePolynomial(unicycle_reference_trajectory_msgs::ActivePolynomialReference msg,
+    void setActivePolynomial(reference::ActivePolynomialReference msg,
                              std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator,
                              uint32_t flags);
 
     ReferenceTrajectoryConfig config_{};
     std::unique_ptr<::state_machine::StateMachine> machine_;
-    uint8_t state_{unicycle_reference_trajectory_msgs::ReferenceStatus::STATE_SELF_CHECK};
+    uint8_t state_{reference::ReferenceStatus::STATE_SELF_CHECK};
     double current_time_sec_{0.0};
     uint32_t flags_{0U};
 
     PendingKind pending_kind_{PendingKind::kNone};
-    unicycle_reference_trajectory_msgs::AnalyticReference pending_analytic_;
-    unicycle_reference_trajectory_msgs::SampledReference pending_sampled_;
-    unicycle_reference_trajectory_msgs::WaypointReferenceRequest pending_waypoint_;
+    reference::AnalyticReference pending_analytic_;
+    reference::SampledReference pending_sampled_;
+    reference::WaypointReferenceRequest pending_waypoint_;
 
     trajectory::TrajectoryModelType active_type_{trajectory::TrajectoryModelType::kNone};
     uint32_t active_trajectory_id_{0U};
@@ -123,9 +117,9 @@ class ReferenceTrajectoryRuntime {
     double active_start_sec_{0.0};
     double active_duration_{0.0};
     std::unique_ptr<trajectory::TrajectoryEvaluator2> active_evaluator_;
-    unicycle_reference_trajectory_msgs::AnalyticReference active_analytic_;
-    unicycle_reference_trajectory_msgs::SampledReference active_sampled_;
-    unicycle_reference_trajectory_msgs::ActivePolynomialReference active_polynomial_;
+    reference::AnalyticReference active_analytic_;
+    reference::SampledReference active_sampled_;
+    reference::ActivePolynomialReference active_polynomial_;
 };
 
 }  // namespace unicycle_reference_trajectory

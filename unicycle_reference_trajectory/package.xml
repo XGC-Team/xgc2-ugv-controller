@@ -2,7 +2,7 @@
 <package format="2">
   <name>unicycle_reference_trajectory</name>
   <version>1.1.0</version>
-  <description>XGC2 reference trajectory generation messages, libraries, and publishers.</description>
+  <description>XGC2 planar reference trajectory generation: a ROS-free core library and the ROS node that publishes it.</description>
 
   <maintainer email="lxk@example.com">lxk</maintainer>
   <license>BSD</license>
@@ -10,10 +10,8 @@
   <buildtool_depend>catkin</buildtool_depend>
 
   <build_depend>geometry_msgs</build_depend>
-  <build_depend>rigid_state_estimator_msgs</build_depend>
   <build_depend>nav_msgs</build_depend>
   <build_depend>roscpp</build_depend>
-  <build_depend>rospy</build_depend>
   <build_depend>std_msgs</build_depend>
   <build_depend version_gte="1.4.0">unicycle_reference_trajectory_msgs</build_depend>
   <build_depend>eigen</build_depend>
@@ -21,10 +19,8 @@
   <build_depend version_gte="0.5.12-1~">libxgc2-math-dev</build_depend>
 
   <build_export_depend>geometry_msgs</build_export_depend>
-  <build_export_depend>rigid_state_estimator_msgs</build_export_depend>
   <build_export_depend>nav_msgs</build_export_depend>
   <build_export_depend>roscpp</build_export_depend>
-  <build_export_depend>rospy</build_export_depend>
   <build_export_depend>std_msgs</build_export_depend>
   <build_export_depend version_gte="1.4.0">unicycle_reference_trajectory_msgs</build_export_depend>
   <build_export_depend>eigen</build_export_depend>
@@ -32,15 +28,16 @@
   <build_export_depend version_gte="0.5.12-1~">libxgc2-math-dev</build_export_depend>
 
   <exec_depend>geometry_msgs</exec_depend>
-  <exec_depend>rigid_state_estimator_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>roscpp</exec_depend>
-  <exec_depend>rospy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend version_gte="1.4.0">unicycle_reference_trajectory_msgs</exec_depend>
   <exec_depend>eigen</exec_depend>
   <exec_depend version_gte="0.1.2-1~focal">libxgc2-state-machine-dev</exec_depend>
   <exec_depend version_gte="0.5.12-1~">libxgc2-math-dev</exec_depend>
+
+  <test_depend>gtest</test_depend>
+  <test_depend>rostest</test_depend>
 
   <export>
     <build_type>catkin</build_type>

@@ -10,7 +10,7 @@
 
 #include "unicycle_reference_trajectory/input/reference_input_producer.h"
 #include "unicycle_reference_trajectory/output/reference_output_consumer.h"
-#include "unicycle_reference_trajectory/unicycle_reference_trajectory_runtime.h"
+#include "unicycle_reference_trajectory/reference_driver.h"
 
 namespace unicycle_reference_trajectory {
 
@@ -27,7 +27,7 @@ class ReferenceTrajectoryNode {
 
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
-    ReferenceTrajectoryRuntime runtime_;
+    ReferenceTrajectoryDriver driver_;
     ::state_machine::runtime::AsyncTaskExecutor<ros::NodeHandle> output_executor_;
     ::state_machine::runtime::EventDispatcher output_dispatcher_;
     std::unique_ptr<ReferenceInputProducer> input_producer_;

@@ -7,7 +7,7 @@ namespace unicycle_reference_trajectory {
 ReadyState::ReadyState(ReferenceTrajectoryRuntime& runtime) : runtime_(runtime) {}
 
 ::state_machine::ActionResult ReadyState::onEnter(::state_machine::StateContext& ctx) {
-    runtime_.enterState(unicycle_reference_trajectory_msgs::ReferenceStatus::STATE_READY);
+    runtime_.enterState(reference::ReferenceStatus::STATE_READY);
     status_gate_.reset();
     publishStatusIfDue(ctx);
     return {};
