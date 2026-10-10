@@ -113,20 +113,19 @@ class WorldBoundaryLaunchTest(unittest.TestCase):
                 sources.assert_not_called()
                 execute.assert_not_called()
 
-    def test_mixed_launches_forward_the_same_explicit_boundary_to_all_uavs(self):
-        repo = Path(__file__).resolve().parents[2]
-        for file in ['unicycle_ugv_controller/launch/xgc_mixed_control.launch',
-                     'mecanum_ugv_controller/launch/xgc_sce1_control.launch']:
-            root = launch.ET.parse(repo / file).getroot()
-            with patch.object(launch, 'controller_launch_root', return_value=root):
-                for boundary in [None, BOUNDARY]:
-                    args = launch.launch_boundary_args('unused', 'unused', boundary)
-                    self.assertEqual(json.loads(args[0].split(':=', 1)[1]), boundary)
-            uavs = [node for node in root.findall('include') if 'px4_multirotor_controller' in node.get('file', '')]
-            self.assertEqual(len(uavs), 5)
-            for include in uavs:
-                forwarded = [arg for arg in include.findall('arg') if arg.get('name') == 'world_boundary_json']
-                self.assertEqual([arg.get('value') for arg in forwarded], ['$(arg world_boundary_json)'])
+    def test_the_boundary_argument_follows_the_launch_declaration(self):
+        # The fleet compositions that declare it (and their tests) belong to the
+        # experiment packages; this helper only forwards the boundary to a launch
+        # that takes one.
+        declared = launch.ET.fromstring(
+            '<launch><arg name="world_boundary_json"/><arg name="ugv1_config_file" default="x"/></launch>')
+        undeclared = launch.ET.fromstring('<launch><arg name="ugv1_config_file" default="x"/></launch>')
+        for boundary in [None, BOUNDARY]:
+            with patch.object(launch, 'controller_launch_root', return_value=declared):
+                args = launch.launch_boundary_args('unused', 'unused', boundary)
+                self.assertEqual(json.loads(args[0].split(':=', 1)[1]), boundary)
+            with patch.object(launch, 'controller_launch_root', return_value=undeclared):
+                self.assertEqual(launch.launch_boundary_args('unused', 'unused', boundary), [])
 
     def test_exec_receives_the_materialized_frozen_yaml(self):
         with tempfile.TemporaryDirectory() as tmp:
