@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.0.2)
+project(ugv_reset_client)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+find_package(catkin REQUIRED COMPONENTS roscpp ugv_reset_safety)
+# Header-only: reset_lease.h is ROS-free; reset_client.h is the ROS edge.
+catkin_package(INCLUDE_DIRS include CATKIN_DEPENDS roscpp ugv_reset_safety)
+include_directories(include ${catkin_INCLUDE_DIRS})
+install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
+if(CATKIN_ENABLE_TESTING)
+  # The lease alone: no ROS on its include path or link line.
+  catkin_add_gtest(reset_lease_test test/reset_lease_test.cpp)
+  if(TARGET reset_lease_test)
+    set_property(TARGET reset_lease_test PROPERTY INCLUDE_DIRECTORIES "")
+    target_include_directories(reset_lease_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+      ${GTEST_INCLUDE_DIRS})
+    target_link_libraries(reset_lease_test gtest_main)
+  endif()
+endif()
