@@ -1,3 +1,4 @@
+scene_namespace: /xgc/scene
 # Simulation envelopes; physical execution needs measured residual bounds.
 # Scout Reset footprint 0.90 x 0.80 m: larger than chassis CAD 0.62 x 0.52,
 # smaller than the 1.10 m occupancy disc (circumradius of 1.10 blocked 1.6 m spawn).

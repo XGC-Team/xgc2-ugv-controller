@@ -56,7 +56,6 @@ mapfile -d '' CXX_FILES < <(
        unicycle_reference_trajectory/include unicycle_reference_trajectory/src unicycle_reference_trajectory/test \
        mecanum_ugv_controller/include mecanum_ugv_controller/src mecanum_ugv_controller/test \
        ugv_reset_safety/include ugv_reset_safety/src ugv_reset_safety/test \
-       ugv_fleet_host/include ugv_fleet_host/src ugv_fleet_host/test \
     -type f \
     \( -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" -o \
       -name "*.h" -o -name "*.hpp" -o -name "*.hh" -o -name "*.hxx" \) \
@@ -81,7 +80,6 @@ collect_full_tidy_files() {
          unicycle_reference_trajectory/src unicycle_reference_trajectory/test \
          mecanum_ugv_controller/src mecanum_ugv_controller/test \
          ugv_reset_safety/src ugv_reset_safety/test \
-         ugv_fleet_host/src ugv_fleet_host/test \
       -type f \( -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" \) \
       -print0 | sort -z
   )
@@ -107,14 +105,14 @@ case "${TIDY_SCOPE}" in
       header_changed=false
       while IFS= read -r -d '' changed_path; do
         case "${changed_path}" in
-          unicycle_ugv_controller/include/*|unicycle_ugv_controller/src/*|unicycle_ugv_controller/test/*|unicycle_reference_trajectory/include/*|unicycle_reference_trajectory/src/*|unicycle_reference_trajectory/test/*|mecanum_ugv_controller/include/*|mecanum_ugv_controller/src/*|mecanum_ugv_controller/test/*|ugv_reset_safety/include/*|ugv_reset_safety/src/*|ugv_reset_safety/test/*|ugv_fleet_host/include/*|ugv_fleet_host/src/*|ugv_fleet_host/test/*)
+          unicycle_ugv_controller/include/*|unicycle_ugv_controller/src/*|unicycle_ugv_controller/test/*|unicycle_reference_trajectory/include/*|unicycle_reference_trajectory/src/*|unicycle_reference_trajectory/test/*|mecanum_ugv_controller/include/*|mecanum_ugv_controller/src/*|mecanum_ugv_controller/test/*|ugv_reset_safety/include/*|ugv_reset_safety/src/*|ugv_reset_safety/test/*)
             case "${changed_path}" in
               *.h|*.hpp|*.hh|*.hxx)
                 header_changed=true
                 ;;
               *.cpp|*.cc|*.cxx)
                 case "${changed_path}" in
-                  unicycle_ugv_controller/src/*|unicycle_ugv_controller/test/*|unicycle_reference_trajectory/src/*|unicycle_reference_trajectory/test/*|mecanum_ugv_controller/include/*|mecanum_ugv_controller/src/*|mecanum_ugv_controller/test/*|ugv_reset_safety/include/*|ugv_reset_safety/src/*|ugv_reset_safety/test/*|ugv_fleet_host/src/*|ugv_fleet_host/test/*)
+                  unicycle_ugv_controller/src/*|unicycle_ugv_controller/test/*|unicycle_reference_trajectory/src/*|unicycle_reference_trajectory/test/*|mecanum_ugv_controller/include/*|mecanum_ugv_controller/src/*|mecanum_ugv_controller/test/*|ugv_reset_safety/include/*|ugv_reset_safety/src/*|ugv_reset_safety/test/*)
                     TIDY_REL_FILES+=("${changed_path}")
                     ;;
                 esac
@@ -166,7 +164,7 @@ done
 echo "Selected ${#TIDY_FILES[@]} clang-tidy translation units for scope: ${TIDY_SCOPE}"
 printf '%s\0' "${TIDY_FILES[@]}" | xargs -0 -n 1 -P "$(nproc)" clang-tidy \
   -p "${WORK_DIR}/build" \
-  -header-filter="^${WORK_DIR}/src/xgc2-ugv-controller/(unicycle_ugv_controller|unicycle_reference_trajectory|mecanum_ugv_controller|ugv_reset_safety|ugv_fleet_host)/(src|test)/" \
+  -header-filter="^${WORK_DIR}/src/xgc2-ugv-controller/(unicycle_ugv_controller|unicycle_reference_trajectory|mecanum_ugv_controller|ugv_reset_safety)/(src|test)/" \
   -quiet
 
 echo "C++ quality check passed"

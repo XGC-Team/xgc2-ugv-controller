@@ -1,3 +1,4 @@
+scene_namespace: /xgc/scene
 # SCE has no Scene. Straight holonomic return to initialPose; no peer/VRPN/Scene.
 obstacle_avoidance: false
 # Simulation envelopes; physical execution needs measured residual bounds.

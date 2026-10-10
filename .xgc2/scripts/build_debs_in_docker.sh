@@ -72,14 +72,13 @@ docker run --rm \
 
     export DEBIAN_FRONTEND=noninteractive
     : "${ROS_DISTRO:?ROS_DISTRO must be set in the image}"
-    [[ "${ROS_DISTRO}" == noetic ]] || { echo "UGV fleet release requires Noetic/Focal" >&2; exit 1; }
+    [[ "${ROS_DISTRO}" == noetic ]] || { echo "UGV controller release requires Noetic/Focal" >&2; exit 1; }
     export CC=clang-10 CXX=clang++-10
     for pkg in \
       build-essential \
       ca-certificates \
       curl \
       clang-10 \
-      libjsoncpp-dev \
       cmake \
       dpkg-dev \
       fakeroot \

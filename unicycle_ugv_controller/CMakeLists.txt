@@ -118,7 +118,7 @@ endif()
 
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES unicycle_ugv_controller_core unicycle_ugv_controller_edge
+  LIBRARIES unicycle_ugv_controller_core
   CATKIN_DEPENDS geometry_msgs nav_msgs rigid_state_estimator_msgs roscpp ros1_utils std_msgs ugv_reset_safety
                  unicycle_reference_trajectory_msgs
   CFG_EXTRAS unicycle_ugv_controller-dependencies.cmake
@@ -194,7 +194,8 @@ target_link_libraries(unicycle_ugv_controller_core
   pthread)
 set_property(TARGET unicycle_ugv_controller_core APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--no-undefined")
 
-add_library(unicycle_ugv_controller_edge
+add_executable(${PROJECT_NAME}_node
+  src/main.cpp
   src/ros_log_sink.cpp
   src/unicycle_ugv_ros_node.cpp
   src/input/command_input_producer.cpp
@@ -204,15 +205,15 @@ add_library(unicycle_ugv_controller_edge
   src/input/state_input_producer.cpp
   src/output/cmd_vel_output_consumer.cpp
   src/output/nmpc_output_consumer.cpp)
-add_dependencies(unicycle_ugv_controller_edge
+add_dependencies(${PROJECT_NAME}_node
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS})
-target_link_libraries(unicycle_ugv_controller_edge
+target_link_libraries(${PROJECT_NAME}_node
   unicycle_ugv_controller_core
   ${catkin_LIBRARIES}
   pthread)
 
-install(TARGETS unicycle_ugv_controller_core unicycle_ugv_controller_edge
+install(TARGETS unicycle_ugv_controller_core ${PROJECT_NAME}_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
@@ -264,6 +265,23 @@ if(CATKIN_ENABLE_TESTING)
   set_property(TARGET unicycle_ugv_controller_replay PROPERTY INCLUDE_DIRECTORIES "")
   target_link_libraries(unicycle_ugv_controller_replay unicycle_ugv_controller_core)
   set_property(TARGET unicycle_ugv_controller_replay APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--no-undefined")
+  find_package(rostest QUIET)
+  if(rostest_FOUND)
+    add_rostest_gtest(unicycle_ugv_public_command_reset_test
+      test/unicycle_ugv_public_command_reset.test
+      test/unicycle_ugv_public_command_reset_test.cpp)
+    if(TARGET unicycle_ugv_public_command_reset_test)
+      target_link_libraries(unicycle_ugv_public_command_reset_test ${catkin_LIBRARIES})
+      add_dependencies(unicycle_ugv_public_command_reset_test ${PROJECT_NAME}_node)
+    endif()
+    add_rostest_gtest(unicycle_ugv_slot_initial_pose_reset_test
+      test/unicycle_ugv_slot_initial_pose_reset.test
+      test/unicycle_ugv_slot_initial_pose_reset_test.cpp)
+    if(TARGET unicycle_ugv_slot_initial_pose_reset_test)
+      target_link_libraries(unicycle_ugv_slot_initial_pose_reset_test ${catkin_LIBRARIES})
+      add_dependencies(unicycle_ugv_slot_initial_pose_reset_test ${PROJECT_NAME}_node)
+    endif()
+  endif()
   find_program(PYTHON3_EXECUTABLE python3)
   if(PYTHON3_EXECUTABLE)
     add_test(NAME unicycle_tracker_python

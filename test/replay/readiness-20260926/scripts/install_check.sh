@@ -11,4 +11,5 @@ test "$(rospack find unicycle_reference_trajectory)" = "$PWD/src/ugv/unicycle_re
 test "$(rospack find unicycle_ugv_controller)" = "$PWD/src/ugv/unicycle_ugv_controller"
 test "$(rospack find mecanum_ugv_controller)" = "$PWD/src/ugv/mecanum_ugv_controller"
 roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch
-test -x /opt/ros/noetic/lib/ugv_fleet_host/ugv_fleet_host_node
+roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch
+roslaunch --files mecanum_ugv_controller ugv_mecanum_reset_controller.launch

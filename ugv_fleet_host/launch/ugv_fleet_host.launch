@@ -1,8 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<launch>
-    <arg name="fleet_config" />
-    <arg name="bootstrap_input" />
-    <node pkg="ugv_fleet_host" type="ugv_fleet_host_node" name="ugv_fleet_host" output="screen" required="true" args="--bootstrap-input &quot;$(arg bootstrap_input)&quot;">
-        <rosparam command="load" file="$(arg fleet_config)" />
-    </node>
-</launch>

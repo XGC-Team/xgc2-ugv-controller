@@ -153,10 +153,9 @@ int main(){
     try {
         UnicycleUgvController controller;Custom1State state(controller);sm::StateContext ctx;
         ros::NodeHandle nh;std::mutex mutex;std::condition_variable cv;std::vector<sm::Event> results;
-        ugv_reset_safety::FixedExecutor executor(1);
         NmpcOutputConsumer worker(nh,controller,[&](sm::Event event){
             std::lock_guard<std::mutex> lock(mutex);results.push_back(std::move(event));cv.notify_all();return sm::Status{};
-        },1,executor,0);
+        },1);
         state.onEnter(ctx);auto first=request(state,ctx);worker.handle(first);barrier.waitEntered();
         state.onExit(ctx);
         ControlCommand reset;reset.valid=true;reset.stamp=Time(1.0);reset.linear_speed=-.25;controller.setCommand(reset);
@@ -207,8 +206,7 @@ def main():
         subprocess.run([
             os.environ.get("CXX", "g++"), "-std=c++17", "-pthread",
             "-Wall", "-Wextra", "-Werror", "-pedantic", "-I", str(root),
-            "-I", str(package / "include"),
-            "-I", str(package.parent / "ugv_reset_safety/include"), str(root / "test.cpp"),
+            "-I", str(package / "include"), str(root / "test.cpp"),
             str(package / "src/state_machine/custom1_state.cpp"),
             str(package / "src/output/nmpc_output_consumer.cpp"),
             "-o", str(root / "test"),

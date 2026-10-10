@@ -1,0 +1,18 @@
+<launch>
+  <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node"
+        name="reset_open_coordinator" output="screen" required="true">
+    <rosparam command="load" file="$(find ugv_reset_safety)/test/reset_coordinator_open_fixture.yaml"/>
+  </node>
+  <group ns="reset_open_robot">
+    <node pkg="mecanum_ugv_controller" type="mecanum_ugv_controller_node"
+          name="mecanum_ugv_controller" output="screen" required="true">
+      <rosparam command="load" file="$(find mecanum_ugv_controller)/config/mecanum_ugv_controller.yaml"/>
+      <param name="max_linear_speed" value="0.4"/>
+      <param name="max_yaw_rate" value="0.5"/>
+      <param name="reset/timeout" value="20.0"/>
+      <remap from="reset/response" to="/reset_open/controller_response"/>
+    </node>
+  </group>
+  <test test-name="reset_coordinator_open_no_scene"
+        pkg="ugv_reset_safety" type="reset_coordinator_open_rostest.py" time-limit="40.0"/>
+</launch>

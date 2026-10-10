@@ -13,9 +13,7 @@ Packages:
   SelfCheck, `Reset` to an Experiment `initialPose`, and first-order Custom1
   (world ENU velocity to body FLU, heading P to east). Algorithms publish
   `{ns}/alg/reference/twist` only; they do not publish `cmd_vel`.
-- `ugv_fleet_host`: single native fleet owner, bounded XRPC start/cancel/held observe,
-  embedded mixed-chassis Coordinator and fixed shared NMPC workers.
-- `ugv_reset_safety`: ROS-free swarm Reset coordinator, geometric path planning,
+- `ugv_reset_safety`: shared swarm Reset coordinator, geometric path planning,
   DWA with obstacle/inter-vehicle footprint checks, command limits and slew limits.
 
 Reset requires an explicit target, a complete UGV roster, fresh canonical poses
@@ -34,8 +32,8 @@ sudo apt install ros-noetic-xgc2-ugv-controller
 ```bash
 source /opt/ros/noetic/setup.bash
 roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch
-# UGV launch requires explicit XRPC bootstrap and scene references.
-# See ugv_fleet_host/README.md.
+roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch
+roslaunch --files mecanum_ugv_controller ugv_mecanum_reset_controller.launch
 ```
 
 ## NMPC tracking
@@ -55,8 +53,10 @@ NMPC stage cost is nonlinear LS. Weights and limits are defined in the selected
 controller YAML and read once when the node starts. Edit that file, then restart
 the node. The launch file accepts the namespace and configuration file.
 
-The fleet launch loads each controller YAML into its original private namespace;
-start/cancel/observe use the native XRPC contract in [ugv_fleet_host](ugv_fleet_host/README.md).
+```bash
+roslaunch unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch \
+  ns:=ugv1 config_file:=/absolute/path/to/controller.yaml
+```
 
 ## Control-state modes
 

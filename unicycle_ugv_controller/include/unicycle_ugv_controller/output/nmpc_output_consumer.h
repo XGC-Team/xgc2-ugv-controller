@@ -3,13 +3,13 @@
 #include <geometry_msgs/PoseArray.h>
 #include <nav_msgs/Path.h>
 #include <ros/ros.h>
-#include <ugv_reset_safety/fixed_executor.h>
 
 #include <condition_variable>
 #include <functional>
 #include <mutex>
 #include <state_machine/runtime/event_dispatcher.hpp>
 #include <string>
+#include <thread>
 
 #include "unicycle_ugv_controller/nmpc/nmpc_tracking_backend.h"
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
@@ -21,8 +21,7 @@ class NmpcOutputConsumer final : public ::state_machine::runtime::EventConsumer 
     using EventSink = std::function<::state_machine::Status(::state_machine::Event)>;
 
     NmpcOutputConsumer(ros::NodeHandle& nh, UnicycleUgvController& controller, EventSink event_sink,
-                       uint32_t queue_size, ugv_reset_safety::FixedExecutor& executor,
-                       std::size_t slot);
+                       uint32_t queue_size);
     ~NmpcOutputConsumer() override;
 
     std::string name() const override {
@@ -51,9 +50,9 @@ class NmpcOutputConsumer final : public ::state_machine::runtime::EventConsumer 
     ros::Publisher predicted_path_pub_;
     ros::Publisher predicted_poses_pub_;
     std::mutex mutex_;
-    ugv_reset_safety::FixedExecutor& executor_;
-    std::size_t slot_;
-    bool entered_{false};
+    std::condition_variable condition_;
+    std::thread worker_;
+    bool stop_{false};
     bool busy_{false};
     bool has_pending_{false};
     Request pending_;

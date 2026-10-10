@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<launch>
+    <arg name="ns" default="ugv1" />
+    <arg name="config_file" default="$(find unicycle_ugv_controller)/config/unicycle_ugv_controller.yaml" />
+    <group ns="$(arg ns)">
+        <node pkg="unicycle_ugv_controller" type="unicycle_ugv_controller_node" name="unicycle_ugv_controller" output="screen">
+            <rosparam command="load" file="$(arg config_file)" />
+        </node>
+    </group>
+</launch>

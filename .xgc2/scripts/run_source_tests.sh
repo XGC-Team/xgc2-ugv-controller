@@ -32,7 +32,6 @@ catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" \
   run_tests_unicycle_ugv_controller \
   run_tests_mecanum_ugv_controller \
   run_tests_ugv_reset_safety
-(cd build/xgc2-ugv-controller/ugv_fleet_host && ctest --output-on-failure)
 catkin_test_results
 DESTDIR="$install_root" catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" install \
   -DCMAKE_INSTALL_PREFIX=/opt/ros/noetic \
@@ -41,3 +40,5 @@ test "$(rospack find unicycle_reference_trajectory)" = "$work_dir/src/xgc2-ugv-c
 test "$(rospack find unicycle_ugv_controller)" = "$work_dir/src/xgc2-ugv-controller/unicycle_ugv_controller"
 test "$(rospack find mecanum_ugv_controller)" = "$work_dir/src/xgc2-ugv-controller/mecanum_ugv_controller"
 roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch >/tmp/xgc2-unicycle-reference-files.txt
+roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch >/tmp/xgc2-unicycle-controller-files.txt
+roslaunch --files mecanum_ugv_controller ugv_mecanum_reset_controller.launch >/tmp/xgc2-mecanum-controller-files.txt

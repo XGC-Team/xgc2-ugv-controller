@@ -43,21 +43,24 @@ void unwrapReferenceYaw(std::vector<Se2Reference>& refs, double anchor_yaw) {
 }  // namespace
 
 NmpcOutputConsumer::NmpcOutputConsumer(ros::NodeHandle& nh, UnicycleUgvController& controller,
-                                       EventSink event_sink, uint32_t queue_size,
-                                       ugv_reset_safety::FixedExecutor& executor, std::size_t slot)
-    : controller_(controller),
-      event_sink_(std::move(event_sink)),
-      executor_(executor),
-      slot_(slot) {
+                                       EventSink event_sink, uint32_t queue_size)
+    : controller_(controller), event_sink_(std::move(event_sink)) {
     predicted_path_pub_ = nh.advertise<nav_msgs::Path>("alg/nmpc/predicted_path", queue_size);
     predicted_poses_pub_ =
         nh.advertise<geometry_msgs::PoseArray>("alg/nmpc/predicted_poses", queue_size);
     backend_.configure(controller_.config());
-    executor_.attach(slot_, [this] { workerLoop(); });
+    worker_ = std::thread(&NmpcOutputConsumer::workerLoop, this);
 }
 
 NmpcOutputConsumer::~NmpcOutputConsumer() {
-    executor_.detach(slot_);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        stop_ = true;
+    }
+    condition_.notify_all();
+    if (worker_.joinable()) {
+        worker_.join();
+    }
     backend_.exit();
 }
 
@@ -97,36 +100,35 @@ bool NmpcOutputConsumer::handle(const ::state_machine::Event& event) {
         pending_ = std::move(request);
         has_pending_ = true;
     }
-    if (!executor_.submit(slot_)) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        has_pending_ = false;
-        reject(pending_.sequence);
-    }
+    condition_.notify_one();
     return true;
 }
 
 void NmpcOutputConsumer::workerLoop() {
-    {
+    bool entered = false;
+    while (true) {
         Request request;
         {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (!has_pending_)
+            std::unique_lock<std::mutex> lock(mutex_);
+            condition_.wait(lock, [this] { return stop_ || has_pending_; });
+            if (stop_) {
                 return;
+            }
             request = std::move(pending_);
             has_pending_ = false;
             busy_ = true;
         }
 
         backend_.configure(request.config);
-        if (!entered_) {
-            entered_ = backend_.enter();
-            if (!entered_) {
+        if (!entered) {
+            entered = backend_.enter();
+            if (!entered) {
                 ROS_WARN("[UgvNmpcOutputConsumer] Failed to enter NMPC backend");
             }
         }
         ControlCommand command;
         const bool ok =
-            entered_ && backend_.compute(request.state, request.references, request.now, command);
+            entered && backend_.compute(request.state, request.references, request.now, command);
         if (ok) {
             publishPrediction(toRosTime(request.now));
             ROS_INFO_THROTTLE(1.0,

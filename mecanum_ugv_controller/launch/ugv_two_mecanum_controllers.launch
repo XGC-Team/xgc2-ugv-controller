@@ -1,12 +1,13 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version="1.0"?>
 <launch>
-    <arg name="ugv1_config_file" default="$(find mecanum_ugv_controller)/config/mecanum_ugv_controller.yaml" />
-    <arg name="ugv2_config_file" default="$(find mecanum_ugv_controller)/config/mecanum_ugv_controller.yaml" />
-    <arg name="bootstrap_input" />
-    <rosparam command="load" file="$(arg ugv1_config_file)" ns="/ugv1/mecanum_ugv_controller" />
-    <rosparam command="load" file="$(arg ugv2_config_file)" ns="/ugv2/mecanum_ugv_controller" />
-    <include file="$(find ugv_fleet_host)/launch/ugv_fleet_host.launch">
-        <arg name="fleet_config" value="$(find ugv_reset_safety)/config/two_mecanum.yaml" />
-        <arg name="bootstrap_input" value="$(arg bootstrap_input)" />
+    <arg name="ugv1_config_file" default="$(find mecanum_ugv_controller)/config/mecanum_ugv_controller.yaml"/>
+    <arg name="ugv2_config_file" default="$(find mecanum_ugv_controller)/config/mecanum_ugv_controller.yaml"/>
+    <include file="$(find mecanum_ugv_controller)/launch/ugv_mecanum_reset_controller.launch">
+        <arg name="ns" value="ugv1"/>
+        <arg name="config_file" value="$(arg ugv1_config_file)"/>
+    </include>
+    <include file="$(find mecanum_ugv_controller)/launch/ugv_mecanum_reset_controller.launch">
+        <arg name="ns" value="ugv2"/>
+        <arg name="config_file" value="$(arg ugv2_config_file)"/>
     </include>
 </launch>
