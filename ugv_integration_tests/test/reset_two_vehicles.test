@@ -1,0 +1,34 @@
+<launch>
+  <!-- Isolated rostest master only; the test program publishes synthetic poses and
+       must never run on an experiment/vehicle master. One coordinator, two vehicle
+       controller nodes (a Scout and a Mecanum), nothing else: the vehicles know
+       nothing of each other, only the coordinator does. Each vehicle's responses
+       reach it through the test, which can cut one vehicle's link. -->
+  <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node"
+        name="reset_pair_coordinator" output="screen" required="true">
+    <rosparam command="load" file="$(find ugv_integration_tests)/test/reset_two_vehicles_fixture.yaml"/>
+  </node>
+  <group ns="ugv1">
+    <node pkg="unicycle_ugv_controller" type="unicycle_ugv_controller_node"
+          name="unicycle_ugv_controller" output="screen" required="true">
+      <rosparam command="load" file="$(find unicycle_ugv_controller)/config/unicycle_ugv_controller.yaml"/>
+      <param name="state_source" value="platform_pose"/>
+      <param name="chassis/max_linear_speed" value="0.35"/>
+      <param name="chassis/max_yaw_rate" value="0.5"/>
+      <param name="reset/timeout" value="80.0"/>
+      <remap from="reset/response" to="/reset_pair/ugv1_response"/>
+    </node>
+  </group>
+  <group ns="ugv2">
+    <node pkg="mecanum_ugv_controller" type="mecanum_ugv_controller_node"
+          name="mecanum_ugv_controller" output="screen" required="true">
+      <rosparam command="load" file="$(find mecanum_ugv_controller)/config/mecanum_ugv_controller.yaml"/>
+      <param name="max_linear_speed" value="0.35"/>
+      <param name="max_yaw_rate" value="0.5"/>
+      <param name="reset/timeout" value="80.0"/>
+      <remap from="reset/response" to="/reset_pair/ugv2_response"/>
+    </node>
+  </group>
+  <test test-name="reset_two_vehicles" pkg="ugv_integration_tests"
+        type="reset_two_vehicles_rostest.py" time-limit="150.0"/>
+</launch>
