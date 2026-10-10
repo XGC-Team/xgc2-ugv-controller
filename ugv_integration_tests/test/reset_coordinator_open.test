@@ -1,7 +1,7 @@
 <launch>
   <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node"
         name="reset_open_coordinator" output="screen" required="true">
-    <rosparam command="load" file="$(find ugv_reset_safety)/test/reset_coordinator_open_fixture.yaml"/>
+    <rosparam command="load" file="$(find ugv_integration_tests)/test/reset_coordinator_open_fixture.yaml"/>
   </node>
   <group ns="reset_open_robot">
     <node pkg="mecanum_ugv_controller" type="mecanum_ugv_controller_node"
@@ -14,5 +14,5 @@
     </node>
   </group>
   <test test-name="reset_coordinator_open_no_scene"
-        pkg="ugv_reset_safety" type="reset_coordinator_open_rostest.py" time-limit="40.0"/>
+        pkg="ugv_integration_tests" type="reset_coordinator_open_rostest.py" time-limit="40.0"/>
 </launch>

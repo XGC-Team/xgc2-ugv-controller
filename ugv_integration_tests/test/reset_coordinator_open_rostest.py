@@ -124,4 +124,4 @@ class ResetCoordinatorOpenTest(unittest.TestCase):
 
 if __name__ == "__main__":
     rospy.init_node("reset_coordinator_open_rostest")
-    rostest.rosrun("ugv_reset_safety", "reset_coordinator_open_no_scene", ResetCoordinatorOpenTest)
+    rostest.rosrun("ugv_integration_tests", "reset_coordinator_open_no_scene", ResetCoordinatorOpenTest)

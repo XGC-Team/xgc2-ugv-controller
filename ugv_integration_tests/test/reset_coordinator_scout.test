@@ -3,7 +3,7 @@
        synthetic pose and must never run on an experiment/vehicle master. -->
   <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node"
         name="reset_fixture_coordinator" output="screen" required="true">
-    <rosparam command="load" file="$(find ugv_reset_safety)/test/reset_coordinator_scout_fixture.yaml"/>
+    <rosparam command="load" file="$(find ugv_integration_tests)/test/reset_coordinator_scout_fixture.yaml"/>
   </node>
   <group ns="reset_fixture_robot">
     <node pkg="unicycle_ugv_controller" type="unicycle_ugv_controller_node"
@@ -17,7 +17,7 @@
     </node>
   </group>
   <test test-name="reset_coordinator_scout_transport"
-        pkg="ugv_reset_safety" type="reset_coordinator_rostest.py" time-limit="95.0">
+        pkg="ugv_integration_tests" type="reset_coordinator_rostest.py" time-limit="95.0">
     <param name="robot_type" value="scout"/>
   </test>
 </launch>

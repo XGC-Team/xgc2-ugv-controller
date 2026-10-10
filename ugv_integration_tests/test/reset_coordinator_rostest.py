@@ -319,4 +319,4 @@ class ResetCoordinatorTransportTest(unittest.TestCase):
 
 if __name__ == "__main__":
     rospy.init_node("reset_coordinator_kinematic_transport_test")
-    rostest.rosrun("ugv_reset_safety", "reset_coordinator_kinematic_transport", ResetCoordinatorTransportTest)
+    rostest.rosrun("ugv_integration_tests", "reset_coordinator_kinematic_transport", ResetCoordinatorTransportTest)
