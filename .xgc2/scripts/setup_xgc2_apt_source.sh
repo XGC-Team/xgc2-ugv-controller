@@ -27,8 +27,11 @@ install -m 0755 -d /etc/apt/keyrings
 curl -fsSL --retry 5 https://xgc2.apt.xiaokang.ink/xgc2-archive-keyring.gpg \
   -o /etc/apt/keyrings/xgc2-archive-keyring.gpg
 chmod 0644 /etc/apt/keyrings/xgc2-archive-keyring.gpg
-if [[ -n "${overlay_url}" ]]; then source_url="${overlay_url%/}"; fi
 rm -f /etc/apt/sources.list.d/00-xgc2-release-train.list
 printf 'deb [arch=%s signed-by=/etc/apt/keyrings/xgc2-archive-keyring.gpg] %s %s %s\n' \
   "${arch}" "${source_url}" "${distribution}" "${component}" > "${list_file}"
+if [[ -n "${overlay_url}" ]]; then
+  printf 'deb [arch=%s signed-by=/etc/apt/keyrings/xgc2-archive-keyring.gpg] %s %s %s\n' \
+    "${arch}" "${overlay_url%/}" "${distribution}" "${component}" >> "${list_file}"
+fi
 apt-get update -o Dir::Etc::sourcelist="${list_file}" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"
