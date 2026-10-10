@@ -1,0 +1,5 @@
+# The controller's public headers include the generated solver header
+# (acados_solver_unicycle_nmpc.h). Installed, it lies beside the package's own
+# nmpc headers.
+list(APPEND unicycle_ugv_controller_INCLUDE_DIRS
+  "${unicycle_ugv_controller_DIR}/../../../include/unicycle_ugv_controller/nmpc")

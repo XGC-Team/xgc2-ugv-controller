@@ -122,7 +122,7 @@ catkin_package(
   LIBRARIES unicycle_ugv_controller_core
   CATKIN_DEPENDS geometry_msgs nav_msgs rigid_state_estimator_msgs roscpp ros1_utils std_msgs
                  ugv_reset_client unicycle_reference_trajectory_msgs
-  CFG_EXTRAS unicycle_ugv_controller-dependencies.cmake
+  CFG_EXTRAS unicycle_ugv_controller-dependencies.cmake unicycle_ugv_controller-nmpc-include.cmake
 )
 
 include_directories(

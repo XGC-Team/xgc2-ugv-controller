@@ -1,0 +1,4 @@
+# The controller's public headers include the generated solver header
+# (acados_solver_unicycle_nmpc.h). Built in the workspace it lives beside the
+# generated code in the source tree.
+list(APPEND unicycle_ugv_controller_INCLUDE_DIRS "@UGV_NMPC_GENERATED_DIR@")
