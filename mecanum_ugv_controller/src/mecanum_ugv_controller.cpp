@@ -1,12 +1,15 @@
 #include "mecanum_ugv_controller/mecanum_ugv_controller.h"
 
 #include <cmath>
+#include <limits>
+#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
 #include "mecanum_ugv_controller/common/core_log.h"
+#include "mecanum_ugv_controller/common/wall_clock.h"
 #include "mecanum_ugv_controller/state_machine/custom1_state.h"
 #include "mecanum_ugv_controller/state_machine/health_monitor_state.h"
 #include "mecanum_ugv_controller/state_machine/ready_state.h"
@@ -26,7 +29,8 @@ void requireOk(const sm::Status& status, const char* operation) {
 
 }  // namespace
 
-MecanumUgvController::MecanumUgvController(const UgvState& state) : state_(state) {
+MecanumUgvController::MecanumUgvController(const UgvState& state)
+    : state_(state), reset_generation_(std::random_device{}() & 0x7fffffffU) {
     setupMachine();
 }
 
@@ -124,6 +128,48 @@ void MecanumUgvController::setResetTarget(ResetTarget target) {
 ResetTarget MecanumUgvController::resetTarget() const {
     std::lock_guard<std::mutex> lock(reset_mutex_);
     return reset_target_;
+}
+
+ResetSession MecanumUgvController::resetSession() const {
+    std::lock_guard<std::mutex> lock(reset_mutex_);
+    return reset_session_;
+}
+
+void MecanumUgvController::beginResetSession(const ResetTarget& target) {
+    std::lock_guard<std::mutex> lock(reset_mutex_);
+    reset_session_ = ResetSession{};
+    reset_clearance_ = ResetClearance{};
+    // Refuse wraparound, which could admit a response of an older session.
+    if (reset_generation_ == std::numeric_limits<uint32_t>::max() || !std::isfinite(target.x) ||
+        !std::isfinite(target.y) || !std::isfinite(target.yaw)) {
+        return;
+    }
+    reset_session_ = ResetSession{true, ++reset_generation_, target};
+}
+
+void MecanumUgvController::cancelResetSession() {
+    std::lock_guard<std::mutex> lock(reset_mutex_);
+    reset_session_ = ResetSession{};
+    reset_clearance_ = ResetClearance{};
+}
+
+void MecanumUgvController::setResetClearance(const ResetClearance& clearance) {
+    std::lock_guard<std::mutex> lock(reset_mutex_);
+    reset_clearance_ = clearance;
+    reset_clearance_.valid = true;
+}
+
+ResetClearance MecanumUgvController::resetFeedback(uint64_t now_ns, double wall) const {
+    std::lock_guard<std::mutex> lock(reset_mutex_);
+    const ResetClearance& c = reset_clearance_;
+    const uint64_t lease_ns = static_cast<uint64_t>(std::llround(c.lease_seconds * 1.0e9));
+    // A paused or rewound clock must not renew a moving command: both clocks must hold.
+    if (!reset_session_.active || !c.valid || c.generation != reset_session_.generation ||
+        c.stamp_ns == 0U || now_ns < c.stamp_ns || now_ns - c.stamp_ns > lease_ns ||
+        !std::isfinite(wall) || wall < c.issue_wall || wall - c.issue_wall > c.lease_seconds) {
+        return ResetClearance{};
+    }
+    return c;
 }
 
 bool MecanumUgvController::worldReferenceReady() const {

@@ -4,7 +4,7 @@
 #include <geometry_msgs/TwistStamped.h>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_safety/reset_client.h>
+#include <ugv_reset_client/reset_client.h>
 
 #include <algorithm>
 #include <cctype>
@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "mecanum_ugv_controller/common/core_log.h"
+#include "mecanum_ugv_controller/common/wall_clock.h"
 #include "mecanum_ugv_controller/mecanum_ugv_controller.h"
 #include "mecanum_ugv_controller/ros_time_conversion.h"
 #include "mecanum_ugv_controller/state_machine/periodic_gate.h"
@@ -40,6 +41,30 @@ double finitePositiveOr(double value, double fallback) {
     return std::isfinite(value) && value > 0.0 ? value : fallback;
 }
 
+// The protocol's status values are the controller's.
+static_assert(static_cast<int>(ResetClearance::RUNNING) ==
+                  static_cast<int>(ugv_reset_client::ResetLease::RUNNING),
+              "");
+static_assert(static_cast<int>(ResetClearance::ARRIVED) ==
+                  static_cast<int>(ugv_reset_client::ResetLease::ARRIVED),
+              "");
+static_assert(static_cast<int>(ResetClearance::REJECTED) ==
+                  static_cast<int>(ugv_reset_client::ResetLease::REJECTED),
+              "");
+
+ResetClearance toResetClearance(const ugv_reset_client::ResetLease::Clearance& clearance) {
+    ResetClearance out;
+    out.generation = clearance.generation;
+    out.stamp_ns = clearance.stamp;
+    out.issue_wall = clearance.issue_wall;
+    out.status = static_cast<ResetClearance::Status>(clearance.status);
+    out.linear_x = clearance.command.x;
+    out.linear_y = clearance.command.y;
+    out.yaw_rate = clearance.command.yaw;
+    out.lease_seconds = clearance.lease_seconds;
+    return out;
+}
+
 std::string normalize(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -54,7 +79,9 @@ class MecanumUgvRosNode {
         : nh_(nh),
           private_nh_("~"),
           controller_(state_),
-          reset_client_(nh_, controller_.resetSession()) {
+          reset_client_(nh_, [this](const ugv_reset_client::ResetLease::Clearance& clearance) {
+              controller_.setResetClearance(toResetClearance(clearance));
+          }) {
         loadParams();
         controller_.setConfig(config_);
         seedResetTarget();
@@ -89,15 +116,17 @@ class MecanumUgvRosNode {
                 if (event.id == output_event_type::PUBLISH_CMD_VEL) {
                     const auto command = makeTwist(controller_.command());
                     cmd_vel_pub_.publish(command);
-                    controller_.resetSession().noteApplied(
-                        {command.linear.x, command.linear.y, command.angular.z},
-                        ros::Time::now().toNSec());
+                    reset_client_.noteApplied(
+                        {command.linear.x, command.linear.y, command.angular.z});
                 } else if (event.id == output_event_type::PUBLISH_ZERO_CMD_VEL) {
                     cmd_vel_pub_.publish(geometry_msgs::Twist{});
-                    controller_.resetSession().noteApplied({}, ros::Time::now().toNSec());
+                    reset_client_.noteApplied({});
                 }
             }
-            reset_client_.update({state_.x, state_.y, state_.yaw}, toRosTime(state_.stamp),
+            const ResetSession reset = controller_.resetSession();
+            reset_client_.update(reset.active, reset.generation,
+                                 {reset.target.x, reset.target.y, reset.target.yaw},
+                                 {state_.x, state_.y, state_.yaw}, toRosTime(state_.stamp),
                                  controller_.healthReady());
             if (status_gate_.due(now, 1.0 / config_.status_publish_rate_hz)) {
                 std_msgs::String status;
@@ -270,17 +299,17 @@ class MecanumUgvRosNode {
     geometry_msgs::Twist makeTwist(const ControlCommand& command) {
         geometry_msgs::Twist msg;
         if (controller_.stateMachine().currentState(region_type::CONTROL) == state_type::Reset) {
-            const auto feedback = controller_.resetSession().feedback(
-                ros::Time::now().toNSec(), ugv_reset_safety::monotonicSeconds());
-            if (!feedback.valid || feedback.status != ugv_reset_safety::ResetSession::RUNNING ||
-                std::abs(feedback.command.x) > config_.max_linear_speed ||
-                std::abs(feedback.command.y) > config_.max_linear_speed ||
-                std::abs(feedback.command.yaw) > config_.max_yaw_rate) {
+            const auto feedback =
+                controller_.resetFeedback(ros::Time::now().toNSec(), monotonicSeconds());
+            if (!feedback.valid || feedback.status != ResetClearance::RUNNING ||
+                std::abs(feedback.linear_x) > config_.max_linear_speed ||
+                std::abs(feedback.linear_y) > config_.max_linear_speed ||
+                std::abs(feedback.yaw_rate) > config_.max_yaw_rate) {
                 return msg;
             }
-            msg.linear.x = feedback.command.x;
-            msg.linear.y = feedback.command.y;
-            msg.angular.z = feedback.command.yaw;
+            msg.linear.x = feedback.linear_x;
+            msg.linear.y = feedback.linear_y;
+            msg.angular.z = feedback.yaw_rate;
             return msg;
         }
         if (!command.valid) {
@@ -296,7 +325,7 @@ class MecanumUgvRosNode {
     ros::NodeHandle private_nh_;
     UgvState state_;
     MecanumUgvController controller_;
-    ugv_reset_safety::ResetClient reset_client_;
+    ugv_reset_client::ResetClient reset_client_;
     ControllerConfig config_{};
     uint32_t queue_size_{10U};
     std::string pose_topic_{"pose"};

@@ -5,30 +5,27 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(catkin REQUIRED COMPONENTS geometry_msgs roscpp std_msgs ugv_reset_safety)
+find_package(catkin REQUIRED COMPONENTS geometry_msgs roscpp std_msgs ugv_reset_client)
 find_package(xgc2_state_machine REQUIRED CONFIG)
 find_package(xgc2_math 0.5.12 REQUIRED CONFIG)
 
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES mecanum_ugv_controller_core
-  CATKIN_DEPENDS geometry_msgs roscpp std_msgs ugv_reset_safety
+  CATKIN_DEPENDS geometry_msgs roscpp std_msgs ugv_reset_client
 )
 
 include_directories(include ${catkin_INCLUDE_DIRS})
 
 # ROS-free controller core: the controller, its state machine states and the
-# core log. It takes plain types and explicit time; ROS stays in the node.
+# core log. It takes plain types and explicit time; ROS stays in the node. The
+# core is one vehicle: its Reset state executes a target and a clearance it is
+# given, and has no part in the station's coordination.
 #
 # The directory-level include path (catkin, which puts the ROS headers on it)
-# is reset to the core's real dependencies: this package's headers and the
-# header-only ugv_reset_safety session. It links no ROS library and is linked
-# with -Wl,--no-undefined, so a ROS symbol reaching the core fails the link.
-find_path(MECANUM_RESET_SAFETY_CORE_INCLUDE_DIR ugv_reset_safety/reset_session.h
-  PATHS ${catkin_INCLUDE_DIRS} NO_DEFAULT_PATH)
-if(NOT MECANUM_RESET_SAFETY_CORE_INCLUDE_DIR)
-  message(FATAL_ERROR "ugv_reset_safety/reset_session.h not found")
-endif()
+# is reset to the core's real dependencies: this package's headers. It links no
+# ROS library and is linked with -Wl,--no-undefined, so a ROS symbol reaching
+# the core fails the link.
 add_library(mecanum_ugv_controller_core
   src/common_types.cpp
   src/core_log.cpp
@@ -36,8 +33,7 @@ add_library(mecanum_ugv_controller_core
   src/state_machine/states.cpp)
 set_property(TARGET mecanum_ugv_controller_core PROPERTY INCLUDE_DIRECTORIES "")
 target_include_directories(mecanum_ugv_controller_core PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${MECANUM_RESET_SAFETY_CORE_INCLUDE_DIR})
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(mecanum_ugv_controller_core
   xgc2_state_machine::state_machine
   xgc2_math::algebra

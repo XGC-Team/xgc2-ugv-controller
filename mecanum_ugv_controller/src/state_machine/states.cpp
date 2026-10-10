@@ -3,6 +3,7 @@
 
 #include "mecanum_ugv_controller/common/core_log.h"
 #include "mecanum_ugv_controller/common/types.h"
+#include "mecanum_ugv_controller/common/wall_clock.h"
 #include "mecanum_ugv_controller/mecanum_ugv_controller.h"
 #include "mecanum_ugv_controller/state_machine/custom1_state.h"
 #include "mecanum_ugv_controller/state_machine/health_monitor_state.h"
@@ -91,10 +92,10 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
     controller_.clearCommand();
     command_gate_.reset();
     enter_time_ = controller_.currentTime();
-    enter_wall_ = ugv_reset_safety::monotonicSeconds();
+    enter_wall_ = monotonicSeconds();
     const auto target = controller_.resetTarget();
     if (controller_.resetTargetReady()) {
-        controller_.resetSession().begin({target.x, target.y, target.yaw});
+        controller_.beginResetSession(target);
         controller_.setResetHoldReason({});
     } else {
         controller_.setResetHoldReason("no target: reset_pose cache and reset_initial_* missing");
@@ -109,7 +110,7 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
 ::state_machine::ActionResult ResetState::onTick(::state_machine::StateContext& ctx) {
     const auto cfg = controller_.config();
     const double now = controller_.currentTime();
-    const double wall = ugv_reset_safety::monotonicSeconds();
+    const double wall = monotonicSeconds();
     if (cfg.reset_timeout > 0.0 &&
         (now - enter_time_ >= cfg.reset_timeout || wall - enter_wall_ >= cfg.reset_timeout)) {
         emitZero(ctx);
@@ -120,10 +121,10 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
         emitZero(ctx);
         return {};
     }
-    if (!controller_.resetSession().active()) {
+    if (!controller_.resetSession().active) {
         if (controller_.resetTargetReady()) {
             const auto target = controller_.resetTarget();
-            controller_.resetSession().begin({target.x, target.y, target.yaw});
+            controller_.beginResetSession(target);
             controller_.setResetHoldReason({});
         } else {
             emitZero(ctx);
@@ -134,12 +135,11 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
             return {};
         }
     }
-    const auto feedback = controller_.resetSession().feedback(Time(now).toNSec(), wall);
-    if (feedback.valid && feedback.status != ugv_reset_safety::ResetSession::RUNNING) {
+    const auto feedback = controller_.resetFeedback(Time(now).toNSec(), wall);
+    if (feedback.valid && feedback.status != ResetClearance::RUNNING) {
         emitZero(ctx);
-        postDone(ctx, feedback.status == ugv_reset_safety::ResetSession::ARRIVED
-                          ? event_type::RESET_ARRIVED
-                          : event_type::RESET_REJECTED);
+        postDone(ctx, feedback.status == ResetClearance::ARRIVED ? event_type::RESET_ARRIVED
+                                                                 : event_type::RESET_REJECTED);
         return {};
     }
     ControlCommand command;
@@ -147,16 +147,16 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
     command.valid = true;
     if (feedback.valid) {
         // Refuse a command outside chassis limits; do not silently saturate.
-        if (std::abs(feedback.command.x) > cfg.max_linear_speed ||
-            std::abs(feedback.command.y) > cfg.max_linear_speed ||
-            std::abs(feedback.command.yaw) > cfg.max_yaw_rate) {
+        if (std::abs(feedback.linear_x) > cfg.max_linear_speed ||
+            std::abs(feedback.linear_y) > cfg.max_linear_speed ||
+            std::abs(feedback.yaw_rate) > cfg.max_yaw_rate) {
             emitZero(ctx);
             postDone(ctx, event_type::RESET_REJECTED);
             return {};
         }
-        command.linear_x = feedback.command.x;
-        command.linear_y = feedback.command.y;
-        command.angular_z = feedback.command.yaw;
+        command.linear_x = feedback.linear_x;
+        command.linear_y = feedback.linear_y;
+        command.angular_z = feedback.yaw_rate;
     }
     // Missing/expired coordinator response commands zero, including /clock pause.
     emitCommand(ctx, command);
@@ -164,7 +164,7 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
 }
 
 ::state_machine::ActionResult ResetState::onExit(::state_machine::StateContext& ctx) {
-    controller_.resetSession().cancel();
+    controller_.cancelResetSession();
     emitZero(ctx, true);
     command_gate_.reset();
     return {};
@@ -173,8 +173,7 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
 void ResetState::emitCommand(::state_machine::StateContext& ctx, const ControlCommand& command) {
     const auto cfg = controller_.config();
     controller_.setCommand(command);
-    if (!command_gate_.due(ugv_reset_safety::monotonicSeconds(),
-                           1.0 / cfg.command_publish_rate_hz)) {
+    if (!command_gate_.due(monotonicSeconds(), 1.0 / cfg.command_publish_rate_hz)) {
         return;
     }
     ctx.emitOutput(
@@ -187,7 +186,7 @@ void ResetState::emitZero(::state_machine::StateContext& ctx, bool force) {
     controller_.clearCommand();
     const double period =
         cfg.idle_cmd_rate_hz > 0.0 ? 1.0 / cfg.idle_cmd_rate_hz : 1.0 / cfg.command_publish_rate_hz;
-    const bool due = command_gate_.due(ugv_reset_safety::monotonicSeconds(), period);
+    const bool due = command_gate_.due(monotonicSeconds(), period);
     if (!force && !due) {
         return;
     }

@@ -52,6 +52,34 @@ struct ResetTarget {
     bool valid{false};
 };
 
+// The Reset session this controller runs: the frozen target it drives to and
+// the generation that tells it apart from every earlier session. The
+// controller owns it; whatever carries the vehicle's requests to the station
+// follows it.
+struct ResetSession {
+    bool active{false};
+    uint32_t generation{0U};
+    ResetTarget target;
+};
+
+// What the controller executes in Reset: the station coordinator's response to
+// the vehicle's last request, validated by whatever carries the protocol. The
+// command is only used while `lease_seconds` have not passed since `stamp_ns`
+// on the controller's clock and since `issue_wall` on the wall clock, so a
+// stopped or lost coordinator stops the vehicle, also when the clock is paused.
+struct ResetClearance {
+    enum Status : uint8_t { RUNNING = 0, ARRIVED = 1, REJECTED = 2 };
+    uint32_t generation{0U};  // the session it answers
+    uint64_t stamp_ns{0U};    // the request it answers, on the controller's clock
+    double issue_wall{0.0};   // wall clock seconds when that request was issued
+    Status status{RUNNING};
+    double linear_x{0.0};
+    double linear_y{0.0};
+    double yaw_rate{0.0};
+    double lease_seconds{0.0};
+    bool valid{false};
+};
+
 struct WorldVelocityReference {
     Time stamp;
     double vx{0.0};

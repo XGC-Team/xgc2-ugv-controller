@@ -1,7 +1,5 @@
 #pragma once
 
-#include <ugv_reset_safety/reset_session.h>
-
 #include <memory>
 #include <mutex>
 #include <state_machine/state_machine.hpp>
@@ -37,12 +35,16 @@ class MecanumUgvController {
     void setCommand(ControlCommand command);
     ControlCommand command() const;
     void clearCommand();
-    ugv_reset_safety::ResetSession& resetSession() {
-        return reset_session_;
-    }
-    const ugv_reset_safety::ResetSession& resetSession() const {
-        return reset_session_;
-    }
+    // The Reset session. The Reset state begins it on entry and cancels it on exit; the
+    // transport to the station's coordinator follows resetSession() and gives every
+    // validated response to setResetClearance().
+    ResetSession resetSession() const;
+    void beginResetSession(const ResetTarget& target);
+    void cancelResetSession();
+    void setResetClearance(const ResetClearance& clearance);
+    // The clearance if it answers the current session and its lease holds at `now_ns`
+    // (the controller's clock) and `wall` (seconds); invalid otherwise.
+    ResetClearance resetFeedback(uint64_t now_ns, double wall) const;
     const std::string& lastResetAdmissionMiss() const {
         return last_reset_admission_miss_;
     }
@@ -57,7 +59,6 @@ class MecanumUgvController {
     void noteResetAdmissionAfterUpdate();
     std::string describeResetAdmissionMiss(const std::string& source) const;
 
-    ugv_reset_safety::ResetSession reset_session_;
     const UgvState& state_;
     mutable std::mutex config_mutex_;
     ControllerConfig config_;
@@ -65,6 +66,10 @@ class MecanumUgvController {
     ControlCommand command_;
     mutable std::mutex reset_mutex_;
     ResetTarget reset_target_;
+    ResetSession reset_session_;
+    ResetClearance reset_clearance_;
+    // Not reused after a restart while the clock is paused: the first generation is random.
+    uint32_t reset_generation_;
     mutable std::mutex reference_mutex_;
     WorldVelocityReference world_reference_;
     std::unique_ptr<::state_machine::StateMachine> machine_;
