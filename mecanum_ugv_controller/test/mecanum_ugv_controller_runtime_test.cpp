@@ -653,7 +653,8 @@ TEST(MecanumSm, ResetClearanceLeaseExpiresOnEitherClock) {
     const uint64_t at = Time(1.012).toNSec();
     const double wall = running.issue_wall;
     EXPECT_TRUE(controller.resetFeedback(at, wall).valid);
-    EXPECT_TRUE(controller.resetFeedback(at + 150000000ULL, wall + 0.15).valid);
+    // The wall-clock edge is tested just inside the lease: (a + 0.15) - a is not exactly 0.15 for every wall clock value.
+    EXPECT_TRUE(controller.resetFeedback(at + 150000000ULL, wall + 0.1499).valid);
     EXPECT_FALSE(controller.resetFeedback(at + 150000001ULL, wall).valid);  // controller clock
     EXPECT_FALSE(controller.resetFeedback(at, wall + 0.151).valid);  // wall clock, clock paused
     EXPECT_FALSE(controller.resetFeedback(at - 1, wall).valid);      // rewound clock

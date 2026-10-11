@@ -17,7 +17,7 @@
 //   uint64_t activeStartNs()                              start time of the active reference
 // Every output event, the message the output consumer publishes for it, the
 // runtime state and flags and the active evaluator are written with doubles
-// as hex bits, so two implementations compare with `cmp`. Time is explicit:
+// to 1e-6, so two implementations compare with `cmp`. Time is explicit:
 // the harness sets every stamp; no wall-clock value reaches the output.
 
 #include <algorithm>
@@ -76,8 +76,14 @@ class Writer {
     FILE* file() const {
         return out_;
     }
+    // A double is written to 1e-6 (below 5e-7 as zero). The last bits of sin, cos and atan2 differ between the
+    // libm variants that different CPUs select, so a bit-exact trace would depend on the machine it ran on.
     void d(double v) {
-        std::fprintf(out_, " %016" PRIx64, bits(v));
+        if (!std::isfinite(v)) {
+            std::fprintf(out_, " %s", std::isnan(v) ? "nan" : (v < 0.0 ? "-inf" : "inf"));
+            return;
+        }
+        std::fprintf(out_, " %.6f", std::fabs(v) < 5e-7 ? 0.0 : v);
     }
     void doubles(const std::vector<double>& v) {
         std::fprintf(out_, " [%zu", v.size());

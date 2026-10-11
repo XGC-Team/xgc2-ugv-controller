@@ -6,7 +6,8 @@
 // same scenario with the original ReferenceInputProducer/node glue). This
 // test runs the scenario through ReferenceTrajectoryDriver and requires the
 // same bytes: every output event, status and active message, state, flag and
-// evaluator sample, with doubles as hex bits.
+// evaluator sample, with doubles to 1e-6 (the last bits of the libm functions
+// differ between CPUs, so a bit-exact trace would depend on the machine).
 
 #include <gtest/gtest.h>
 
