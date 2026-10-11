@@ -42,9 +42,9 @@
 //   the relative topics below, and those of the Reset lease, resolve under it), sim_time,
 //   queue_size, state_source ("state_estimator" | "platform_pose"), tracking_strategy ("nmpc" |
 //   "flatness"), state_estimate_topic, platform_pose_topic, reset_pose_topic, cmd_vel_topic,
-//   control_state_topic, pva_reference_topic, analytic_topic, waypoint_topic, sampled_topic,
-//   reset_topic, status_topic, active_analytic_topic, active_polynomial_topic,
-//   active_sampled_topic.
+//   control_state_topic, pva_reference_topic, reset_request_topic, reset_response_topic,
+//   analytic_topic, waypoint_topic, sampled_topic, reset_topic, status_topic,
+//   active_analytic_topic, active_polynomial_topic, active_sampled_topic.
 
 #include <geometry_msgs/Pose2D.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -169,6 +169,8 @@ struct EdgeConfig {
     std::string cmd_vel_topic{"cmd_vel"};
     std::string control_state_topic{"custom/statustext"};
     std::string pva_reference_topic{"alg/reference/pva"};
+    std::string reset_request_topic{"reset/request"};
+    std::string reset_response_topic{"reset/response"};
     std::string analytic_topic{"alg/unicycle_reference_trajectory/request/analytic"};
     std::string waypoint_topic{"alg/unicycle_reference_trajectory/request/waypoint"};
     std::string sampled_topic{"alg/unicycle_reference_trajectory/request/sampled"};
@@ -187,6 +189,8 @@ struct EdgeConfig {
                reset_pose_topic == other.reset_pose_topic && cmd_vel_topic == other.cmd_vel_topic &&
                control_state_topic == other.control_state_topic &&
                pva_reference_topic == other.pva_reference_topic &&
+               reset_request_topic == other.reset_request_topic &&
+               reset_response_topic == other.reset_response_topic &&
                analytic_topic == other.analytic_topic && waypoint_topic == other.waypoint_topic &&
                sampled_topic == other.sampled_topic && reset_topic == other.reset_topic &&
                status_topic == other.status_topic &&
@@ -228,6 +232,8 @@ EdgeConfig loadEdgeConfig(const JsonSource& source) {
     source.get("cmd_vel_topic", config.cmd_vel_topic);
     source.get("control_state_topic", config.control_state_topic);
     source.get("pva_reference_topic", config.pva_reference_topic);
+    source.get("reset_request_topic", config.reset_request_topic);
+    source.get("reset_response_topic", config.reset_response_topic);
     source.get("analytic_topic", config.analytic_topic);
     source.get("waypoint_topic", config.waypoint_topic);
     source.get("sampled_topic", config.sampled_topic);
@@ -431,9 +437,11 @@ class Instance {
             nh_->advertise<msgs::SampledReference>(config_.active_sampled_topic, q, true);
 
         reset_client_ = std::make_unique<ugv_reset_client::ResetClient>(
-            *nh_, [this](const ugv_reset_client::ResetLease::Clearance& clearance) {
+            *nh_,
+            [this](const ugv_reset_client::ResetLease::Clearance& clearance) {
                 onClearance(clearance);
-            });
+            },
+            config_.reset_request_topic, config_.reset_response_topic);
         spinner_ = std::make_unique<ros::AsyncSpinner>(1, queue_.get());
         spinner_->start();
         connected_ = true;

@@ -661,12 +661,14 @@ TEST_F(EdgeTest, TheGeneratorsOutputsAreTheReferenceTopicsInRosTime) {
 }
 
 TEST_F(EdgeTest, TheResetLeaseRunsBetweenTheControllerAndTheCoordinator) {
-    startEdge("{\"namespace\": \"ugv1\"}");
+    startEdge(
+        "{\"namespace\": \"ugv1\", \"reset_request_topic\": \"station/ask\", "
+        "\"reset_response_topic\": \"/coordinator/answers\"}");
     ros::Publisher states = nh_.advertise<rigid_state_estimator_msgs::RigidStateEstimate>(
         "ugv1/alg/state_estimator/state", 5);
-    Probe<ugv_reset_safety::ResetRequest> requests(nh_, "ugv1/reset/request");
+    Probe<ugv_reset_safety::ResetRequest> requests(nh_, "ugv1/station/ask");
     ros::Publisher responses =
-        nh_.advertise<ugv_reset_safety::ResetResponse>("ugv1/reset/response", 5);
+        nh_.advertise<ugv_reset_safety::ResetResponse>("/coordinator/answers", 5);
     Probe<geometry_msgs::Twist> twists(nh_, "ugv1/cmd_vel");
     ASSERT_TRUE(connected(states));
     ASSERT_TRUE(connected(responses));

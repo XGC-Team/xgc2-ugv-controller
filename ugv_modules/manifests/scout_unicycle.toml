@@ -1,0 +1,197 @@
+# The AgileX Scout (unicycle) entity: the planar reference generator, the NMPC/flatness controller and
+# the vehicle's ROS edge in one xgc2-module-host process.
+#
+#   xgc2-module-host --manifest scout_unicycle.toml --check     validate: load the libraries, plan the channels
+#   xgc2-module-host --manifest scout_unicycle.toml             run until SIGINT or SIGTERM
+#
+# The process needs the ROS environment of the vehicle (ROS_MASTER_URI, and the ROS libraries on the library
+# path, as for any ROS node): source /opt/ros/<distro>/setup.bash first. The drivers, the state estimator
+# and the Reset coordinator stay what they were, separate ROS nodes; this entity replaces
+# unicycle_reference_trajectory_node and unicycle_ugv_controller_node, with the same topics.
+#
+# The values below are those of config/unicycle_reference_trajectory.yaml and
+# config/unicycle_ugv_controller.yaml minus the topic names (the edge keeps the nodes' topics) and
+# minus control_rate_hz and main_frequency: the period of an instance is its loop rate.
+#
+# Relative paths are resolved against this file. The installed layout is
+#   <prefix>/share/ugv_modules/manifests/scout_unicycle.toml
+#   <prefix>/lib/ugv_modules/lib*.so
+# scout_unicycle_sim.toml differs from this file in the clock and in the edge's sim_time only.
+
+entity = "scout"
+
+[host]
+# The edge, the controller and the generator run side by side; the solver has a thread of its own.
+workers = 3
+
+[clock]
+mode = "steady"
+
+[control]
+# XRPC http.v1 on a Unix socket. Its directory has to exist, be owned by the user that runs the host and
+# have mode 0700. --control-socket overrides it.
+socket = "/run/xgc2/scout/module.sock"
+
+[[module]]
+name = "edge"
+path = "../../../lib/ugv_modules/libugv_ros_edge.so"
+
+[[module]]
+name = "reference"
+path = "../../../lib/ugv_modules/libugv_unicycle_reference.so"
+
+[[module]]
+name = "controller"
+path = "../../../lib/ugv_modules/libugv_unicycle_controller.so"
+
+# Instances start in this order: the consumers of the events (the generator, the controller) before the
+# edge that produces them, so that nothing the edge receives while the entity starts is lost.
+[[instance]]
+name = "reference"
+module = "reference"
+period_ms = 10                          # main_frequency: 100 Hz
+
+[instance.config]
+status_rate = 10.0
+active_publish_rate = 10.0
+validation_sample_dt = 0.02
+trajectory_timeout = 0.5
+min_lead_time = 0.2
+max_velocity = 0.0
+max_acceleration = 0.0
+max_yaw_rate = 0.0
+
+[instance.config.default_analytic]
+enabled = false
+analytic_type = 1
+request_id = 1
+trajectory_id = 1
+revision = 1
+start_delay = 0.5
+duration = 120.0
+origin_x = 0.0
+origin_y = 0.0
+origin_yaw = 0.0
+radius = 3.0
+line_speed = 1.0
+entry_duration = 2.0
+center_x = 0.0
+center_y = 0.0
+
+[instance.bind]
+analytic_request = "analytic_request"
+sampled_request = "sampled_request"
+waypoint_request = "waypoint_request"
+reset = "reference_reset"
+status = "reference_status"
+active_analytic = "active_analytic"
+active_polynomial = "active_polynomial"
+active_sampled = "active_sampled"
+
+[[instance]]
+name = "controller"
+module = "controller"
+period_ms = 2                           # control_rate_hz: 500 Hz
+
+[instance.config]
+state_source = "state_estimator"
+tracking_strategy = "nmpc"
+auto_start_tracking = false
+state_timeout = 0.5
+command_publish_rate_hz = 30.0
+idle_cmd_rate_hz = 5.0
+status_publish_rate_hz = 5.0
+
+[instance.config.chassis]
+max_linear_speed = 1.05
+max_yaw_rate = 1.05
+
+[instance.config.fence]
+x_min = -20.0
+x_max = 20.0
+y_min = -20.0
+y_max = 20.0
+
+[instance.config.filter]
+zeta = 0.7071067811865476
+wn = 31.41592653589793
+dt_min = 0.0001
+dt_max = 0.2
+
+[instance.config.flatness]
+kp = 6.0
+kv = 4.0
+v_eps = 0.15
+lateral_response_length = 0.8
+lateral_damping = 1.0
+
+[instance.config.limits]
+max_linear_speed = 3.0
+min_linear_speed = -1.5
+max_angular_speed = 2.5
+max_linear_acceleration = 2.0
+max_angular_acceleration = 3.0
+
+[instance.config.nmpc]
+control_period = 0.1
+prediction_horizon = 1.0
+request_rate_hz = 100.0
+result_timeout = 0.1
+solve_timeout = 0.05
+
+[instance.config.nmpc.weights]
+position_x = 20.0
+position_y = 20.0
+yaw = 8.0
+speed = 4.0
+accel = 0.4
+omega = 10.0
+angular_accel = 1.0
+terminal_position_x = 60.0
+terminal_position_y = 60.0
+terminal_yaw = 20.0
+terminal_speed = 10.0
+
+[instance.config.reset]
+timeout = 90.0
+
+[instance.bind]
+state = "state"
+command = "command"
+reset_target = "reset_target"
+reset_clearance = "reset_clearance"
+active_analytic = "active_analytic"
+active_polynomial = "active_polynomial"
+active_sampled = "active_sampled"
+pva = "pva"
+cmd_vel = "cmd_vel"
+status = "controller_status"
+reset_session = "reset_session"
+
+[[instance]]
+name = "edge"
+module = "edge"
+period_ms = 10                          # the Reset lease asks for a request about every 20 ms
+
+[instance.config]
+namespace = "ugv1"                      # the vehicle's ROS namespace, as the launch files' ns
+state_source = "state_estimator"
+tracking_strategy = "nmpc"
+
+[instance.bind]
+cmd_vel = "cmd_vel"
+controller_status = "controller_status"
+reset_session = "reset_session"
+reference_status = "reference_status"
+active_analytic = "active_analytic"
+active_polynomial = "active_polynomial"
+active_sampled = "active_sampled"
+state = "state"
+command = "command"
+reset_target = "reset_target"
+reset_clearance = "reset_clearance"
+pva = "pva"
+analytic_request = "analytic_request"
+sampled_request = "sampled_request"
+waypoint_request = "waypoint_request"
+reference_reset = "reference_reset"
