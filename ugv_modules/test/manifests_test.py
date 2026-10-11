@@ -62,6 +62,10 @@ class ManifestTest(unittest.TestCase):
                              {"reference": 10, "controller": 2, "edge": 10})
             for module in manifest["module"]:
                 self.assertTrue(module["path"].startswith("../../../lib/ugv_modules/lib"), module["path"])
+            # the state machine of the cores belongs to the thread that built it: the host keeps each
+            # instance on one thread, and the manifest says so
+            for item in manifest["instance"]:
+                self.assertEqual(item.get("affinity"), "sticky", item["name"])
 
     def test_the_values_are_the_ones_of_the_nodes(self):
         manifest = load("scout_unicycle.toml")

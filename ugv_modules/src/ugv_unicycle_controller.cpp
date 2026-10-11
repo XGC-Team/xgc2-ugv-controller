@@ -27,10 +27,9 @@
 // the instance's period (period_ms of the manifest) is the control rate. A live configure replaces
 // the whole configuration.
 //
-// The controller's state machine belongs to the thread that built it, and the host steps an
-// instance on whichever worker is free; the controller therefore lives on a thread of the instance
-// (OwnerThread) and only the reading of the inputs and the writing of the outputs happen on the
-// host's thread.
+// The controller's state machine belongs to the thread that built it, so the instance has to be
+// called on one thread for its life: the host's thread affinity (manifest `affinity = "sticky"`). A
+// step on another thread fails the instance with a message that says so.
 //
 // What the state, the references and the Reset target carry is in the host clock; the controller's
 // time is the now_ns of the step. Two cmd_vel decisions of one step are one commit: the chassis is
@@ -199,45 +198,14 @@ void forwardCoreLog(ugv::LogLevel level, const char* message) {
 // ---- the instance
 // ---------------------------------------------------------------------------------
 
-// The samples of the input ports in one step, borrowed from the host until the step returns. The
-// step reads them on the host's thread; the controller works on them on its own, while the host's
-// waits.
-struct Inputs {
-    struct Reference {
-        uint32_t port;
-        int64_t stamp_ns;
-        const void* payload;
-    };
-    const xgc2_ugv_planar_state* state{nullptr};
-    const xgc2_ugv_reset_target* reset_target{nullptr};
-    const xgc2_ugv_reset_clearance* clearance{nullptr};
-    const xgc2_ugv_planar_pva* pva{nullptr};
-    std::vector<Reference> references;  // the new ones, oldest first
-    std::vector<const xgc2_ugv_command*> commands;
-};
-
-// What the controller decided in one step, for the host's thread to write.
-struct Outputs {
-    bool cmd_vel{false};
-    uint32_t cmd_kind{XGC2_UGV_CMD_VEL_ZERO};
-    double linear_x{0.0};
-    double angular_z{0.0};
-    xgc2_ugv_reset_session session{};  // the Reset session as it stands now
-    bool status_due{false};
-    xgc2_ugv_controller_status status{};
-};
-
 class Instance {
    public:
-    explicit Instance(const Host& host) : host_(host) {}
+    explicit Instance(const Host& host) : host_(host), controller_(state_) {
+        thread_.bind();  // the controller's state machine was built by the member controller_
+    }
 
     ~Instance() {
         shutDown();
-        // The controller is torn down where it was built.
-        owner_.run([this] {
-            execution_.reset();
-            controller_.reset();
-        });
     }
 
     const Host& host() const {
@@ -256,7 +224,24 @@ class Instance {
                 "control_rate_hz does not apply to the module: the period of the instance is the "
                 "control rate");
         }
-        owner_.run([&] { apply(loaded, status_rate); });
+
+        config_ = loaded;
+        status_publish_rate_hz_ =
+            std::isfinite(status_rate) && status_rate > 0.0 ? status_rate : 5.0;
+        controller_.setConfig(config_);
+        const ugv::ResetTarget seed = ugv::initialResetTarget(config_);
+        if (seed.valid && !reset_target_from_port_) {
+            controller_.setResetTarget(seed);
+        }
+        if (config_.tracking_strategy == ugv::TrackingStrategy::NMPC && !execution_) {
+            execution_ = std::make_unique<ugv::NmpcExecution>(
+                controller_,
+                [this](sm::Event event) { return controller_.postEvent(std::move(event)); },
+                [this] { return secondsOf<ugv::Time>(host_.nowNs()); }, [this] { host_.wake(); });
+            if (started_) {
+                execution_->start();
+            }
+        }
     }
 
     void start() {
@@ -274,79 +259,46 @@ class Instance {
     }
 
     void step(const xgc2_step_ctx& ctx) {
+        thread_.check("step");
         const double now = secondsOf<ugv::Time>(ctx.now_ns);
-        const Inputs inputs = read();
-        Outputs outputs;
-        owner_.run([&] { control(inputs, ctx.now_ns, now, outputs); });
-        // Commit last: the consumers run right after this step.
-        write(outputs, ctx.now_ns);
-    }
+        readState(now);
+        readResetTarget(now);
+        readReferences(now);
+        readClearance();
+        readCommands(ctx.now_ns, now);
 
-   private:
-    // ---- the owner thread's part -------------------------------------------------------------
-
-    void apply(const ugv::ControllerConfig& loaded, double status_rate) {
-        if (!controller_) {
-            controller_ = std::make_unique<ugv::UnicycleUgvController>(state_);
-        }
-        config_ = loaded;
-        status_publish_rate_hz_ =
-            std::isfinite(status_rate) && status_rate > 0.0 ? status_rate : 5.0;
-        controller_->setConfig(config_);
-        const ugv::ResetTarget seed = ugv::initialResetTarget(config_);
-        if (seed.valid && !reset_target_from_port_) {
-            controller_->setResetTarget(seed);
-        }
-        if (config_.tracking_strategy == ugv::TrackingStrategy::NMPC && !execution_) {
-            execution_ = std::make_unique<ugv::NmpcExecution>(
-                *controller_,
-                [this](sm::Event event) { return controller_->postEvent(std::move(event)); },
-                [this] { return secondsOf<ugv::Time>(host_.nowNs()); }, [this] { host_.wake(); });
-            if (started_) {
-                execution_->start();
-            }
-        }
-    }
-
-    // One control step: the inputs go to the controller, the controller updates, its output events
-    // are served, and what is to be written is collected.
-    void control(const Inputs& in, int64_t now_ns, double now, Outputs& out) {
-        if (in.state != nullptr) {
-            applyState(*in.state, now);
-        }
-        if (in.reset_target != nullptr) {
-            applyResetTarget(*in.reset_target, now);
-        }
-        for (const Inputs::Reference& reference : in.references) {
-            applyReference(reference, now);
-        }
-        if (in.pva != nullptr) {
-            applyPva(*in.pva, now);
-        }
-        if (in.clearance != nullptr) {
-            applyClearance(*in.clearance);
-        }
-        for (const xgc2_ugv_command* command : in.commands) {
-            applyCommand(*command, now_ns, now);
-        }
-
-        controller_->update(now);
-        if (!controller_->lastResetAdmissionMiss().empty() &&
-            controller_->lastResetAdmissionMiss() != last_reset_miss_) {
-            last_reset_miss_ = controller_->lastResetAdmissionMiss();
+        controller_.update(now);
+        if (!controller_.lastResetAdmissionMiss().empty() &&
+            controller_.lastResetAdmissionMiss() != last_reset_miss_) {
+            last_reset_miss_ = controller_.lastResetAdmissionMiss();
             host_.log(kLogError, last_reset_miss_);
         }
         logStateChanges();
-        dispatchOutputs(controller_->stateMachine().currentOutputEvents(), now, out);
-        describeSession(out);
-        describeStatus(now_ns, out);
+
+        // Commit last: the consumers run right after this step.
+        dispatchOutputs(controller_.stateMachine().currentOutputEvents(), now);
+        publishResetSession(ctx.now_ns);
+        publishStatusIfDue(ctx.now_ns);
+        publishCmdVel(ctx.now_ns);
     }
+
+   private:
+    void shutDown() {
+        if (execution_) {
+            execution_->stop();
+        }
+        started_ = false;
+        const Host* self = &host_;
+        g_log_host.compare_exchange_strong(self, nullptr);
+    }
+
+    // ---- inputs ---------------------------------------------------------------------------------
 
     void post(uint32_t id, double stamp_sec, const char* source) {
         sm::Event event(id, sm::EventTimestamp{stamp_sec});
         event.source = source;
         event.category = sm::EventCategory::kInput;
-        const auto status = controller_->postEvent(std::move(event));
+        const auto status = controller_.postEvent(std::move(event));
         if (!status.ok()) {
             host_.log(kLogWarn,
                       format("Failed to post the %s event: %s", source, status.message.c_str()));
@@ -359,7 +311,12 @@ class Instance {
         }
     }
 
-    void applyState(const xgc2_ugv_planar_state& p, double now) {
+    void readState(double now) {
+        const auto sample = host_.latest<xgc2_ugv_planar_state>(kState);
+        if (!seen_.fresh(kState, sample)) {
+            return;
+        }
+        const xgc2_ugv_planar_state& p = *sample;
         const bool estimator = config_.state_source == ugv::StateSource::STATE_ESTIMATOR;
         const uint8_t expected =
             estimator ? XGC2_UGV_STATE_SOURCE_ESTIMATE : XGC2_UGV_STATE_SOURCE_POSE;
@@ -391,53 +348,85 @@ class Instance {
              estimator ? "state_estimate" : "platform_pose");
     }
 
-    void applyResetTarget(const xgc2_ugv_reset_target& p, double now) {
-        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.yaw)) {
+    void readResetTarget(double now) {
+        const auto sample = host_.latest<xgc2_ugv_reset_target>(kResetTarget);
+        if (!seen_.fresh(kResetTarget, sample)) {
+            return;
+        }
+        if (!std::isfinite(sample->x) || !std::isfinite(sample->y) || !std::isfinite(sample->yaw)) {
             host_.log(kLogWarn, "Ignoring non-finite reset target");
             return;
         }
         ugv::ResetTarget target;
-        target.x = p.x;
-        target.y = p.y;
-        target.yaw = ugv::wrapAngle(p.yaw);
+        target.x = sample->x;
+        target.y = sample->y;
+        target.yaw = ugv::wrapAngle(sample->yaw);
         target.valid = true;
-        controller_->setResetTarget(target);
+        controller_.setResetTarget(target);
         reset_target_from_port_ = true;
         host_.log(kLogInfo,
                   format("Reset target x=%.3f y=%.3f yaw=%.3f", target.x, target.y, target.yaw));
         post(ugv::event_type::INPUT_RESET_TARGET_UPDATED, now, "reset_pose");
     }
 
-    void applyReference(const Inputs::Reference& reference, double now) {
-        bool accepted = false;
-        const char* name = "";
-        if (reference.port == kActiveAnalytic) {
-            ugv::reference::AnalyticReference plain;
-            accepted = toCore(*static_cast<const xgc2_ugv_analytic_reference*>(reference.payload),
-                              plain) &&
-                       controller_->referenceCache().updateAnalytic(plain);
-            name = "active_analytic";
-        } else if (reference.port == kActivePolynomial) {
-            ugv::reference::ActivePolynomialReference plain;
-            accepted = toCore(*static_cast<const xgc2_ugv_polynomial_reference*>(reference.payload),
-                              plain) &&
-                       controller_->referenceCache().updatePolynomial(plain);
-            name = "active_polynomial";
-        } else {
-            ugv::reference::SampledReference plain;
-            accepted =
-                toCore(*static_cast<const xgc2_ugv_sampled_reference*>(reference.payload), plain) &&
-                controller_->referenceCache().updateSampled(plain);
-            name = "active_sampled";
-        }
-        if (!accepted) {
-            warn(reference.port, now, std::string("Rejected ") + name + " reference");
+    // The three references of the NMPC strategy, the one that was committed last last.
+    void readReferences(double now) {
+        if (config_.tracking_strategy == ugv::TrackingStrategy::FLATNESS) {
+            readPva(now);
             return;
         }
-        post(ugv::event_type::INPUT_REFERENCE_UPDATED, now, name);
+        const auto analytic = host_.latest<xgc2_ugv_analytic_reference>(kActiveAnalytic);
+        const auto polynomial = host_.latest<xgc2_ugv_polynomial_reference>(kActivePolynomial);
+        const auto sampled = host_.latest<xgc2_ugv_sampled_reference>(kActiveSampled);
+        struct Fresh {
+            int64_t stamp_ns;
+            uint32_t port;
+        };
+        std::vector<Fresh> fresh;
+        if (seen_.fresh(kActiveAnalytic, analytic)) {
+            fresh.push_back({analytic.stamp_ns, kActiveAnalytic});
+        }
+        if (seen_.fresh(kActivePolynomial, polynomial)) {
+            fresh.push_back({polynomial.stamp_ns, kActivePolynomial});
+        }
+        if (seen_.fresh(kActiveSampled, sampled)) {
+            fresh.push_back({sampled.stamp_ns, kActiveSampled});
+        }
+        std::stable_sort(fresh.begin(), fresh.end(),
+                         [](const Fresh& a, const Fresh& b) { return a.stamp_ns < b.stamp_ns; });
+        for (const Fresh& item : fresh) {
+            bool accepted = false;
+            const char* name = "";
+            if (item.port == kActiveAnalytic) {
+                ugv::reference::AnalyticReference plain;
+                accepted =
+                    toCore(*analytic, plain) && controller_.referenceCache().updateAnalytic(plain);
+                name = "active_analytic";
+            } else if (item.port == kActivePolynomial) {
+                ugv::reference::ActivePolynomialReference plain;
+                accepted = toCore(*polynomial, plain) &&
+                           controller_.referenceCache().updatePolynomial(plain);
+                name = "active_polynomial";
+            } else {
+                ugv::reference::SampledReference plain;
+                accepted =
+                    toCore(*sampled, plain) && controller_.referenceCache().updateSampled(plain);
+                name = "active_sampled";
+            }
+            if (!accepted) {
+                warn(item.port, now, std::string("Rejected ") + name + " reference");
+                continue;
+            }
+            post(ugv::event_type::INPUT_REFERENCE_UPDATED, now, name);
+        }
     }
 
-    void applyPva(const xgc2_ugv_planar_pva& p, double now) {
+    void readPva(double now) {
+        const auto sample = host_.latest<xgc2_ugv_planar_pva>(kPva);
+        if (!seen_.fresh(kPva, sample)) {
+            return;
+        }
+        const xgc2_ugv_planar_pva& p = *sample;
         if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.vx) ||
             !std::isfinite(p.vy) || !std::isfinite(p.ax) || !std::isfinite(p.ay)) {
             warn(kPva, now, "Rejecting non-finite PVA");
@@ -453,11 +442,16 @@ class Instance {
         reference.ax = p.ax;
         reference.ay = p.ay;
         reference.valid = true;
-        controller_->setWorldPva(reference);
+        controller_.setWorldPva(reference);
         post(ugv::event_type::INPUT_REFERENCE_UPDATED, reference.stamp.toSec(), "reference_pva");
     }
 
-    void applyClearance(const xgc2_ugv_reset_clearance& p) {
+    void readClearance() {
+        const auto sample = host_.latest<xgc2_ugv_reset_clearance>(kResetClearance);
+        if (!seen_.fresh(kResetClearance, sample)) {
+            return;
+        }
+        const xgc2_ugv_reset_clearance& p = *sample;
         if (p.status > XGC2_UGV_RESET_REJECTED || p.stamp_ns <= 0) {
             host_.log(kLogWarn, "Ignoring a malformed reset clearance");
             return;
@@ -471,46 +465,48 @@ class Instance {
         clearance.linear_y = p.linear_y;
         clearance.yaw_rate = p.yaw_rate;
         clearance.lease_seconds = p.lease_seconds;
-        controller_->setResetClearance(clearance);
+        controller_.setResetClearance(clearance);
     }
 
-    void applyCommand(const xgc2_ugv_command& command, int64_t now_ns, double now) {
-        uint32_t id = 0;
-        switch (command.kind) {
-            case XGC2_UGV_COMMAND_CUSTOM1:
-                id = ugv::event_type::CUSTOM1_REQUESTED;
-                break;
-            case XGC2_UGV_COMMAND_STOP:
-                id = ugv::event_type::STOP_REQUESTED;
-                break;
-            case XGC2_UGV_COMMAND_RESET:
-                id = ugv::event_type::RESET_REQUESTED;
-                break;
-            default:
-                warn(kCommand, now, format("Unknown command kind %u", command.kind));
+    void readCommands(int64_t now_ns, double now) {
+        for (;;) {
+            const auto sample = host_.next<xgc2_ugv_command>(kCommand);
+            if (!sample) {
                 return;
+            }
+            uint32_t id = 0;
+            switch (sample->kind) {
+                case XGC2_UGV_COMMAND_CUSTOM1:
+                    id = ugv::event_type::CUSTOM1_REQUESTED;
+                    break;
+                case XGC2_UGV_COMMAND_STOP:
+                    id = ugv::event_type::STOP_REQUESTED;
+                    break;
+                case XGC2_UGV_COMMAND_RESET:
+                    id = ugv::event_type::RESET_REQUESTED;
+                    break;
+                default:
+                    warn(kCommand, now, format("Unknown command kind %u", sample->kind));
+                    continue;
+            }
+            post(id, secondsOf<ugv::Time>(sample->stamp_ns > 0 ? sample->stamp_ns : now_ns),
+                 sample->source == XGC2_UGV_COMMAND_SOURCE_PUBLIC ? "/command" : "command");
         }
-        post(id, secondsOf<ugv::Time>(command.stamp_ns > 0 ? command.stamp_ns : now_ns),
-             command.source == XGC2_UGV_COMMAND_SOURCE_PUBLIC ? "/command" : "command");
     }
 
-    void dispatchOutputs(const std::vector<sm::Event>& events, double now, Outputs& out) {
+    // ---- outputs --------------------------------------------------------------------------------
+
+    void dispatchOutputs(const std::vector<sm::Event>& events, double now) {
         for (const sm::Event& event : events) {
             if (event.id == ugv::output_event_type::REQUEST_NMPC_SOLVE) {
                 if (!execution_ || !execution_->handle(event)) {
                     warn(kCmdVel, now, "An NMPC solve was requested but no solver runs");
                 }
             } else if (event.id == ugv::output_event_type::PUBLISH_CMD_VEL) {
-                const ugv::CmdVel twist = controller_->cmdVel();
-                out.cmd_vel = true;
-                out.cmd_kind = XGC2_UGV_CMD_VEL_COMMAND;
-                out.linear_x = twist.linear_x;
-                out.angular_z = twist.angular_z;
+                const ugv::CmdVel twist = controller_.cmdVel();
+                pending_ = {true, XGC2_UGV_CMD_VEL_COMMAND, twist.linear_x, twist.angular_z};
             } else if (event.id == ugv::output_event_type::PUBLISH_ZERO_CMD_VEL) {
-                out.cmd_vel = true;
-                out.cmd_kind = XGC2_UGV_CMD_VEL_ZERO;
-                out.linear_x = 0.0;
-                out.angular_z = 0.0;
+                pending_ = {true, XGC2_UGV_CMD_VEL_ZERO, 0.0, 0.0};
             } else {
                 warn(kStatus, now,
                      format("Unhandled output event id: %u", static_cast<unsigned>(event.id)));
@@ -518,42 +514,86 @@ class Instance {
         }
     }
 
-    // The Reset session and the health the vehicle's requests are issued under, as they stand.
-    void describeSession(Outputs& out) const {
-        const ugv::ResetSession session = controller_->resetSession();
-        out.session.target_x = session.target.x;
-        out.session.target_y = session.target.y;
-        out.session.target_yaw = session.target.yaw;
-        out.session.generation = session.generation;
-        out.session.flags = (session.active ? XGC2_UGV_RESET_SESSION_ACTIVE : 0U) |
-                            (controller_->healthReady() ? XGC2_UGV_RESET_SESSION_HEALTHY : 0U);
-    }
-
-    void describeStatus(int64_t now_ns, Outputs& out) const {
-        const auto period_ns = static_cast<int64_t>(1.0e9 / status_publish_rate_hz_);
-        out.status_due =
-            now_ns > 0 && (last_status_ns_ == 0 || now_ns - last_status_ns_ >= period_ns);
-        if (!out.status_due) {
+    void publishCmdVel(int64_t now_ns) {
+        if (!pending_.valid) {
             return;
         }
-        std::string name = controller_->stateMachine().currentStateName(ugv::region_type::CONTROL);
+        const Pending twist = pending_;
+        pending_ = {};
+        auto slot = host_.write<xgc2_ugv_cmd_vel>(kCmdVel);
+        if (!slot) {
+            return;
+        }
+        slot->stamp_ns = now_ns;
+        slot->linear_x = twist.linear_x;
+        slot->linear_y = 0.0;
+        slot->angular_z = twist.angular_z;
+        slot->kind = twist.kind;
+        slot.commit(now_ns);
+    }
+
+    // The Reset session and the health the vehicle's requests are issued under; it is written when
+    // one of them changes, and the edge keeps requesting for as long as it holds.
+    void publishResetSession(int64_t now_ns) {
+        const ugv::ResetSession session = controller_.resetSession();
+        const bool healthy = controller_.healthReady();
+        const uint32_t flags = (session.active ? XGC2_UGV_RESET_SESSION_ACTIVE : 0U) |
+                               (healthy ? XGC2_UGV_RESET_SESSION_HEALTHY : 0U);
+        const bool same =
+            session_published_ && flags == session_flags_ &&
+            session.generation == session_generation_ && session.target.x == session_target_[0] &&
+            session.target.y == session_target_[1] && session.target.yaw == session_target_[2];
+        if (same) {
+            return;
+        }
+        auto slot = host_.write<xgc2_ugv_reset_session>(kResetSession);
+        if (!slot) {
+            return;
+        }
+        slot->target_x = session.target.x;
+        slot->target_y = session.target.y;
+        slot->target_yaw = session.target.yaw;
+        slot->generation = session.generation;
+        slot->flags = flags;
+        if (slot.commit(now_ns)) {
+            session_published_ = true;
+            session_flags_ = flags;
+            session_generation_ = session.generation;
+            session_target_[0] = session.target.x;
+            session_target_[1] = session.target.y;
+            session_target_[2] = session.target.yaw;
+        }
+    }
+
+    void publishStatusIfDue(int64_t now_ns) {
+        if (now_ns <= 0) {
+            return;
+        }
+        const auto period_ns = static_cast<int64_t>(1.0e9 / status_publish_rate_hz_);
+        if (last_status_ns_ != 0 && now_ns - last_status_ns_ < period_ns) {
+            return;
+        }
+        auto slot = host_.write<xgc2_ugv_controller_status>(kStatus);
+        if (!slot) {
+            return;
+        }
+        last_status_ns_ = now_ns;
+        std::string name = controller_.stateMachine().currentStateName(ugv::region_type::CONTROL);
         if (name.empty()) {
             name = "Unknown";
         }
-        out.status.stamp_ns = now_ns;
-        out.status.control_state =
-            controller_->stateMachine().currentState(ugv::region_type::CONTROL);
-        out.status.health_state =
-            controller_->stateMachine().currentState(ugv::region_type::HEALTH);
-        std::strncpy(out.status.control_state_name, name.c_str(),
-                     sizeof(out.status.control_state_name) - 1U);
+        slot->stamp_ns = now_ns;
+        slot->control_state = controller_.stateMachine().currentState(ugv::region_type::CONTROL);
+        slot->health_state = controller_.stateMachine().currentState(ugv::region_type::HEALTH);
+        std::strncpy(slot->control_state_name, name.c_str(), sizeof(slot->control_state_name) - 1U);
+        slot.commit(now_ns);
     }
 
     void logStateChanges() {
-        const auto control = controller_->stateMachine().currentState(ugv::region_type::CONTROL);
-        const auto health = controller_->stateMachine().currentState(ugv::region_type::HEALTH);
+        const auto control = controller_.stateMachine().currentState(ugv::region_type::CONTROL);
+        const auto health = controller_.stateMachine().currentState(ugv::region_type::HEALTH);
         if (control != last_control_state_) {
-            host_.log(kLogInfo, "CONTROL state -> " + controller_->stateMachine().currentStateName(
+            host_.log(kLogInfo, "CONTROL state -> " + controller_.stateMachine().currentStateName(
                                                           ugv::region_type::CONTROL));
             last_control_state_ = control;
         }
@@ -563,131 +603,33 @@ class Instance {
         }
     }
 
-    // ---- the host thread's part ---------------------------------------------------------------
-
-    // The new samples of the input ports, in the order the node's callbacks would have served them.
-    Inputs read() {
-        Inputs in;
-        const auto state = host_.latest<xgc2_ugv_planar_state>(kState);
-        if (seen_.fresh(kState, state)) {
-            in.state = state.data;
-        }
-        const auto target = host_.latest<xgc2_ugv_reset_target>(kResetTarget);
-        if (seen_.fresh(kResetTarget, target)) {
-            in.reset_target = target.data;
-        }
-        if (config_.tracking_strategy == ugv::TrackingStrategy::FLATNESS) {
-            const auto pva = host_.latest<xgc2_ugv_planar_pva>(kPva);
-            if (seen_.fresh(kPva, pva)) {
-                in.pva = pva.data;
-            }
-        } else {
-            // The three references of the NMPC strategy, the one that was committed last, last.
-            const auto analytic = host_.latest<xgc2_ugv_analytic_reference>(kActiveAnalytic);
-            const auto polynomial = host_.latest<xgc2_ugv_polynomial_reference>(kActivePolynomial);
-            const auto sampled = host_.latest<xgc2_ugv_sampled_reference>(kActiveSampled);
-            if (seen_.fresh(kActiveAnalytic, analytic)) {
-                in.references.push_back({kActiveAnalytic, analytic.stamp_ns, analytic.data});
-            }
-            if (seen_.fresh(kActivePolynomial, polynomial)) {
-                in.references.push_back({kActivePolynomial, polynomial.stamp_ns, polynomial.data});
-            }
-            if (seen_.fresh(kActiveSampled, sampled)) {
-                in.references.push_back({kActiveSampled, sampled.stamp_ns, sampled.data});
-            }
-            std::stable_sort(in.references.begin(), in.references.end(),
-                             [](const Inputs::Reference& a, const Inputs::Reference& b) {
-                                 return a.stamp_ns < b.stamp_ns;
-                             });
-        }
-        const auto clearance = host_.latest<xgc2_ugv_reset_clearance>(kResetClearance);
-        if (seen_.fresh(kResetClearance, clearance)) {
-            in.clearance = clearance.data;
-        }
-        for (;;) {
-            const auto command = host_.next<xgc2_ugv_command>(kCommand);
-            if (!command) {
-                break;
-            }
-            in.commands.push_back(command.data);
-        }
-        return in;
-    }
-
-    void write(const Outputs& out, int64_t now_ns) {
-        writeResetSession(out.session, now_ns);
-        if (out.status_due) {
-            auto slot = host_.write<xgc2_ugv_controller_status>(kStatus);
-            if (slot) {
-                *slot = out.status;
-                if (slot.commit(now_ns)) {
-                    last_status_ns_ = now_ns;
-                }
-            }
-        }
-        if (out.cmd_vel) {
-            auto slot = host_.write<xgc2_ugv_cmd_vel>(kCmdVel);
-            if (slot) {
-                slot->stamp_ns = now_ns;
-                slot->linear_x = out.linear_x;
-                slot->linear_y = 0.0;
-                slot->angular_z = out.angular_z;
-                slot->kind = out.cmd_kind;
-                slot.commit(now_ns);
-            }
-        }
-    }
-
-    // The session is written when it changes, and the edge keeps requesting for as long as it
-    // holds.
-    void writeResetSession(const xgc2_ugv_reset_session& session, int64_t now_ns) {
-        const bool same = session_published_ && session.flags == published_session_.flags &&
-                          session.generation == published_session_.generation &&
-                          session.target_x == published_session_.target_x &&
-                          session.target_y == published_session_.target_y &&
-                          session.target_yaw == published_session_.target_yaw;
-        if (same) {
-            return;
-        }
-        auto slot = host_.write<xgc2_ugv_reset_session>(kResetSession);
-        if (!slot) {
-            return;
-        }
-        *slot = session;
-        if (slot.commit(now_ns)) {
-            session_published_ = true;
-            published_session_ = session;
-        }
-    }
-
-    void shutDown() {
-        if (execution_) {
-            execution_->stop();
-        }
-        started_ = false;
-        const Host* self = &host_;
-        g_log_host.compare_exchange_strong(self, nullptr);
-    }
+    struct Pending {
+        bool valid{false};
+        uint32_t kind{XGC2_UGV_CMD_VEL_ZERO};
+        double linear_x{0.0};
+        double angular_z{0.0};
+    };
 
     Host host_;
-    OwnerThread owner_;
-    // The controller and everything that refers to it are built and used on owner_.
+    ThreadGuard thread_;
     ugv::UgvState state_;
-    std::unique_ptr<ugv::UnicycleUgvController> controller_;
+    ugv::UnicycleUgvController controller_;
     std::unique_ptr<ugv::NmpcExecution> execution_;
     ugv::ControllerConfig config_;
     double status_publish_rate_hz_{5.0};
+    bool started_{false};
     bool reset_target_from_port_{false};
+    SeenSamples seen_;
     LogThrottle throttle_[kPortCount];
+    Pending pending_;
     std::string last_reset_miss_;
     sm::StateId last_control_state_{0U};
     sm::StateId last_health_state_{0U};
-    // The host's thread.
-    bool started_{false};
-    SeenSamples seen_;
     int64_t last_status_ns_{0};
     bool session_published_{false};
-    xgc2_ugv_reset_session published_session_{};
+    uint32_t session_flags_{0U};
+    uint32_t session_generation_{0U};
+    double session_target_[3]{0.0, 0.0, 0.0};
 };
 
 const xgc2_module_desc kDescriptor = {XGC2_MODULE_ABI_MAJOR,

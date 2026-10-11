@@ -28,6 +28,7 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -148,6 +149,7 @@ class TestHost {
 
     // ---- lifecycle ----
     xgc2_status create(const std::string& json) {
+        noteCallingThread();
         config_ = json;
         const xgc2_config config{config_.c_str(), config_.size()};
         return desc_->create(&api_, this, &config, &instance_);
@@ -156,21 +158,31 @@ class TestHost {
         if (instance_ == nullptr) {
             return XGC2_ERR_STATE;
         }
+        noteCallingThread();
         config_ = json;
         const xgc2_config config{config_.c_str(), config_.size()};
         return desc_->configure(instance_, &config);
     }
     xgc2_status start() {
+        noteCallingThread();
         return instance_ == nullptr ? XGC2_ERR_STATE : desc_->start(instance_);
     }
     xgc2_status stop() {
+        noteCallingThread();
         return instance_ == nullptr ? XGC2_ERR_STATE : desc_->stop(instance_);
     }
     void destroy() {
         if (instance_ != nullptr) {
+            noteCallingThread();
             desc_->destroy(instance_);
             instance_ = nullptr;
         }
+    }
+    // The threads that made lifecycle and step calls. The host keeps an instance on one thread for
+    // its life (affinity "sticky"), and a test that is not about threads makes every call from one.
+    size_t callingThreads() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return calling_threads_.size();
     }
     bool created() const {
         return instance_ != nullptr;
@@ -182,6 +194,7 @@ class TestHost {
         if (instance_ == nullptr) {
             return XGC2_ERR_STATE;
         }
+        noteCallingThread();
         xgc2_step_ctx ctx{};
         ctx.now_ns = now();
         ctx.step_index = step_index_++;
@@ -366,6 +379,10 @@ class TestHost {
     static TestHost& self(void* ctx) {
         return *static_cast<TestHost*>(ctx);
     }
+    void noteCallingThread() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        calling_threads_.insert(std::this_thread::get_id());
+    }
 
     static void* writeBegin(void* ctx, uint32_t index) {
         TestHost& h = self(ctx);
@@ -496,6 +513,7 @@ class TestHost {
     std::thread::id wake_thread_;
     std::vector<std::pair<int, std::string>> logs_;
     std::vector<std::pair<int, std::string>> reports_;
+    std::set<std::thread::id> calling_threads_;
 };
 
 // Runs jobs on a ring of threads that all live as long as the object: the next job goes to the next

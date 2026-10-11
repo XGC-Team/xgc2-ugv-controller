@@ -112,12 +112,13 @@ set `period_ms`.
 ## Threads and the host
 
 The state machine of the cores belongs to the thread that built it and refuses every other one
-(`operation called from non-owner thread`), while the host runs the calls of an instance on whichever
-worker is free. The generator and the controller therefore build their cores on a thread of their own
-(`OwnerThread` in `src/module_support.h`) and run every step there; the reads and writes of the ports stay
-on the host's thread. A step costs a thread hand-off (some tens of microseconds). Without this the
-generator stopped in `SelfCheck` with the invalid-input flag in the real host. A host that keeps an
-instance on one thread would make it unnecessary.
+(`operation called from non-owner thread`): the generator then drops to `SelfCheck` with the invalid-input
+flag and the controller stays where it was, without a sound. The generator and the controller therefore
+rely on the host to keep an instance on one thread for its life, which is the host's per-instance worker
+affinity (`affinity = "sticky"`, set explicitly in both manifests). They also check it: a step on another
+thread than the one that built the cores fails the instance with a message that names the affinity.
+`test/core_thread_ownership_test.cpp` shows what the cores do on the wrong thread. The edge has no state
+machine and no such requirement.
 
 roscpp can be started once in a process. The first edge instance starts it (node name and master from its
 configuration), later ones share it, and it ends with the process. The library is linked `-z nodelete`, so

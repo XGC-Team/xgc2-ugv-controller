@@ -164,6 +164,18 @@ if(CATKIN_ENABLE_TESTING)
             --ros-free $<TARGET_FILE:ugv_unicycle_reference> $<TARGET_FILE:ugv_unicycle_controller>
             --ros $<TARGET_FILE:ugv_ros_edge>)
 
+  # What the cores do on a thread that did not build them: the reason for the host's thread affinity.
+  catkin_add_gtest(core_thread_ownership_test test/core_thread_ownership_test.cpp)
+  if(TARGET core_thread_ownership_test)
+    target_include_directories(core_thread_ownership_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/test ${unicycle_reference_trajectory_INCLUDE_DIRS}
+      ${unicycle_ugv_controller_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIRS})
+    target_link_libraries(core_thread_ownership_test Xgc2Module::SDK
+      ${UGV_REFERENCE_CORE} ${UGV_CONTROLLER_CORE}
+      xgc2_math::control xgc2_math::trajectory xgc2_state_machine::state_machine
+      gtest_main pthread)
+  endif()
+
   # The module chain against the chain of the two ROS nodes, on the replay scenario of the generator.
   ugv_add_module_test(chain_parity_test test/chain_parity_test.cpp
     ugv_unicycle_reference ugv_unicycle_controller

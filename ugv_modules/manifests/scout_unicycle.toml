@@ -50,6 +50,7 @@ path = "../../../lib/ugv_modules/libugv_unicycle_controller.so"
 name = "reference"
 module = "reference"
 period_ms = 10                          # main_frequency: 100 Hz
+affinity = "sticky"                     # the state machine of the core belongs to the thread that built it
 
 [instance.config]
 status_rate = 10.0
@@ -92,6 +93,7 @@ active_sampled = "active_sampled"
 name = "controller"
 module = "controller"
 period_ms = 2                           # control_rate_hz: 500 Hz
+affinity = "sticky"                     # the state machine of the core belongs to the thread that built it
 
 [instance.config]
 state_source = "state_estimator"
@@ -172,6 +174,7 @@ reset_session = "reset_session"
 name = "edge"
 module = "edge"
 period_ms = 10                          # the Reset lease asks for a request about every 20 ms
+affinity = "sticky"                     # (the edge has no state machine; every instance is explicit)
 
 [instance.config]
 namespace = "ugv1"                      # the vehicle's ROS namespace, as the launch files' ns

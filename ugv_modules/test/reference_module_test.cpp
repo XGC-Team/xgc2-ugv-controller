@@ -96,6 +96,11 @@ class ReferenceModuleTest : public ::testing::Test {
         ASSERT_EQ(host_.start(), XGC2_OK);
     }
 
+    void TearDown() override {
+        // The host keeps an instance on one thread; so does this test.
+        EXPECT_EQ(host_.callingThreads(), 1u);
+    }
+
     // Steps at the 100 Hz grid up to `seconds` after kT0.
     void runUntil(double seconds) {
         const int64_t end = kT0 + static_cast<int64_t>(seconds * 1e9);
@@ -431,46 +436,37 @@ INSTANTIATE_TEST_SUITE_P(Clocks, ReferenceClockTest,
                                            int64_t{150737250000000},  // an uptime of 42 hours
                                            int64_t{1700000000} * kSecond));  // the wall clock
 
-// The state machine of the generator belongs to the thread that built it. The host steps an
-// instance on whichever worker is free, so the module must work when every call comes from another
-// thread.
-TEST(ReferenceModuleThreads, EveryCallMayComeFromAnotherThread) {
+// The state machine of the generator belongs to the thread that built it. The host keeps an
+// instance on one thread (affinity "sticky"); a host that did not would leave the generator half
+// alive without a sound, so the module checks and fails the instance with the reason.
+TEST(ReferenceModuleThreads, AStepOnAnotherThreadThanTheBuilderFailsTheInstanceLoudly) {
     ModuleLibrary library(REFERENCE_MODULE_PATH);
     TestHost host(library.desc());
-    ugv_modules_test::RotatingThreads workers(5);
+    ugv_modules_test::RotatingThreads threads(2);  // the builder's and another one
     int64_t now = kT0;
     host.setNow(now);
     xgc2_status status = XGC2_OK;
-    workers.run([&] { status = host.create("{}"); });
+    threads.run([&] { status = host.create("{}"); });  // thread 0 builds the generator
     ASSERT_EQ(status, XGC2_OK);
-    workers.run([&] { status = host.start(); });
+    threads.run([&] { status = host.start(); });  // thread 1; start does not touch it
     ASSERT_EQ(status, XGC2_OK);
-    auto run = [&](double seconds) {
-        const int64_t end = now + static_cast<int64_t>(seconds * 1e9);
-        while (now + kStep <= end) {
-            now += kStep;
-            host.setNow(now);
-            workers.run([&] { status = host.step(); });
-            ASSERT_EQ(status, XGC2_OK);
-        }
+    auto step = [&] {
+        now += kStep;
+        host.setNow(now);
+        threads.run([&] { status = host.step(); });
     };
-    run(0.5);
-    ASSERT_TRUE(host.push("analytic_request", circle(now), now));
-    run(1.5);
-    const auto statuses = host.outputsAs<xgc2_ugv_reference_status>("status");
-    ASSERT_GE(statuses.size(), 19u);
-    EXPECT_EQ(statuses.back().state, XGC2_UGV_REFERENCE_STATE_ACTIVE);
-    EXPECT_EQ(statuses.back().flags, 0u);
-    // A live configure comes from yet another thread and rebuilds the generator.
-    workers.run([&] { status = host.configure("{\"status_rate\": 20}"); });
-    ASSERT_EQ(status, XGC2_OK);
-    host.clearOutputs();
-    run(2.5);
-    EXPECT_EQ(host.outputsAs<xgc2_ugv_reference_status>("status").back().state,
-              XGC2_UGV_REFERENCE_STATE_READY);
-    workers.run([&] { status = host.stop(); });
+    step();  // thread 0
     EXPECT_EQ(status, XGC2_OK);
-    workers.run([&] { host.destroy(); });
+    EXPECT_TRUE(host.reports().empty());
+    step();  // thread 1
+    EXPECT_EQ(status, XGC2_ERR_INTERNAL);
+    ASSERT_FALSE(host.reports().empty());
+    EXPECT_EQ(host.reports().back().first, 2);  // failed
+    EXPECT_NE(host.reports().back().second.find("another thread"), std::string::npos)
+        << host.reports().back().second;
+    EXPECT_NE(host.reports().back().second.find("affinity"), std::string::npos);
+    EXPECT_EQ(host.callingThreads(), 2u);
+    threads.run([&] { host.destroy(); });
 }
 
 }  // namespace
