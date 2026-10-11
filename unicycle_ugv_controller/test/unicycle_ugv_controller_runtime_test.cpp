@@ -905,7 +905,8 @@ TEST(UnicycleSm, ResetClearanceLeaseExpiresOnEitherClock) {
     const uint64_t at = Time(1.012).toNSec();
     const double wall = running.issue_wall;
     EXPECT_TRUE(controller.resetFeedback(at, wall).valid);
-    // The wall-clock edge is tested just inside the lease: (a + 0.15) - a is not exactly 0.15 for every wall clock value.
+    // The wall-clock edge is tested just inside the lease: (a + 0.15) - a is not exactly 0.15 for
+    // every wall clock value.
     EXPECT_TRUE(controller.resetFeedback(at + 150000000ULL, wall + 0.1499).valid);
     EXPECT_FALSE(controller.resetFeedback(at + 150000001ULL, wall).valid);  // ROS clock
     EXPECT_FALSE(controller.resetFeedback(at, wall + 0.151).valid);  // wall clock, clock paused

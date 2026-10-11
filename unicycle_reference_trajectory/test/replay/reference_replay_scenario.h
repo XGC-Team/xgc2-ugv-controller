@@ -76,8 +76,9 @@ class Writer {
     FILE* file() const {
         return out_;
     }
-    // A double is written to 1e-6 (below 5e-7 as zero). The last bits of sin, cos and atan2 differ between the
-    // libm variants that different CPUs select, so a bit-exact trace would depend on the machine it ran on.
+    // A double is written to 1e-6 (below 5e-7 as zero). The last bits of sin, cos and atan2 differ
+    // between the libm variants that different CPUs select, so a bit-exact trace would depend on
+    // the machine it ran on.
     void d(double v) {
         if (!std::isfinite(v)) {
             std::fprintf(out_, " %s", std::isnan(v) ? "nan" : (v < 0.0 ? "-inf" : "inf"));
