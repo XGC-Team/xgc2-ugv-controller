@@ -250,7 +250,6 @@ class TestHost {
         Port& p = ports_.at(port(name));
         std::vector<Sample> samples;
         samples.swap(p.committed);
-        p.write_limit = SIZE_MAX;
         return samples;
     }
     template <typename T>
@@ -291,6 +290,11 @@ class TestHost {
     // ---- observation ----
     uint64_t wakeCount() const {
         return wakes_.load();
+    }
+    // The thread that called wake() last.
+    std::thread::id lastWakeThread() const {
+        std::lock_guard<std::mutex> lock(wake_mutex_);
+        return wake_thread_;
     }
     // Waits until wakeCount() exceeds `seen`; false on timeout.
     bool waitWake(uint64_t seen, std::chrono::milliseconds timeout) {
@@ -439,6 +443,7 @@ class TestHost {
         TestHost& h = self(ctx);
         {
             std::lock_guard<std::mutex> lock(h.wake_mutex_);
+            h.wake_thread_ = std::this_thread::get_id();
             h.wakes_.fetch_add(1);
         }
         h.wake_cv_.notify_all();
@@ -470,6 +475,7 @@ class TestHost {
     mutable std::mutex mutex_;
     mutable std::mutex wake_mutex_;
     std::condition_variable wake_cv_;
+    std::thread::id wake_thread_;
     std::vector<std::pair<int, std::string>> logs_;
     std::vector<std::pair<int, std::string>> reports_;
 };

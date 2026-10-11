@@ -68,6 +68,16 @@ target_link_libraries(ugv_unicycle_reference PRIVATE
   xgc2_state_machine::state_machine
   pthread)
 
+ugv_add_module(ugv_unicycle_controller src/ugv_unicycle_controller.cpp)
+target_include_directories(ugv_unicycle_controller BEFORE PRIVATE
+  ${unicycle_ugv_controller_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIRS})
+target_link_libraries(ugv_unicycle_controller PRIVATE
+  ${UGV_CONTROLLER_CORE}
+  xgc2_math::control
+  xgc2_math::trajectory
+  xgc2_state_machine::state_machine
+  pthread)
+
 install(DIRECTORY include/
   DESTINATION ${CATKIN_GLOBAL_INCLUDE_DESTINATION})
 
@@ -88,4 +98,7 @@ if(CATKIN_ENABLE_TESTING)
   ugv_add_module_test(reference_module_test test/reference_module_test.cpp
     ugv_unicycle_reference
     REFERENCE_MODULE_PATH="$<TARGET_FILE:ugv_unicycle_reference>")
+  ugv_add_module_test(controller_module_test test/controller_module_test.cpp
+    ugv_unicycle_controller
+    CONTROLLER_MODULE_PATH="$<TARGET_FILE:ugv_unicycle_controller>")
 endif()
