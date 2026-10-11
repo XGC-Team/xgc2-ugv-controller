@@ -11,6 +11,7 @@
 #include <string>
 #include <utility>
 
+#include "unicycle_ugv_controller/common/operator_command.h"
 #include "unicycle_ugv_controller/common/reference_cache.h"
 #include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
 #include "unicycle_ugv_controller/common/types.h"
@@ -906,8 +907,8 @@ TEST(UnicycleSm, ResetClearanceLeaseExpiresOnEitherClock) {
     EXPECT_TRUE(controller.resetFeedback(at, wall).valid);
     EXPECT_TRUE(controller.resetFeedback(at + 150000000ULL, wall + 0.15).valid);
     EXPECT_FALSE(controller.resetFeedback(at + 150000001ULL, wall).valid);  // ROS clock
-    EXPECT_FALSE(controller.resetFeedback(at, wall + 0.151).valid);         // wall clock, clock paused
-    EXPECT_FALSE(controller.resetFeedback(at - 1, wall).valid);             // rewound clock
+    EXPECT_FALSE(controller.resetFeedback(at, wall + 0.151).valid);  // wall clock, clock paused
+    EXPECT_FALSE(controller.resetFeedback(at - 1, wall).valid);      // rewound clock
     EXPECT_FALSE(controller.resetFeedback(at, wall - 0.001).valid);
     EXPECT_FALSE(controller.resetFeedback(at, std::nan("")).valid);
     // A command outside the chassis limits is refused, not saturated.
@@ -961,6 +962,21 @@ TEST(UnicycleSm, CmdVelSaturatesByMode) {
     controller.setCommand(command);
     EXPECT_DOUBLE_EQ(controller.cmdVel().linear_x, 1.05);
     EXPECT_DOUBLE_EQ(controller.cmdVel().angular_z, -1.05);
+}
+
+TEST(UnicycleCommands, TheOperatorTextIsReadCaseInsensitively) {
+    for (const char* text : {"track", "Tracking", "CUSTOM", "custom1", "Start"}) {
+        EXPECT_EQ(parseOperatorCommand(text), OperatorCommand::kCustom1) << text;
+    }
+    for (const char* text : {"hold", "STOP", "Stop"}) {
+        EXPECT_EQ(parseOperatorCommand(text), OperatorCommand::kStop) << text;
+    }
+    for (const char* text : {"reset", "Reset", "RESET"}) {
+        EXPECT_EQ(parseOperatorCommand(text), OperatorCommand::kReset) << text;
+    }
+    for (const char* text : {"", " reset", "resets", "go", "custom2"}) {
+        EXPECT_EQ(parseOperatorCommand(text), OperatorCommand::kUnknown) << text;
+    }
 }
 
 }  // namespace unicycle_ugv_controller

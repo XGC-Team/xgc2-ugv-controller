@@ -1,23 +1,12 @@
 #include "unicycle_ugv_controller/input/command_input_producer.h"
 
-#include <algorithm>
-#include <cctype>
 #include <string>
 #include <utility>
 
+#include "unicycle_ugv_controller/common/operator_command.h"
 #include "unicycle_ugv_controller/common/types.h"
 
 namespace unicycle_ugv_controller {
-namespace {
-
-std::string normalize(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return value;
-}
-
-}  // namespace
-
 CommandInputProducer::CommandInputProducer(ros::NodeHandle& nh, EventSink event_sink,
                                            uint32_t queue_size)
     : event_sink_(std::move(event_sink)) {
@@ -41,21 +30,25 @@ void CommandInputProducer::handleCommand(const std_msgs::String::ConstPtr& msg,
         ROS_WARN("[UgvCommandInputProducer] Ignoring empty command on %s", source);
         return;
     }
-    const std::string command = normalize(msg->data);
-    if (command == "track" || command == "tracking" || command == "custom" ||
-        command == "custom1" || command == "start") {
-        ROS_INFO("[UgvCommandInputProducer] Accepted Custom1 command: %s on %s", msg->data.c_str(),
-                 source);
-        post(event_type::CUSTOM1_REQUESTED, source);
-    } else if (command == "hold" || command == "stop") {
-        ROS_INFO("[UgvCommandInputProducer] Accepted stop command: %s on %s", msg->data.c_str(),
-                 source);
-        post(event_type::STOP_REQUESTED, source);
-    } else if (command == "reset") {
-        ROS_INFO("[UgvCommandInputProducer] Accepted reset command on %s", source);
-        post(event_type::RESET_REQUESTED, source);
-    } else {
-        ROS_WARN("[UgvCommandInputProducer] Unknown command: %s on %s", msg->data.c_str(), source);
+    switch (parseOperatorCommand(msg->data)) {
+        case OperatorCommand::kCustom1:
+            ROS_INFO("[UgvCommandInputProducer] Accepted Custom1 command: %s on %s",
+                     msg->data.c_str(), source);
+            post(event_type::CUSTOM1_REQUESTED, source);
+            break;
+        case OperatorCommand::kStop:
+            ROS_INFO("[UgvCommandInputProducer] Accepted stop command: %s on %s", msg->data.c_str(),
+                     source);
+            post(event_type::STOP_REQUESTED, source);
+            break;
+        case OperatorCommand::kReset:
+            ROS_INFO("[UgvCommandInputProducer] Accepted reset command on %s", source);
+            post(event_type::RESET_REQUESTED, source);
+            break;
+        case OperatorCommand::kUnknown:
+            ROS_WARN("[UgvCommandInputProducer] Unknown command: %s on %s", msg->data.c_str(),
+                     source);
+            break;
     }
 }
 
