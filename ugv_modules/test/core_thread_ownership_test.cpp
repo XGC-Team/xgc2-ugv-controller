@@ -1,12 +1,12 @@
 // What a core does when it is not called on the thread that built it, and why an instance of a
 // module has to be.
 //
-// The state machine of the cores belongs to the thread that built it and refuses every other one
-// ("operation called from non-owner thread"). Nothing throws: the reference runtime drops to
-// SelfCheck with the invalid-input flag, and the controller's state machine stays where it was. The
-// modules rely on the host to keep an instance on one thread (manifest affinity "sticky") and check
-// it; this test shows what the check protects against, and fails if the library ever stops
-// refusing, which would make the check and the host's affinity unnecessary.
+// The state machine of the cores belongs to the thread that built it and refuses every other one.
+// Nothing throws: the reference runtime drops to SelfCheck with the invalid-input flag, and the
+// controller's state machine stays where it was. The modules rely on the host to keep an instance
+// on one thread (manifest affinity "sticky") and check it; this test shows what the check protects
+// against, and fails if the library ever stops refusing, which would make the check and the host's
+// affinity unnecessary.
 
 #include <gtest/gtest.h>
 

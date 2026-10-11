@@ -434,10 +434,10 @@ Time timeOf(int64_t ns) {
 
 // The thread that built the cores of an instance.
 //
-// The state machine of a core belongs to the thread that built it and refuses every other one
-// ("operation called from non-owner thread"): a core that is built on one thread and stepped on
-// another stops working without a sound, the invalid-input flag its only sign. The host keeps an
-// instance on one thread for its life (manifest `affinity = "sticky"`, the default of the host),
+// The state machine of a core belongs to the thread that built it and refuses every other one:
+// a core that is built on one thread and stepped on another stops working without a sound, the
+// invalid-input flag its only sign. The host keeps an instance on one thread for its life
+// (manifest `affinity = "sticky"`, the default of the host),
 // and an instance checks that it has been: bind() where the cores are built, check() where they are
 // used. A host that moved the instance would stop it with a message that says why, not leave it
 // half alive.

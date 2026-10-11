@@ -53,6 +53,10 @@ The module entity runs the same chain in one process (`xgc2-module-host`, from t
 xgc2-module-host --manifest /opt/ros/noetic/share/ugv_modules/manifests/scout_unicycle.toml --check
 ```
 
+The manifests set `affinity = "sticky"`: the host builds each core and runs all lifecycle calls and
+steps of its instance on the same home worker. The generator and controller require this contract;
+their `ThreadGuard` fails the instance with an affinity message if a step moves to another thread.
+
 ## NMPC tracking
 
 The runtime model keeps yaw rate as a state and commands angular acceleration:

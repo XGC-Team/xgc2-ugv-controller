@@ -111,14 +111,14 @@ set `period_ms`.
 
 ## Threads and the host
 
-The state machine of the cores belongs to the thread that built it and refuses every other one
-(`operation called from non-owner thread`): the generator then drops to `SelfCheck` with the invalid-input
-flag and the controller stays where it was, without a sound. The generator and the controller therefore
-rely on the host to keep an instance on one thread for its life, which is the host's per-instance worker
-affinity (`affinity = "sticky"`, set explicitly in both manifests). They also check it: a step on another
-thread than the one that built the cores fails the instance with a message that names the affinity.
-`test/core_thread_ownership_test.cpp` shows what the cores do on the wrong thread. The edge has no state
-machine and no such requirement.
+The generator and controller require the host's `affinity = "sticky"` contract, set explicitly in both
+manifests. The host builds each core and runs all lifecycle calls (`create`, `configure`, `start`,
+`stop`, `destroy`) and steps of its instance on the same home worker, including live configuration and
+replacement. The state machines refuse updates from another thread: the generator drops to `SelfCheck`
+with the invalid-input flag and the controller stays where it was. Each module checks its `ThreadGuard`
+at the start of `step`; a moved instance fails with a message naming the required affinity.
+`test/core_thread_ownership_test.cpp` verifies the cores' refusal. The edge has no state machine and no
+such requirement, but also uses sticky affinity in the shipped manifests.
 
 roscpp can be started once in a process. The first edge instance starts it (node name and master from its
 configuration), later ones share it, and it ends with the process. The library is linked `-z nodelete`, so
@@ -128,7 +128,8 @@ unloading or replacing it leaves ROS running. Without a reachable master `start`
 
 | | |
 |---|---|
-| `reference_module_test`, `controller_module_test` | the modules as shared libraries, loaded the way the host loads them, in an in-test host (`test/test_host.h`): ports, strict configuration, health, the Reset session and lease, NMPC and flatness tracking against a kinematic unicycle, whole outputs, refused writes, calls from a ring of threads |
+| `reference_module_test`, `controller_module_test` | the modules as shared libraries, loaded the way the host loads them, in an in-test host (`test/test_host.h`): ports, strict configuration, health, the Reset session and lease, NMPC and flatness tracking against a kinematic unicycle, whole outputs, refused writes, one calling thread and loud failure when a step moves to another thread |
+| `core_thread_ownership_test` | the cores refuse updates from a thread that did not build them and resume on their original thread |
 | `chain_parity_test` | the module chain against the two nodes' chain without ROS, on the replay scenario of the generator: every output of the generator, every twist of the controller and the vehicle's path equal bit for bit |
 | `ros_edge_test`, `ros_edge_sim_test`, `ros_edge_no_master_test` | the edge against the master that rostest starts: wall-clock and simulation-time masters, the Reset lease, stamps, refused requests, reconnects |
 | `payload_conversion_test`, `ugv_modules_manifests`, `ugv_modules_linkage` | the payload layout in C and C++, the conversions, the manifests against the node configurations (and the host's `--check`), what the libraries export and link |
