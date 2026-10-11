@@ -5,6 +5,7 @@
 #include <ugv_reset_safety/ResetResponse.h>
 
 #include <functional>
+#include <string>
 #include <utility>
 
 #include "ugv_reset_client/reset_lease.h"
@@ -13,17 +14,20 @@ namespace ugv_reset_client {
 
 // The ROS edge of the lease: publishes the requests on `reset/request` and takes
 // the coordinator's responses from `reset/response` (both relative to the
-// vehicle's namespace). The vehicle's controller owns the Reset session; the
-// owner of this client reads the session from the controller after each control
+// vehicle's namespace unless the topics are given). The vehicle's controller owns the Reset
+// session; the owner of this client reads the session from the controller after each control
 // update, hands it to update(), and gives every accepted response back to the
 // controller through the sink.
 class ResetClient {
    public:
     using ClearanceSink = std::function<void(const ResetLease::Clearance&)>;
 
-    ResetClient(ros::NodeHandle& nh, ClearanceSink sink) : sink_(std::move(sink)) {
-        request_pub_ = nh.advertise<ugv_reset_safety::ResetRequest>("reset/request", 1);
-        response_sub_ = nh.subscribe("reset/response", 1, &ResetClient::receive, this);
+    ResetClient(ros::NodeHandle& nh, ClearanceSink sink,
+                const std::string& request_topic = "reset/request",
+                const std::string& response_topic = "reset/response")
+        : sink_(std::move(sink)) {
+        request_pub_ = nh.advertise<ugv_reset_safety::ResetRequest>(request_topic, 1);
+        response_sub_ = nh.subscribe(response_topic, 1, &ResetClient::receive, this);
     }
 
     // Follows the controller's session (`active`, `generation`, `target`) and, while it
