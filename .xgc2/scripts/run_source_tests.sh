@@ -37,7 +37,10 @@ catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" \
   run_tests_ugv_integration_tests
 # The checks of the modules that catkin does not run for a package: what the libraries export and
 # link, and the manifests (with the module host when it is installed).
-(cd build/ugv_modules && ctest --output-on-failure -E '^_ctest_')
+# The build directory of the package follows the checkout name under src (build/<checkout>/ugv_modules).
+modules_build="$(dirname "$(find build -path '*/ugv_modules/CTestTestfile.cmake' | head -n 1)")"
+test -d "$modules_build"
+(cd "$modules_build" && ctest --output-on-failure -E '^_ctest_')
 catkin_test_results
 DESTDIR="$install_root" catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" install \
   -DCMAKE_INSTALL_PREFIX=/opt/ros/noetic \
