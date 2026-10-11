@@ -97,8 +97,17 @@ if(CATKIN_ENABLE_TESTING)
     catkin_add_gtest(${target} ${source})
     if(TARGET ${target})
       add_dependencies(${target} ${module})
+      # further arguments: more modules the test loads, then its compile definitions
+      set(_definitions)
+      foreach(_argument ${ARGN})
+        if(TARGET ${_argument})
+          add_dependencies(${target} ${_argument})
+        else()
+          list(APPEND _definitions ${_argument})
+        endif()
+      endforeach()
       target_compile_definitions(${target} PRIVATE
-        ${ARGN})
+        ${_definitions})
       target_include_directories(${target} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/test)
       target_link_libraries(${target} Xgc2Module::SDK gtest_main dl pthread)
@@ -111,6 +120,21 @@ if(CATKIN_ENABLE_TESTING)
   ugv_add_module_test(controller_module_test test/controller_module_test.cpp
     ugv_unicycle_controller
     CONTROLLER_MODULE_PATH="$<TARGET_FILE:ugv_unicycle_controller>")
+
+  # The module chain against the chain of the two ROS nodes, on the replay scenario of the generator.
+  ugv_add_module_test(chain_parity_test test/chain_parity_test.cpp
+    ugv_unicycle_reference ugv_unicycle_controller
+    REFERENCE_MODULE_PATH="$<TARGET_FILE:ugv_unicycle_reference>"
+    CONTROLLER_MODULE_PATH="$<TARGET_FILE:ugv_unicycle_controller>")
+  if(TARGET chain_parity_test)
+    target_include_directories(chain_parity_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/../unicycle_reference_trajectory/test/replay
+      ${unicycle_reference_trajectory_INCLUDE_DIRS} ${unicycle_ugv_controller_INCLUDE_DIRS}
+      ${EIGEN3_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(chain_parity_test
+      ${UGV_REFERENCE_CORE} ${UGV_CONTROLLER_CORE}
+      xgc2_math::control xgc2_math::trajectory xgc2_state_machine::state_machine)
+  endif()
 
   # The ROS edge against the ROS master that rostest starts for the test (never the default master),
   # and one without a master.
