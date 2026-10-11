@@ -13,8 +13,19 @@ Packages:
   SelfCheck, `Reset` to an Experiment `initialPose`, and first-order Custom1
   (world ENU velocity to body FLU, heading P to east). Algorithms publish
   `{ns}/alg/reference/twist` only; they do not publish `cmd_vel`.
-- `ugv_reset_safety`: shared swarm Reset coordinator, geometric path planning,
+- `ugv_reset_client`: the vehicle's side of the Reset protocol, a request/response
+  lease for one vehicle; no other vehicle, no coordination.
+- `ugv_reset_safety`: the station's Reset coordinator, geometric path planning,
   DWA with obstacle/inter-vehicle footprint checks, command limits and slew limits.
+  The vehicle packages know one vehicle each and none of this package's code.
+- `ugv_modules`: the Scout unicycle chain (reference generator, controller and the
+  vehicle's ROS edge) as xgc2-module modules, with the entity manifests; see
+  [ugv_modules](ugv_modules/README.md).
+- `ugv_integration_tests`: ROS-level tests of these packages against each other
+  (test only, not released).
+
+Launch compositions of several vehicles belong to the experiment workspace that owns
+their algorithms, not to this repository.
 
 Reset requires an explicit target, a complete UGV roster, fresh canonical poses
 and controller states, and an authoritative static obstacle snapshot. Missing
@@ -34,6 +45,12 @@ source /opt/ros/noetic/setup.bash
 roslaunch --files unicycle_reference_trajectory ugv_unicycle_reference_trajectory.launch
 roslaunch --files unicycle_ugv_controller ugv_unicycle_nmpc_controller.launch
 roslaunch --files mecanum_ugv_controller ugv_mecanum_reset_controller.launch
+```
+
+The module entity runs the same chain in one process (`xgc2-module-host`, from the xgc2-module product):
+
+```bash
+xgc2-module-host --manifest /opt/ros/noetic/share/ugv_modules/manifests/scout_unicycle.toml --check
 ```
 
 ## NMPC tracking

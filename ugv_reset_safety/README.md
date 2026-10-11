@@ -4,6 +4,31 @@ This package coordinates Reset for Scout and Mecanum. It does not change UAV
 control or Custom1 tracking. Run one coordinator for the ground-vehicle roster;
 each chassis controller remains the sole publisher of native `cmd_vel`.
 
+## The station and the vehicles
+
+This package is the station: `ugv_reset_coordinator_node`, the path and DWA
+mathematics, the fleet schedule, the scene projection and the `ResetRequest` /
+`ResetResponse` messages. It contains no vehicle controller code and is not a
+dependency of any vehicle package's code.
+
+A vehicle runs its own side of the protocol. Its controller owns the Reset
+session (the generation and the frozen target) and executes the clearance it is
+given: the command of the coordinator's response, only while the response's
+lease holds on both the ROS clock and the wall clock, and until the response
+says arrived or rejected. The lease itself (the ledger of the requests the
+vehicle issued, the freshness of a response, the applied command it reports) is
+the package `ugv_reset_client`. The controller nodes (`unicycle_ugv_controller`,
+`mecanum_ugv_controller`) and the ROS edge of the module entity (`ugv_modules`)
+use it. A per-vehicle package knows one vehicle and nothing of the others.
+
+Launch compositions of several vehicles with their algorithms (`xgc_mixed_*`,
+`xgc_ugv4_planning`, `xgc_sce1_*`, `ugv_four_scout_controllers`,
+`ugv_two_mecanum_controllers`) belong to the experiment workspace that owns the
+algorithms (`formation_generator`, `sce1_central_controller`), not to a vehicle
+or station package. The ROS tests that run the coordinator against vehicle
+controllers, one or two vehicles and the module entity, are in
+`ugv_integration_tests`.
+
 ## Targets and execution
 
 Supply a world-frame `geometry_msgs/Pose2D` on `/<namespace>/reset_pose`, or all
