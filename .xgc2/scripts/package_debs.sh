@@ -97,6 +97,15 @@ copy_path "${PREFIX_ROOT}/include/xgc2_ugv" "${pkg_root}"
 copy_path "${PREFIX_ROOT}/lib/libmecanum_ugv_controller_core.so" "${pkg_root}"
 copy_path "${PREFIX_ROOT}/lib/libugv_reset_safety_math.so" "${pkg_root}"
 
+for definition in \
+  xgc2-ugv-mecanum-reset-controller-ros1 \
+  xgc2-ugv-reset-coordinator-ros1 \
+  xgc2-ugv-scout-reset-controller-ros1 \
+  xgc2-ugv-unicycle-nmpc-controller-ros1; do
+  install -D -m 0644 "${REPO_ROOT}/process-definitions/${definition}.json" \
+    "${pkg_root}/usr/share/xgc2/process-definitions/${definition}.json"
+done
+
 mkdir -p "${pkg_root}/DEBIAN" "${pkg_root}/usr/share/doc/${PACKAGE}"
 cat > "${pkg_root}/DEBIAN/control" <<EOF
 Package: ${PACKAGE}

@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+for definition in \
+  xgc2-ugv-mecanum-reset-controller-ros1 \
+  xgc2-ugv-reset-coordinator-ros1 \
+  xgc2-ugv-scout-reset-controller-ros1 \
+  xgc2-ugv-unicycle-nmpc-controller-ros1; do
+  test -f "/usr/share/xgc2/process-definitions/${definition}.json"
+done
+test -x /opt/ros/noetic/lib/ugv_reset_safety/launch_with_yaml_context.py
 trap 'echo "Installed package check failed at line ${LINENO}" >&2' ERR
 
 ROS_DISTRO="${ROS_DISTRO:-noetic}"

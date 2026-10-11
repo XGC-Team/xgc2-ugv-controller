@@ -1,0 +1,121 @@
+{
+  "apiVersion": "xgc.execution.process/v1",
+  "definitions": [
+    {
+      "id": "xgc2-ugv-scout-reset-controller-ros1",
+      "version": "1.3.0",
+      "label": "Scout unicycle Reset controller",
+      "description": "Ground-station Scout product controller (unique cmd_vel). Consumes canonical /namespace/pose only, not twist and not raw VRPN. Reset requires the shared ugv_reset_safety swarm coordinator and an explicit reset target; Custom1 flatness uses pose-derived velocity.",
+      "parameters": {
+        "groups": [
+          {
+            "id": "ros-advanced",
+            "label": "ROS Advanced",
+            "collapsed": true,
+            "parameters": [
+              "rosInstallPath",
+              "rosMasterUri",
+              "rosIp"
+            ]
+          }
+        ],
+        "properties": {
+          "namespace": {
+            "type": "string",
+            "default": "ugv1"
+          },
+          "cmdVelTopic": {
+            "type": "string",
+            "default": "cmd_vel"
+          },
+          "resetInitialX": {
+            "type": "string",
+            "default": "",
+            "description": "Experiment slot initialPose.x cached as reset_initial_x"
+          },
+          "resetInitialY": {
+            "type": "string",
+            "default": "",
+            "description": "Experiment slot initialPose.y cached as reset_initial_y"
+          },
+          "resetInitialYaw": {
+            "type": "string",
+            "default": "",
+            "description": "Experiment slot initialPose.yaw cached as reset_initial_yaw"
+          },
+          "fenceXMin": {
+            "type": "string",
+            "default": "",
+            "description": "Experiment worldBoundary.controlBounds.xMin as fence/x_min"
+          },
+          "fenceXMax": {
+            "type": "string",
+            "default": "",
+            "description": "Experiment worldBoundary.controlBounds.xMax as fence/x_max"
+          },
+          "fenceYMin": {
+            "type": "string",
+            "default": "",
+            "description": "Experiment worldBoundary.controlBounds.yMin as fence/y_min"
+          },
+          "fenceYMax": {
+            "type": "string",
+            "default": "",
+            "description": "Experiment worldBoundary.controlBounds.yMax as fence/y_max"
+          },
+          "rosInstallPath": {
+            "type": "string",
+            "default": "/opt/ros/noetic",
+            "x-xgc-path-kind": "directory"
+          },
+          "rosMasterUri": {
+            "type": "string",
+            "default": "http://127.0.0.1:11311",
+            "output": true
+          },
+          "rosIp": {
+            "type": "string",
+            "default": "127.0.0.1",
+            "output": true
+          },
+          "configFile": {
+            "type": "string",
+            "default": "/opt/ros/noetic/share/unicycle_ugv_controller/config/scout_flatness.yaml",
+            "x-xgc-path-kind": "file"
+          }
+        },
+        "required": []
+      },
+      "command": {
+        "executable": "${rosInstallPath}/bin/rosrun",
+        "args": [
+          "ugv_reset_safety",
+          "launch_with_yaml_context.py",
+          "unicycle_ugv_controller",
+          "ugv_unicycle_nmpc_controller.launch",
+          "${namespace}",
+          "${configFile}",
+          "{\"cmd_vel_topic\":\"${cmdVelTopic}\",\"reset_initial_x\":\"${resetInitialX}\",\"reset_initial_y\":\"${resetInitialY}\",\"reset_initial_yaw\":\"${resetInitialYaw}\",\"fence_x_min\":\"${fenceXMin}\",\"fence_x_max\":\"${fenceXMax}\",\"fence_y_min\":\"${fenceYMin}\",\"fence_y_max\":\"${fenceYMax}\"}"
+        ],
+        "env": {
+          "DISABLE_ROS1_EOL_WARNINGS": "1",
+          "ROS_IP": "${rosIp}",
+          "ROS_MASTER_URI": "${rosMasterUri}"
+        }
+      },
+      "setupFiles": [
+        "${rosInstallPath}/setup.bash"
+      ],
+      "readiness": {
+        "kind": "none"
+      },
+      "stop": {
+        "graceMs": 15000
+      },
+      "logs": {
+        "maxBytes": 1048576,
+        "files": 3
+      }
+    }
+  ]
+}

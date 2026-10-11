@@ -1,0 +1,82 @@
+{
+  "apiVersion": "xgc.execution.process/v1",
+  "definitions": [
+    {
+      "id": "xgc2-ugv-reset-coordinator-ros1",
+      "version": "1.1.0",
+      "label": "UGV Reset coordinator",
+      "description": "Shared ugv_reset_coordinator. Does not subscribe /command and does not publish cmd_vel or alg/reference. Publishes /reset/response only.",
+      "parameters": {
+        "groups": [
+          {
+            "id": "ros-advanced",
+            "label": "ROS Advanced",
+            "collapsed": true,
+            "parameters": [
+              "rosInstallPath",
+              "rosMasterUri",
+              "rosIp"
+            ]
+          }
+        ],
+        "properties": {
+          "swarmConfig": {
+            "type": "string",
+            "default": "/opt/ros/noetic/share/ugv_reset_safety/config/four_scout.yaml",
+            "x-xgc-path-kind": "file"
+          },
+          "sceneNamespace": {
+            "type": "string",
+            "default": "/xgc/scene"
+          },
+          "rosInstallPath": {
+            "type": "string",
+            "default": "/opt/ros/noetic",
+            "x-xgc-path-kind": "directory"
+          },
+          "rosMasterUri": {
+            "type": "string",
+            "default": "http://127.0.0.1:11311",
+            "output": true
+          },
+          "rosIp": {
+            "type": "string",
+            "default": "127.0.0.1",
+            "output": true
+          }
+        },
+        "required": []
+      },
+      "command": {
+        "executable": "${rosInstallPath}/bin/rosrun",
+        "args": [
+          "ugv_reset_safety",
+          "launch_with_yaml_context.py",
+          "ugv_reset_safety",
+          "ugv_reset_coordinator.launch",
+          "",
+          "${swarmConfig}",
+          "{\"scene_namespace\":\"${sceneNamespace}\"}"
+        ],
+        "env": {
+          "DISABLE_ROS1_EOL_WARNINGS": "1",
+          "ROS_IP": "${rosIp}",
+          "ROS_MASTER_URI": "${rosMasterUri}"
+        }
+      },
+      "setupFiles": [
+        "${rosInstallPath}/setup.bash"
+      ],
+      "readiness": {
+        "kind": "none"
+      },
+      "stop": {
+        "graceMs": 15000
+      },
+      "logs": {
+        "maxBytes": 1048576,
+        "files": 3
+      }
+    }
+  ]
+}

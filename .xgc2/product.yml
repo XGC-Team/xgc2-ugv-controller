@@ -78,6 +78,10 @@ ownership:
   - /opt/ros/noetic/lib/ugv_reset_safety
   - /opt/ros/noetic/lib/libugv_reset_safety_math.so
   - /opt/ros/noetic/lib/pkgconfig/ugv_reset_safety.pc
+  - /usr/share/xgc2/process-definitions/xgc2-ugv-mecanum-reset-controller-ros1.json
+  - /usr/share/xgc2/process-definitions/xgc2-ugv-reset-coordinator-ros1.json
+  - /usr/share/xgc2/process-definitions/xgc2-ugv-scout-reset-controller-ros1.json
+  - /usr/share/xgc2/process-definitions/xgc2-ugv-unicycle-nmpc-controller-ros1.json
 release:
   requires:
   - xgc2-module
