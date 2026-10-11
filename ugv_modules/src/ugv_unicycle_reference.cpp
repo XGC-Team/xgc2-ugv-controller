@@ -24,10 +24,17 @@
 //
 // Requests are served in the order they were committed. The times of the payloads are host clock
 // times, and the generator's time is the now_ns of the step.
+//
+// The generator's state machine belongs to the thread that built it, and the host steps an instance
+// on whichever worker is free; the generator therefore lives on a thread of the instance
+// (OwnerThread) and only the reading of the inputs and the writing of the outputs happen on the
+// host's thread.
 
 #include <xgc2/module.h>
 
 #include <algorithm>
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -44,6 +51,7 @@ namespace {
 
 using namespace ugv_modules;
 namespace urt = unicycle_reference_trajectory;
+namespace ref = unicycle_reference_trajectory::reference;
 namespace rp = ugv_modules::reference_payloads;
 using Request = urt::ReferenceTrajectoryDriver::Request;
 
@@ -88,9 +96,23 @@ struct Pending {
     const void* payload;
 };
 
+// What an output event of the generator publishes: the message its output consumer would publish.
+struct Publication {
+    uint32_t id{0};
+    std::optional<ref::ReferenceStatus> status;
+    std::optional<ref::AnalyticReference> analytic;
+    std::optional<ref::ActivePolynomialReference> polynomial;
+    std::optional<ref::SampledReference> sampled;
+};
+
 class Instance {
    public:
     explicit Instance(const Host& host) : host_(host) {}
+
+    ~Instance() {
+        // The generator is torn down where it was built.
+        owner_.run([this] { driver_.reset(); });
+    }
 
     const Host& host() const {
         return host_;
@@ -102,7 +124,12 @@ class Instance {
         urt::DefaultAnalyticReferenceConfig default_analytic;
         urt::loadReferenceConfig(source, runtime, default_analytic);
         source.rejectUnused();
-        driver_.configure(runtime, default_analytic);
+        owner_.run([&] {
+            if (!driver_) {
+                driver_ = std::make_unique<urt::ReferenceTrajectoryDriver>();
+            }
+            driver_->configure(runtime, default_analytic);
+        });
     }
 
     void start() {}
@@ -111,21 +138,16 @@ class Instance {
     void step(const xgc2_step_ctx& ctx) {
         const double now = secondsOf<urt::Time>(ctx.now_ns);
         collect();
-        for (const Pending& request : pending_) {
-            serve(request, now);
-        }
-        const auto update = driver_.update(now);
-        if (update.default_analytic.has_value()) {
-            warn(*update.default_analytic, kDefaultAnalytic, "default analytic reference", now);
-        }
+        std::vector<Publication> publications;
+        owner_.run([&] { work(now, publications); });
         // The outputs are committed last: a consumer runs right after this step.
-        for (const auto& event : update.events) {
-            publish(event, now, ctx.now_ns);
+        for (const Publication& publication : publications) {
+            publish(publication, now, ctx.now_ns);
         }
     }
 
    private:
-    // Reads every request waiting on the four event inputs.
+    // Reads every request waiting on the four event inputs (host thread).
     void collect() {
         pending_.clear();
         uint32_t order = 0;
@@ -170,6 +192,37 @@ class Instance {
         });
     }
 
+    // The generator's part of the step (owner thread): the requests that were read, then one
+    // update. The payloads are borrowed from the host until the step returns, and the host's thread
+    // waits.
+    void work(double now, std::vector<Publication>& publications) {
+        for (const Pending& request : pending_) {
+            serve(request, now);
+        }
+        const auto update = driver_->update(now);
+        if (update.default_analytic.has_value()) {
+            warn(*update.default_analytic, kDefaultAnalytic, "default analytic reference", now);
+        }
+        const urt::ReferenceTrajectoryRuntime& runtime = driver_->runtime();
+        for (const auto& event : update.events) {
+            Publication publication;
+            publication.id = event.id;
+            if (event.id == urt::output_event_type::PUBLISH_STATUS) {
+                publication.status =
+                    runtime.makeStatus(event.timestamp > 0.0 ? event.timestamp : now);
+            } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_ANALYTIC) {
+                publication.analytic = runtime.activeAnalyticMessage();
+            } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_POLYNOMIAL) {
+                publication.polynomial = runtime.activePolynomialMessage();
+            } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_SAMPLED) {
+                publication.sampled = runtime.activeSampledMessage();
+            } else {
+                continue;
+            }
+            publications.push_back(std::move(publication));
+        }
+    }
+
     // Warnings repeat at the rate of the inputs: once a second for each kind of request.
     void warn(Request result, uint32_t kind, const char* what, double now) {
         if (result == Request::kPosted || !throttle_[kind].due(now)) {
@@ -179,7 +232,7 @@ class Instance {
             host_.log(kLogWarn, std::string("Rejected ") + what);
         } else {
             host_.log(kLogWarn, std::string("Failed to post the event of ") + what + ": " +
-                                    driver_.postError());
+                                    driver_->postError());
         }
     }
 
@@ -196,7 +249,7 @@ class Instance {
                 urt::reference::AnalyticReference plain;
                 if (rp::toPlain(*static_cast<const xgc2_ugv_analytic_reference*>(request.payload),
                                 plain)) {
-                    warn(driver_.acceptAnalytic(plain, now), kind, "analytic reference", now);
+                    warn(driver_->acceptAnalytic(plain, now), kind, "analytic reference", now);
                 } else {
                     refuse(kind, "an analytic reference", now);
                 }
@@ -206,7 +259,7 @@ class Instance {
                 urt::reference::SampledReference plain;
                 if (rp::toPlain(*static_cast<const xgc2_ugv_sampled_reference*>(request.payload),
                                 plain)) {
-                    warn(driver_.acceptSampled(plain, now), kind, "sampled reference", now);
+                    warn(driver_->acceptSampled(plain, now), kind, "sampled reference", now);
                 } else {
                     refuse(kind, "a sampled reference", now);
                 }
@@ -216,14 +269,14 @@ class Instance {
                 urt::reference::WaypointReferenceRequest plain;
                 if (rp::toPlain(*static_cast<const xgc2_ugv_waypoint_request*>(request.payload),
                                 plain)) {
-                    warn(driver_.acceptWaypoint(plain, now), kind, "waypoint request", now);
+                    warn(driver_->acceptWaypoint(plain, now), kind, "waypoint request", now);
                 } else {
                     refuse(kind, "a waypoint request", now);
                 }
                 break;
             }
             default: {
-                const auto status = driver_.reset(now);
+                const auto status = driver_->reset(now);
                 if (!status.ok() && throttle_[kind].due(now)) {
                     host_.log(kLogWarn, "Failed to post the event of reset: " + status.message);
                 }
@@ -232,25 +285,23 @@ class Instance {
         }
     }
 
-    // What the node's output consumer published for an output event.
-    void publish(const ::state_machine::Event& event, double now, int64_t stamp_ns) {
-        const urt::ReferenceTrajectoryRuntime& runtime = driver_.runtime();
-        if (event.id == urt::output_event_type::PUBLISH_STATUS) {
+    // Writes a publication to its output port (host thread).
+    void publish(const Publication& publication, double now, int64_t stamp_ns) {
+        if (publication.status) {
             auto slot = host_.write<xgc2_ugv_reference_status>(kStatus);
             if (slot) {
-                rp::toPayload(*slot,
-                              runtime.makeStatus(event.timestamp > 0.0 ? event.timestamp : now));
+                rp::toPayload(*slot, *publication.status);
                 slot.commit(stamp_ns);
             }
-        } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_ANALYTIC) {
-            publishActive<xgc2_ugv_analytic_reference>(
-                kActiveAnalytic, runtime.activeAnalyticMessage(), now, stamp_ns);
-        } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_POLYNOMIAL) {
-            publishActive<xgc2_ugv_polynomial_reference>(
-                kActivePolynomial, runtime.activePolynomialMessage(), now, stamp_ns);
-        } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_SAMPLED) {
-            publishActive<xgc2_ugv_sampled_reference>(
-                kActiveSampled, runtime.activeSampledMessage(), now, stamp_ns);
+        } else if (publication.analytic) {
+            publishActive<xgc2_ugv_analytic_reference>(kActiveAnalytic, *publication.analytic, now,
+                                                       stamp_ns);
+        } else if (publication.polynomial) {
+            publishActive<xgc2_ugv_polynomial_reference>(kActivePolynomial, *publication.polynomial,
+                                                         now, stamp_ns);
+        } else if (publication.sampled) {
+            publishActive<xgc2_ugv_sampled_reference>(kActiveSampled, *publication.sampled, now,
+                                                      stamp_ns);
         }
     }
 
@@ -270,7 +321,8 @@ class Instance {
     }
 
     Host host_;
-    urt::ReferenceTrajectoryDriver driver_;
+    OwnerThread owner_;
+    std::unique_ptr<urt::ReferenceTrajectoryDriver> driver_;  // built and used on owner_
     LogThrottle throttle_[kPortCount + 1];
     std::vector<Pending> pending_;
 };

@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -495,6 +496,68 @@ class TestHost {
     std::thread::id wake_thread_;
     std::vector<std::pair<int, std::string>> logs_;
     std::vector<std::pair<int, std::string>> reports_;
+};
+
+// Runs jobs on a ring of threads that all live as long as the object: the next job goes to the next
+// thread, so that two calls of one instance never share a thread id, as when the host's workers
+// take an instance's calls in turn.
+class RotatingThreads {
+   public:
+    explicit RotatingThreads(size_t count) : slots_(count) {
+        for (size_t i = 0; i < count; ++i) {
+            threads_.emplace_back([this, i] { loop(slots_[i]); });
+        }
+    }
+    ~RotatingThreads() {
+        for (Slot& slot : slots_) {
+            {
+                std::lock_guard<std::mutex> lock(slot.mutex);
+                slot.quit = true;
+            }
+            slot.cv.notify_one();
+        }
+        for (std::thread& thread : threads_) {
+            thread.join();
+        }
+    }
+    RotatingThreads(const RotatingThreads&) = delete;
+    RotatingThreads& operator=(const RotatingThreads&) = delete;
+
+    void run(const std::function<void()>& job) {
+        Slot& slot = slots_[next_++ % slots_.size()];
+        std::unique_lock<std::mutex> lock(slot.mutex);
+        slot.job = &job;
+        slot.cv.notify_one();
+        slot.done.wait(lock, [&] { return slot.job == nullptr; });
+    }
+
+   private:
+    struct Slot {
+        std::mutex mutex;
+        std::condition_variable cv;
+        std::condition_variable done;
+        const std::function<void()>* job{nullptr};
+        bool quit{false};
+    };
+    void loop(Slot& slot) {
+        std::unique_lock<std::mutex> lock(slot.mutex);
+        for (;;) {
+            slot.cv.wait(lock, [&] { return slot.quit || slot.job != nullptr; });
+            if (slot.job == nullptr) {
+                return;
+            }
+            const std::function<void()>* job = slot.job;
+            lock.unlock();
+            (*job)();
+            lock.lock();
+            slot.job = nullptr;
+            slot.done.notify_one();
+        }
+    }
+
+    std::vector<Slot> slots_;
+    std::vector<std::thread> threads_;
+    size_t next_{0};
 };
 
 }  // namespace ugv_modules_test

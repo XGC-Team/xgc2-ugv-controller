@@ -8,16 +8,20 @@
 #include <xgc2/module.h>
 
 #include <array>
+#include <condition_variable>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <functional>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -424,6 +428,78 @@ Time timeOf(int64_t ns) {
     time.fromNSec(ns > 0 ? static_cast<uint64_t>(ns) : 0U);
     return time;
 }
+
+// One thread of the instance's own that runs the work of a step on the objects it owns.
+//
+// The host runs the calls of an instance one at a time, but on whichever worker is free: the thread
+// of create is not the thread of the next step. The state machine of the cores belongs to the
+// thread that created it and refuses every other one ("operation called from non-owner thread"), so
+// a core that is built in create and stepped by another worker silently stops working. An instance
+// therefore builds its cores on this thread, runs every call that touches them here, and waits for
+// it; reads and writes of the ports stay on the host's thread. The wait is the price of the
+// guarantee: a hand-off costs some tens of microseconds. A host that keeps an instance on one
+// thread makes this class unnecessary.
+class OwnerThread {
+   public:
+    OwnerThread() : thread_([this] { loop(); }) {}
+
+    ~OwnerThread() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            quit_ = true;
+        }
+        wake_.notify_one();
+        thread_.join();
+    }
+    OwnerThread(const OwnerThread&) = delete;
+    OwnerThread& operator=(const OwnerThread&) = delete;
+
+    // Runs `job` on the owner thread and returns when it is done; what it throws is thrown here.
+    // One caller at a time, as the host calls an instance.
+    void run(const std::function<void()>& job) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        job_ = &job;
+        error_ = nullptr;
+        wake_.notify_one();
+        done_.wait(lock, [this] { return job_ == nullptr; });
+        if (error_) {
+            std::exception_ptr error = error_;
+            error_ = nullptr;
+            std::rethrow_exception(error);
+        }
+    }
+
+   private:
+    void loop() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        for (;;) {
+            wake_.wait(lock, [this] { return quit_ || job_ != nullptr; });
+            if (job_ == nullptr) {
+                return;  // quit
+            }
+            const std::function<void()>* job = job_;
+            lock.unlock();
+            std::exception_ptr error;
+            try {
+                (*job)();
+            } catch (...) {
+                error = std::current_exception();
+            }
+            lock.lock();
+            error_ = error;
+            job_ = nullptr;
+            done_.notify_one();
+        }
+    }
+
+    std::mutex mutex_;
+    std::condition_variable wake_;
+    std::condition_variable done_;
+    const std::function<void()>* job_{nullptr};
+    std::exception_ptr error_;
+    bool quit_{false};
+    std::thread thread_;
+};
 
 // The lifecycle functions of a module whose instances are objects of class Instance:
 //   Instance(const Host&)

@@ -394,4 +394,85 @@ TEST_F(ReferenceModuleTest, OutputsAreWrittenWholeAndSlotsAreNeverLeaked) {
     EXPECT_TRUE(host_.reports().empty());
 }
 
+// The host clock starts wherever it likes: CLOCK_MONOTONIC counts from boot, a simulation from
+// zero, a recorded flight from the wall clock of the day.
+class ReferenceClockTest : public ::testing::TestWithParam<int64_t> {};
+
+TEST_P(ReferenceClockTest, ServesARequestWhateverTheClockReads) {
+    ModuleLibrary library(REFERENCE_MODULE_PATH);
+    TestHost host(library.desc());
+    const int64_t t0 = GetParam();
+    int64_t now = t0;
+    host.setNow(now);
+    ASSERT_EQ(host.create("{}"), XGC2_OK);
+    ASSERT_EQ(host.start(), XGC2_OK);
+    auto run = [&](double seconds) {
+        const int64_t end = now + static_cast<int64_t>(seconds * 1e9);
+        while (now + kStep <= end) {
+            now += kStep;
+            host.setNow(now);
+            ASSERT_EQ(host.step(), XGC2_OK);
+        }
+    };
+    run(0.5);
+    ASSERT_TRUE(host.push("analytic_request", circle(now, 0), now));
+    run(1.5);
+    const auto status = host.outputsAs<xgc2_ugv_reference_status>("status");
+    ASSERT_FALSE(status.empty());
+    EXPECT_EQ(status.back().state, XGC2_UGV_REFERENCE_STATE_ACTIVE) << "clock " << t0;
+    EXPECT_EQ(status.back().flags, 0u) << "clock " << t0;
+    EXPECT_EQ(status.back().active_type, XGC2_UGV_REFERENCE_TYPE_ANALYTIC);
+    const auto active = host.outputsAs<xgc2_ugv_analytic_reference>("active_analytic");
+    ASSERT_FALSE(active.empty());
+    EXPECT_GT(active.back().start_time_ns, now - 2 * kSecond);
+    EXPECT_LT(active.back().start_time_ns, now + 2 * kSecond);
+}
+
+INSTANTIATE_TEST_SUITE_P(Clocks, ReferenceClockTest,
+                         ::testing::Values(int64_t{1} * kSecond, int64_t{1000} * kSecond,
+                                           int64_t{150737250000000},  // an uptime of 42 hours
+                                           int64_t{1700000000} * kSecond));  // the wall clock
+
+// The state machine of the generator belongs to the thread that built it. The host steps an
+// instance on whichever worker is free, so the module must work when every call comes from another
+// thread.
+TEST(ReferenceModuleThreads, EveryCallMayComeFromAnotherThread) {
+    ModuleLibrary library(REFERENCE_MODULE_PATH);
+    TestHost host(library.desc());
+    ugv_modules_test::RotatingThreads workers(5);
+    int64_t now = kT0;
+    host.setNow(now);
+    xgc2_status status = XGC2_OK;
+    workers.run([&] { status = host.create("{}"); });
+    ASSERT_EQ(status, XGC2_OK);
+    workers.run([&] { status = host.start(); });
+    ASSERT_EQ(status, XGC2_OK);
+    auto run = [&](double seconds) {
+        const int64_t end = now + static_cast<int64_t>(seconds * 1e9);
+        while (now + kStep <= end) {
+            now += kStep;
+            host.setNow(now);
+            workers.run([&] { status = host.step(); });
+            ASSERT_EQ(status, XGC2_OK);
+        }
+    };
+    run(0.5);
+    ASSERT_TRUE(host.push("analytic_request", circle(now), now));
+    run(1.5);
+    const auto statuses = host.outputsAs<xgc2_ugv_reference_status>("status");
+    ASSERT_GE(statuses.size(), 19u);
+    EXPECT_EQ(statuses.back().state, XGC2_UGV_REFERENCE_STATE_ACTIVE);
+    EXPECT_EQ(statuses.back().flags, 0u);
+    // A live configure comes from yet another thread and rebuilds the generator.
+    workers.run([&] { status = host.configure("{\"status_rate\": 20}"); });
+    ASSERT_EQ(status, XGC2_OK);
+    host.clearOutputs();
+    run(2.5);
+    EXPECT_EQ(host.outputsAs<xgc2_ugv_reference_status>("status").back().state,
+              XGC2_UGV_REFERENCE_STATE_READY);
+    workers.run([&] { status = host.stop(); });
+    EXPECT_EQ(status, XGC2_OK);
+    workers.run([&] { host.destroy(); });
+}
+
 }  // namespace

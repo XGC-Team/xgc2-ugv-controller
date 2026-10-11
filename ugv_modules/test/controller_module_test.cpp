@@ -6,6 +6,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <functional>
+#include <memory>
 #include <string>
 #include <thread>
 
@@ -102,14 +104,29 @@ xgc2_ugv_analytic_reference circle(int64_t stamp_ns, int64_t start_ns) {
 
 class Rig {
    public:
-    Rig(const std::string& config, bool pose_source = false)
+    // With `rotate` every call of the instance is made by another thread of a ring of threads, as
+    // the host's workers take an instance's calls in turn.
+    Rig(const std::string& config, bool pose_source = false, bool rotate = false)
         : library_(CONTROLLER_MODULE_PATH), host_(library_.desc()), pose_source_(pose_source) {
+        if (rotate) {
+            workers_ = std::make_unique<ugv_modules_test::RotatingThreads>(5);
+        }
         host_.setNow(now_);
-        EXPECT_EQ(host_.create(config), XGC2_OK);
-        EXPECT_EQ(host_.start(), XGC2_OK);
+        EXPECT_EQ(call([&] { return host_.create(config); }), XGC2_OK);
+        EXPECT_EQ(call([&] { return host_.start(); }), XGC2_OK);
     }
     ~Rig() {
-        host_.stop();
+        call([&] { return host_.stop(); });
+    }
+
+    xgc2_status call(const std::function<xgc2_status()>& function) {
+        xgc2_status status = XGC2_OK;
+        if (workers_) {
+            workers_->run([&] { status = function(); });
+        } else {
+            status = function();
+        }
+        return status;
     }
 
     TestHost& host() {
@@ -142,7 +159,7 @@ class Rig {
             host_.push("state", sample, now_);
         }
         host_.setNow(now_);
-        ASSERT_EQ(host_.step(XGC2_STEP_TIMER), XGC2_OK);
+        ASSERT_EQ(call([&] { return host_.step(XGC2_STEP_TIMER); }), XGC2_OK);
         for (const auto& twist : host_.takeAs<xgc2_ugv_cmd_vel>("cmd_vel")) {
             linear_ = twist.linear_x;
             angular_ = twist.angular_z;
@@ -187,6 +204,7 @@ class Rig {
     ModuleLibrary library_;
     TestHost host_;
     bool pose_source_;
+    std::unique_ptr<ugv_modules_test::RotatingThreads> workers_;
     bool paced_{false};
     std::chrono::steady_clock::time_point pace_origin_;
     int64_t pace_ticks_{0};
@@ -438,6 +456,30 @@ TEST(ControllerModule, TracksAnAnalyticReferenceWithTheNmpcSolverOnItsWorker) {
     EXPECT_EQ(rig.host().start(), XGC2_OK);
     rig.ticks(250);
     EXPECT_GT(rig.host().wakeCount(), after_stop);
+}
+
+// The state machine of the controller belongs to the thread that built it. The host steps an
+// instance on whichever worker is free, so the module must work when every call comes from another
+// thread.
+TEST(ControllerModule, EveryCallMayComeFromAnotherThread) {
+    Rig rig(
+        "{\"reset_initial_x\": 2.0, \"reset_initial_y\": 0.5, \"reset_initial_yaw\": 0.0, "
+        "\"fence\": {\"x_min\": -12, \"x_max\": 12, \"y_min\": -7, \"y_max\": 7}}",
+        /*pose_source=*/false, /*rotate=*/true);
+    rig.ticks(500);
+    ASSERT_EQ(rig.controlState(), "Ready");
+    rig.host().push("command", commandOf(XGC2_UGV_COMMAND_CUSTOM1, rig.now()), rig.now());
+    ASSERT_TRUE(rig.reach("Custom1"));
+    rig.host().push("command", commandOf(XGC2_UGV_COMMAND_STOP, rig.now()), rig.now());
+    ASSERT_TRUE(rig.reach("Ready"));
+    rig.host().push("command", commandOf(XGC2_UGV_COMMAND_RESET, rig.now()), rig.now());
+    ASSERT_TRUE(rig.reach("Reset"));
+    EXPECT_EQ(rig.session().flags, XGC2_UGV_RESET_SESSION_ACTIVE | XGC2_UGV_RESET_SESSION_HEALTHY);
+    // A live configure comes from yet another thread.
+    EXPECT_EQ(rig.call([&] { return rig.host().configure("{\"state_timeout\": 0.4}"); }), XGC2_OK);
+    rig.host().push("command", commandOf(XGC2_UGV_COMMAND_STOP, rig.now()), rig.now());
+    ASSERT_TRUE(rig.reach("Ready"));
+    EXPECT_TRUE(rig.host().reports().empty());
 }
 
 TEST(ControllerModule, TracksAWorldPvaReferenceWithFlatness) {
