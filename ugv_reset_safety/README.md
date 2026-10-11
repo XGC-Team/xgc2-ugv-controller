@@ -54,7 +54,7 @@ simulation profiles: 0.35 m/s on available translation axes, 0.5 rad/s yaw,
 configuration limits, not physical-robot certifications.
 
 `obstacle_avoidance` is read once at coordinator start (default `true`).
-`two_mecanum.yaml` sets it `false`: no Scene heartbeat, no peer/VRPN occupancy,
+`two_mecanum.yaml` sets it `false`: no Scene input requirement, no peer/VRPN occupancy,
 straight holonomic return to the frozen target. `four_scout.yaml` and
 `mixed_pair.yaml` omit the key and keep Scene + DWA.
 

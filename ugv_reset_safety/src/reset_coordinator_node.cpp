@@ -7,7 +7,6 @@
 #include <ugv_reset_safety/reset_dwa.h>
 #include <ugv_reset_safety/reset_path.h>
 #include <ugv_reset_safety/scene_projection.h>
-#include <xgc2_geometry_msgs/SceneConsumerStatus.h>
 #include <xgc2_geometry_msgs/SceneState.h>
 
 #include <Eigen/Geometry>
@@ -154,12 +153,6 @@ class Coordinator {
         scene_sub_ = nh_.subscribe(scene_namespace_ + "/snapshot", 1, &Coordinator::scene, this);
         scene_state_sub_ =
             nh_.subscribe(scene_namespace_ + "/state", 1, &Coordinator::sceneState, this);
-        scene_status_pub_ = nh_.advertise<xgc2_geometry_msgs::SceneConsumerStatus>(
-            scene_namespace_ + "/consumer_status", 1, true);
-        consumer_generation_ = static_cast<uint32_t>(ros::WallTime::now().toNSec() & 0xffffffffu);
-        if (consumer_generation_ == 0) {
-            consumer_generation_ = 1;
-        }
     }
     void run() {
         ros::WallRate rate(frequency_);
@@ -307,7 +300,6 @@ class Coordinator {
             scene_state_wall_ = ros::WallTime::now();
             scene_valid_ = true;
             scene_error_.clear();
-            scene_capability_ = "ok";
             if (moved) {
                 for (auto& e : entries_) {
                     e->planned = false;
@@ -316,10 +308,8 @@ class Coordinator {
         } catch (const std::exception& e) {
             scene_valid_ = false;
             scene_error_ = e.what();
-            classifyCapability(scene_error_);
             ROS_WARN_THROTTLE(2, "Reset live scene rejected: %s", e.what());
         }
-        publishStatus();
     }
     void scene(const xgc2_geometry_msgs::SceneSnapshot::ConstPtr& snapshot) {
         if (snapshot->epoch == snapshot_.epoch && snapshot->revision < snapshot_.revision) {
@@ -345,7 +335,6 @@ class Coordinator {
                 throw std::invalid_argument("scene epoch/frame mismatch");
             }
             scene_parsed_ = true;
-            scene_capability_ = "ok";
             if (definition_changed) {
                 for (auto& e : entries_) {
                     if (e->have_request) {
@@ -356,39 +345,8 @@ class Coordinator {
             }
         } catch (const std::exception& e) {
             scene_error_ = e.what();
-            classifyCapability(scene_error_);
             ROS_WARN("Reset scene rejected: %s", e.what());
         }
-        publishStatus();
-    }
-    void classifyCapability(const std::string& error) {
-        scene_capability_ = error.find("unsupported") != std::string::npos ? "unsupported" : "";
-    }
-    void publishStatus() {
-        if (snapshot_.epoch.empty()) {
-            return;
-        }
-        xgc2_geometry_msgs::SceneConsumerStatus status;
-        status.header.stamp = ros::Time::now();
-        status.header.frame_id = world_frame_;
-        status.epoch = snapshot_.epoch;
-        status.revision = snapshot_.revision;
-        status.consumer = "ugv-reset";
-        status.generation = consumer_generation_;
-        status.applied = scene_parsed_;
-        status.capability =
-            scene_capability_.empty() ? (scene_parsed_ ? "ok" : "") : scene_capability_;
-        status.operational = scene_parsed_ && scene_valid_ && status.capability != "unsupported" &&
-                             !scene_state_wall_.isZero() &&
-                             (ros::WallTime::now() - scene_state_wall_).toSec() <= 0.5;
-        status.success = status.applied;  // derived publish of applied, not a second authority
-        status.message =
-            scene_parsed_
-                ? (scene_valid_
-                       ? "applied live planar projection with finite-horizon occupancy"
-                       : (scene_error_.empty() ? "waiting for matching scene state" : scene_error_))
-                : scene_error_;
-        scene_status_pub_.publish(status);
     }
     void reply(Entry& e, uint8_t status, const Eigen::Vector3d& command,
                const std::string& reason) {
@@ -449,7 +407,6 @@ class Coordinator {
                               e->state == "Reset";
             active = active || e->robot.active;
         }
-        publishStatus();
         if (!active) {
             return;
         }
@@ -652,14 +609,13 @@ class Coordinator {
     ros::NodeHandle nh_, private_;
     std::vector<std::unique_ptr<Entry>> entries_;
     ros::Subscriber scene_sub_, scene_state_sub_;
-    ros::Publisher scene_status_pub_;
     xgc2_geometry_msgs::SceneSnapshot snapshot_;
     xgc2_geometry_msgs::SceneState scene_state_;
     ros::Time last_state_stamp_;
     ros::WallTime scene_state_wall_;
     bool scene_parsed_ = false;
     bool scene_valid_ = false;
-    std::string world_frame_, scene_namespace_, scene_error_, scene_capability_;
+    std::string world_frame_, scene_namespace_, scene_error_;
     std::vector<ConvexObstacle> obstacles_;
     std::vector<ConvexObstacle> occupancy_;
     Fence fence_;
@@ -671,7 +627,6 @@ class Coordinator {
     ros::WallTime last_admission_;
     bool obstacle_avoidance_ = true;
     double frequency_ = 50, timeout_ = .15, state_timeout_ = 1.0;
-    uint32_t consumer_generation_ = 1;
     ros::WallTime last_tick_;
     ros::Time last_ros_tick_;
 };
