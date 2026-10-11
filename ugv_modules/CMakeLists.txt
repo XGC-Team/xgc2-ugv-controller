@@ -30,18 +30,31 @@ catkin_package(INCLUDE_DIRS include)
 
 # The two ROS-free modules link the cores by file and nothing else of the catkin dependencies:
 # a ROS library on their link line would only be dragged in by the catkin variables.
-find_library(UGV_REFERENCE_CORE unicycle_reference_trajectory_core
-  PATHS ${unicycle_reference_trajectory_LIBRARY_DIRS} NO_DEFAULT_PATH)
-find_library(UGV_CONTROLLER_CORE unicycle_ugv_controller_core
-  PATHS ${unicycle_ugv_controller_LIBRARY_DIRS} NO_DEFAULT_PATH)
-if(NOT UGV_REFERENCE_CORE OR NOT UGV_CONTROLLER_CORE)
-  message(FATAL_ERROR "The reference and controller core libraries were not found")
+# In a catkin workspace the cores are targets of this very CMake project: their files do not exist when CMake
+# configures this package, so the link line names the target file and the build order follows from add_dependencies.
+# Against an installed prefix the cores are found by file.
+if(TARGET unicycle_reference_trajectory_core AND TARGET unicycle_ugv_controller_core)
+  set(UGV_REFERENCE_CORE "$<TARGET_FILE:unicycle_reference_trajectory_core>")
+  set(UGV_CONTROLLER_CORE "$<TARGET_FILE:unicycle_ugv_controller_core>")
+  set(UGV_CORE_TARGETS unicycle_reference_trajectory_core unicycle_ugv_controller_core)
+else()
+  find_library(UGV_REFERENCE_CORE unicycle_reference_trajectory_core
+    PATHS ${unicycle_reference_trajectory_LIBRARY_DIRS} NO_DEFAULT_PATH)
+  find_library(UGV_CONTROLLER_CORE unicycle_ugv_controller_core
+    PATHS ${unicycle_ugv_controller_LIBRARY_DIRS} NO_DEFAULT_PATH)
+  if(NOT UGV_REFERENCE_CORE OR NOT UGV_CONTROLLER_CORE)
+    message(FATAL_ERROR "The reference and controller core libraries were not found")
+  endif()
+  set(UGV_CORE_TARGETS)
 endif()
 
 # A module is a plug-in of the host: it exports xgc2_module_entry and nothing else, and every
 # symbol it uses resolves at link time.
 function(ugv_add_module target)
   add_library(${target} MODULE ${ARGN})
+  if(UGV_CORE_TARGETS)
+    add_dependencies(${target} ${UGV_CORE_TARGETS})
+  endif()
   set_target_properties(${target} PROPERTIES
     PREFIX "lib"
     CXX_VISIBILITY_PRESET hidden
