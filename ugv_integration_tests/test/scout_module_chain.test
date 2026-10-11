@@ -1,0 +1,8 @@
+<launch>
+  <!-- Isolated rostest master only. The test starts xgc2-module-host itself (module_host.py), on the
+       shipped manifest of ugv_modules, and drives it through ROS and the control socket. -->
+  <arg name="host" default="$(optenv XGC2_MODULE_HOST)"/>
+  <env name="XGC2_MODULE_HOST" value="$(arg host)"/>
+  <test test-name="scout_module_chain" pkg="ugv_integration_tests"
+        type="scout_module_chain_rostest.py" time-limit="240.0"/>
+</launch>

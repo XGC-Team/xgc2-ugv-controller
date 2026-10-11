@@ -1,0 +1,8 @@
+<launch>
+  <!-- Isolated rostest master only, on simulation time: the test publishes /clock. -->
+  <param name="/use_sim_time" value="true"/>
+  <arg name="host" default="$(optenv XGC2_MODULE_HOST)"/>
+  <env name="XGC2_MODULE_HOST" value="$(arg host)"/>
+  <test test-name="scout_module_chain_sim" pkg="ugv_integration_tests"
+        type="scout_module_chain_sim_rostest.py" time-limit="180.0"/>
+</launch>

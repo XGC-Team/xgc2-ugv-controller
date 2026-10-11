@@ -2,7 +2,7 @@
 <package format="2">
   <name>ugv_integration_tests</name>
   <version>1.0.0</version>
-  <description>ROS-level integration tests across the UGV packages: the station's Reset coordinator with the vehicle controller nodes. Test only; not part of any release.</description>
+  <description>ROS-level integration tests across the UGV packages: the station's Reset coordinator with the vehicle controller nodes or the module entity, and the Scout module chain in xgc2-module-host. Test only; not part of any release.</description>
   <maintainer email="apt@example.com">XGC2</maintainer>
   <license>MIT</license>
   <buildtool_depend>catkin</buildtool_depend>
@@ -13,5 +13,11 @@
   <test_depend>xgc2_geometry_msgs</test_depend>
   <test_depend>ugv_reset_safety</test_depend>
   <test_depend>unicycle_ugv_controller</test_depend>
+  <test_depend>ugv_modules</test_depend>
+  <test_depend>rigid_state_estimator_msgs</test_depend>
+  <test_depend>rosgraph_msgs</test_depend>
+  <test_depend>unicycle_reference_trajectory_msgs</test_depend>
+  <test_depend>python3-rospkg</test_depend>
+  <test_depend>python3-toml</test_depend>
   <test_depend>mecanum_ugv_controller</test_depend>
 </package>
