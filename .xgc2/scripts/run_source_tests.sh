@@ -31,7 +31,13 @@ catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" \
   run_tests_unicycle_reference_trajectory \
   run_tests_unicycle_ugv_controller \
   run_tests_mecanum_ugv_controller \
-  run_tests_ugv_reset_safety
+  run_tests_ugv_reset_client \
+  run_tests_ugv_reset_safety \
+  run_tests_ugv_modules \
+  run_tests_ugv_integration_tests
+# The checks of the modules that catkin does not run for a package: what the libraries export and
+# link, and the manifests (with the module host when it is installed).
+(cd build/ugv_modules && ctest --output-on-failure -E '^_ctest_')
 catkin_test_results
 DESTDIR="$install_root" catkin_make -j"${parallel_jobs}" -l"${parallel_jobs}" install \
   -DCMAKE_INSTALL_PREFIX=/opt/ros/noetic \

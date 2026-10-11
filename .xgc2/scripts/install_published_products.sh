@@ -17,6 +17,8 @@ fi
 "${SCRIPT_DIR}/setup_xgc2_apt_source.sh"
 apt-get install -y --no-install-recommends \
   libxgc2-math-dev \
+  libxgc2-module-dev \
+  xgc2-module-host \
   libxgc2-state-machine-dev \
   xgc2-acados \
   "ros-${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs" \

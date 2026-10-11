@@ -21,6 +21,8 @@ dpkg --compare-versions "${xgc2_acados_version}" ge "0.1.0-10~focal"
 test "$(rospack find unicycle_reference_trajectory)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory"
 test "$(rospack find unicycle_ugv_controller)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_ugv_controller"
 test "$(rospack find mecanum_ugv_controller)" = "/opt/ros/${ROS_DISTRO}/share/mecanum_ugv_controller"
+test "$(rospack find ugv_reset_client)" = "/opt/ros/${ROS_DISTRO}/share/ugv_reset_client"
+test "$(rospack find ugv_modules)" = "/opt/ros/${ROS_DISTRO}/share/ugv_modules"
 test "$(rospack find rigid_state_estimator_msgs)" = "/opt/ros/${ROS_DISTRO}/share/rigid_state_estimator_msgs"
 test "$(rospack find unicycle_reference_trajectory_msgs)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory_msgs"
 rosmsg show rigid_state_estimator_msgs/RigidStateEstimate | grep -q '^uint8 estimator_state$'
@@ -41,6 +43,7 @@ test -f "/opt/ros/${ROS_DISTRO}/share/unicycle_ugv_controller/launch/ugv_unicycl
 test -f "/opt/ros/${ROS_DISTRO}/include/unicycle_ugv_controller/unicycle_ugv_controller.h"
 test -x "/opt/ros/${ROS_DISTRO}/lib/unicycle_ugv_controller/unicycle_ugv_controller_node"
 test -f "/opt/ros/${ROS_DISTRO}/lib/libunicycle_ugv_controller_core.so"
+test -f "/opt/ros/${ROS_DISTRO}/lib/libunicycle_reference_trajectory_core.so"
 test -f "/opt/ros/${ROS_DISTRO}/lib/libmecanum_ugv_controller_core.so"
 test -f "/opt/ros/${ROS_DISTRO}/share/mecanum_ugv_controller/config/mecanum_ugv_controller.yaml"
 test -f "/opt/ros/${ROS_DISTRO}/share/mecanum_ugv_controller/launch/ugv_mecanum_reset_controller.launch"
@@ -63,8 +66,30 @@ done < <(find "/opt/ros/${ROS_DISTRO}/lib/unicycle_ugv_controller" \
   "/opt/ros/${ROS_DISTRO}/lib/mecanum_ugv_controller" \
   "/opt/ros/${ROS_DISTRO}/lib/ugv_reset_safety" \
   "/opt/ros/${ROS_DISTRO}/lib/libugv_reset_safety_math.so" \
+  "/opt/ros/${ROS_DISTRO}/lib/ugv_modules" \
   "/opt/ros/${ROS_DISTRO}/lib/libunicycle_ugv_controller_core.so" \
+  "/opt/ros/${ROS_DISTRO}/lib/libunicycle_reference_trajectory_core.so" \
   "/opt/ros/${ROS_DISTRO}/lib/libmecanum_ugv_controller_core.so" -type f 2>/dev/null | sort -u)
+
+# The module entity: three libraries that export their entry point and nothing else (the generator and
+# the controller link no ROS), the payload header, and manifests whose relative paths find the libraries.
+modules_dir="/opt/ros/${ROS_DISTRO}/lib/ugv_modules"
+for library in libugv_unicycle_reference.so libugv_unicycle_controller.so libugv_ros_edge.so; do
+  test -f "${modules_dir}/${library}"
+done
+test -f "/opt/ros/${ROS_DISTRO}/include/xgc2_ugv/payloads.h"
+test -f "/opt/ros/${ROS_DISTRO}/share/ugv_modules/manifests/scout_unicycle.toml"
+test -f "/opt/ros/${ROS_DISTRO}/share/ugv_modules/manifests/scout_unicycle_sim.toml"
+"$(dirname "${BASH_SOURCE[0]}")/../../ugv_modules/test/check_module_linkage.sh" \
+  --ros-free "${modules_dir}/libugv_unicycle_reference.so" "${modules_dir}/libugv_unicycle_controller.so" \
+  --ros "${modules_dir}/libugv_ros_edge.so"
+if command -v xgc2-module-host >/dev/null 2>&1; then
+  for manifest in scout_unicycle scout_unicycle_sim; do
+    xgc2-module-host --manifest "/opt/ros/${ROS_DISTRO}/share/ugv_modules/manifests/${manifest}.toml" --check >/dev/null
+  done
+else
+  echo "xgc2-module-host is not installed: the entity manifests were not checked by the host" >&2
+fi
 
 test -x "/opt/ros/${ROS_DISTRO}/lib/ugv_reset_safety/ugv_reset_coordinator_node"
 rosmsg show ugv_reset_safety/ResetRequest | grep -q "^uint32 generation$"
@@ -86,14 +111,12 @@ read -r -a reset_public_cflags <<< "${reset_public_cflags_text}"
 "${CXX:-clang++-10}" -std=c++17 -fsyntax-only -x c++ "${reset_public_cflags[@]}" - <<'CPP'
 #include <ugv_reset_safety/reset_dwa.h>
 #include <ugv_reset_safety/fleet_schedule.h>
-#include <ugv_reset_safety/reset_client.h>
 #include <ugv_reset_safety/reset_path.h>
-#include <ugv_reset_safety/reset_session.h>
 #include <ugv_reset_safety/reset_geometry.h>
 int main() { return 0; }
 CPP
 
-for retired_header in safety_filter.h reset_guidance.h fleet_guidance.h; do
+for retired_header in safety_filter.h reset_guidance.h fleet_guidance.h reset_client.h reset_session.h; do
   test ! -e "/opt/ros/${ROS_DISTRO}/include/ugv_reset_safety/${retired_header}"
 done
 

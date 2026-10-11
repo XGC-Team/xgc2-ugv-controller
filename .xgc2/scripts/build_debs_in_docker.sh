@@ -85,12 +85,15 @@ docker run --rm \
       file \
       git \
       libeigen3-dev \
+      libjsoncpp-dev \
       python3-numpy \
+      python3-toml \
       rsync \
       "ros-${ROS_DISTRO}-geometry-msgs" \
       "ros-${ROS_DISTRO}-message-generation" \
       "ros-${ROS_DISTRO}-nav-msgs" \
       "ros-${ROS_DISTRO}-roscpp" \
+      "ros-${ROS_DISTRO}-rosgraph-msgs" \
       "ros-${ROS_DISTRO}-roslaunch" \
       "ros-${ROS_DISTRO}-rosmsg" \
       "ros-${ROS_DISTRO}-rospack" \

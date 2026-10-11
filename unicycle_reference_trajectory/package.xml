@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>unicycle_reference_trajectory</name>
-  <version>1.1.0</version>
+  <version>1.2.0</version>
   <description>XGC2 planar reference trajectory generation: a ROS-free core library and the ROS node that publishes it.</description>
 
   <maintainer email="lxk@example.com">lxk</maintainer>

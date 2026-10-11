@@ -1,16 +1,18 @@
 schema: xgc2.product.v1
 id: xgc2-ugv-controller
 name: XGC2 UGV Controller
-version: 1.3.0-26
+version: 2.0.0-1
 kind: ros1-apt
-summary: ROS1 unicycle NMPC, planar reference trajectory, and reusable Mecanum chassis controller (health, Reset, first-order Custom1) for XGC2 robots.
+summary: ROS1 unicycle NMPC, planar reference trajectory, reusable Mecanum chassis controller (health, Reset, first-order Custom1) and the Scout unicycle chain as xgc2-module modules for XGC2 robots.
 ros:
   distro: noetic
   packages:
   - unicycle_reference_trajectory
   - unicycle_ugv_controller
   - mecanum_ugv_controller
+  - ugv_reset_client
   - ugv_reset_safety
+  - ugv_modules
 apt:
   distribution: focal
   install:
@@ -26,6 +28,7 @@ apt:
   - python3-defusedxml
   - ros-noetic-roslaunch
   - libeigen3-dev
+  - libjsoncpp1
   - ros-noetic-xgc2-geometry-msgs (>= 1.2.0-1)
   - libxgc2-state-machine-dev (>= 0.1.3-4~focal)
   - libxgc2-math-dev (>= 0.5.12-1~)
@@ -45,6 +48,10 @@ usage:
 
     roslaunch --files mecanum_ugv_controller ugv_mecanum_reset_controller.launch
 
+    # with the host installed (sudo apt install xgc2-module-host):
+
+    xgc2-module-host --manifest /opt/ros/noetic/share/ugv_modules/manifests/scout_unicycle.toml --check
+
     '
 ownership:
   paths:
@@ -55,10 +62,16 @@ ownership:
   - /opt/ros/noetic/lib/unicycle_reference_trajectory
   - /opt/ros/noetic/lib/unicycle_ugv_controller
   - /opt/ros/noetic/lib/libunicycle_ugv_controller_core.so
+  - /opt/ros/noetic/lib/libunicycle_reference_trajectory_core.so
   - /opt/ros/noetic/share/mecanum_ugv_controller
   - /opt/ros/noetic/include/mecanum_ugv_controller
   - /opt/ros/noetic/lib/mecanum_ugv_controller
   - /opt/ros/noetic/lib/libmecanum_ugv_controller_core.so
+  - /opt/ros/noetic/share/ugv_reset_client
+  - /opt/ros/noetic/include/ugv_reset_client
+  - /opt/ros/noetic/share/ugv_modules
+  - /opt/ros/noetic/lib/ugv_modules
+  - /opt/ros/noetic/include/xgc2_ugv
   - /opt/ros/noetic/share/ugv_reset_safety
   - /opt/ros/noetic/include/ugv_reset_safety
   - /opt/ros/noetic/lib/ugv_reset_safety
@@ -68,6 +81,7 @@ ownership:
 release:
   dependency_policy:
     libxgc2-math-dev: rebuild
+    libxgc2-module-dev: rebuild
     libxgc2-state-machine-dev: rebuild
     xgc2-acados: rebuild
     xgc2-ros-msgs: rebuild

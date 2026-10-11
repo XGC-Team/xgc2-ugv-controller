@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>unicycle_ugv_controller</name>
-  <version>1.1.0</version>
+  <version>1.2.0</version>
   <description>XGC2 unicycle UGV controller: Reset, Custom1 nmpc/flatness, unique cmd_vel publisher.</description>
 
   <maintainer email="lxk@example.com">lxk</maintainer>

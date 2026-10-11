@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>mecanum_ugv_controller</name>
-  <version>1.1.0</version>
+  <version>1.2.0</version>
   <description>Reusable holonomic Mecanum chassis controller: health, Reset placement, and first-order Custom1. Not bound to a paper algorithm.</description>
   <maintainer email="lxk@example.com">lxk</maintainer>
   <license>BSD</license>

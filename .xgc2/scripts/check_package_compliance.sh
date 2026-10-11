@@ -62,6 +62,19 @@ required_files=(
   mecanum_ugv_controller/package.xml
   mecanum_ugv_controller/launch/ugv_mecanum_reset_controller.launch
   mecanum_ugv_controller/config/mecanum_ugv_controller.yaml
+  ugv_reset_client/CMakeLists.txt
+  ugv_reset_client/package.xml
+  ugv_reset_client/include/ugv_reset_client/reset_lease.h
+  ugv_modules/CMakeLists.txt
+  ugv_modules/package.xml
+  ugv_modules/include/xgc2_ugv/payloads.h
+  ugv_modules/manifests/scout_unicycle.toml
+  ugv_modules/manifests/scout_unicycle_sim.toml
+  ugv_modules/src/ugv_unicycle_reference.cpp
+  ugv_modules/src/ugv_unicycle_controller.cpp
+  ugv_modules/src/ugv_ros_edge.cpp
+  ugv_integration_tests/CMakeLists.txt
+  ugv_integration_tests/package.xml
 )
 
 for file in "${required_files[@]}"; do
@@ -76,6 +89,26 @@ grep -Eq '^version: [0-9]+\.[0-9]+\.[0-9]+-[0-9]+$' .xgc2/product.yml
 grep -q "<name>unicycle_ugv_controller</name>" unicycle_ugv_controller/package.xml
 grep -q "<name>unicycle_reference_trajectory</name>" unicycle_reference_trajectory/package.xml
 grep -q "<name>mecanum_ugv_controller</name>" mecanum_ugv_controller/package.xml
+grep -q "<name>ugv_reset_client</name>" ugv_reset_client/package.xml
+grep -q "<name>ugv_modules</name>" ugv_modules/package.xml
+grep -q "run_tests_ugv_modules" .xgc2/scripts/run_source_tests.sh
+grep -q "run_tests_ugv_reset_client" .xgc2/scripts/run_source_tests.sh
+grep -q "run_tests_ugv_integration_tests" .xgc2/scripts/run_source_tests.sh
+grep -q "ugv_modules" .xgc2/scripts/package_debs.sh
+grep -q "ugv_reset_client" .xgc2/scripts/package_debs.sh
+grep -q "rospack find ugv_modules" .xgc2/scripts/check_installed_packages.sh
+# The module ABI: the entry point is xgc2_module_entry, and the modules export that and nothing else.
+grep -q "XGC2_MODULE_ENTRY_SYMBOL\|xgc2_module_entry" ugv_modules/exports.map
+for module_source in ugv_modules/src/ugv_*.cpp; do
+  grep -q "xgc2_module_entry" "${module_source}"
+done
+# A vehicle package does not coordinate vehicles: the coordination lives in ugv_reset_safety only.
+if grep -rn "ugv_reset_safety" unicycle_ugv_controller/include unicycle_ugv_controller/src \
+     mecanum_ugv_controller/include mecanum_ugv_controller/src unicycle_reference_trajectory/include \
+     unicycle_reference_trajectory/src >/dev/null; then
+  echo "A per-vehicle package refers to the station's coordinator package." >&2
+  exit 1
+fi
 grep -q "run_tests_unicycle_reference_trajectory" .xgc2/scripts/run_source_tests.sh
 grep -q "run_tests_unicycle_ugv_controller" .xgc2/scripts/run_source_tests.sh
 grep -q "run_tests_mecanum_ugv_controller" .xgc2/scripts/run_source_tests.sh
