@@ -11,6 +11,7 @@ set -u
 dpkg -s "ros-${ROS_DISTRO}-xgc2-ugv-controller" >/dev/null
 dpkg -s "ros-${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs" >/dev/null
 dpkg -s "ros-${ROS_DISTRO}-xgc2-unicycle-reference-trajectory-msgs" >/dev/null
+dpkg -s "ros-${ROS_DISTRO}-xgc2-ugv-reset-msgs" >/dev/null
 dpkg -s "ros-${ROS_DISTRO}-xgc2-ros1-utils" >/dev/null
 dpkg -s "ros-${ROS_DISTRO}-xgc2-geometry-msgs" >/dev/null
 dpkg -s libxgc2-state-machine-dev >/dev/null
@@ -25,6 +26,7 @@ test "$(rospack find ugv_reset_client)" = "/opt/ros/${ROS_DISTRO}/share/ugv_rese
 test "$(rospack find ugv_modules)" = "/opt/ros/${ROS_DISTRO}/share/ugv_modules"
 test "$(rospack find rigid_state_estimator_msgs)" = "/opt/ros/${ROS_DISTRO}/share/rigid_state_estimator_msgs"
 test "$(rospack find unicycle_reference_trajectory_msgs)" = "/opt/ros/${ROS_DISTRO}/share/unicycle_reference_trajectory_msgs"
+test "$(rospack find ugv_reset_msgs)" = "/opt/ros/${ROS_DISTRO}/share/ugv_reset_msgs"
 rosmsg show rigid_state_estimator_msgs/RigidStateEstimate | grep -q '^uint8 estimator_state$'
 rosmsg show rigid_state_estimator_msgs/RigidStateEstimate | grep -q '^geometry_msgs/Vector3 angular_velocity$'
 planar_pva_schema="$(rosmsg show unicycle_reference_trajectory_msgs/PlanarPvaReference)"

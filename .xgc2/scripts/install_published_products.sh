@@ -23,6 +23,7 @@ apt-get install -y --no-install-recommends \
   xgc2-acados \
   "ros-${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs" \
   "ros-${ROS_DISTRO}-xgc2-unicycle-reference-trajectory-msgs" \
+  "ros-${ROS_DISTRO}-xgc2-ugv-reset-msgs" \
   "ros-${ROS_DISTRO}-xgc2-ros1-utils" \
   "ros-${ROS_DISTRO}-xgc2-geometry-msgs"
 
@@ -37,6 +38,7 @@ require_version() {
 }
 require_version libxgc2-math-dev '0.5.12-1~'
 require_version "ros-${ROS_DISTRO:-noetic}-xgc2-unicycle-reference-trajectory-msgs" 1.4.0-1
+require_version "ros-${ROS_DISTRO:-noetic}-xgc2-ugv-reset-msgs" 1.5.0-1
 
 # The generated header fixes the ROS1 wire MD5 in the compiled consumer.
 message_header="/opt/ros/${ROS_DISTRO:-noetic}/include/unicycle_reference_trajectory_msgs/WaypointReferenceRequest.h"

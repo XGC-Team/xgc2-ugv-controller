@@ -145,6 +145,7 @@ grep -q "xgc2-acados (>= 0.1.0-10~focal)" .xgc2/product.yml
 grep -q "xgc2-acados (>= 0.1.0-10~focal)" .xgc2/scripts/package_debs.sh
 grep -q "ros-\${ROS_DISTRO}-xgc2-estimator-rigid-state-msgs (>= 1.2.0-3)" .xgc2/scripts/package_debs.sh
 grep -q "ros-\${ROS_DISTRO}-xgc2-unicycle-reference-trajectory-msgs (>= 1.4.0-1)" .xgc2/scripts/package_debs.sh
+grep -q "ros-\${ROS_DISTRO}-xgc2-ugv-reset-msgs (>= 1.5.0-1)" .xgc2/scripts/package_debs.sh
 
 if grep -R --exclude='check_package_compliance.sh' "ros-noetic-xgc2-reference" \
   .github .xgc2 README.md unicycle_ugv_controller unicycle_reference_trajectory >/dev/null; then
