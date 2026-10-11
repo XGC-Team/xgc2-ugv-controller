@@ -91,6 +91,11 @@ set_property(TARGET ugv_ros_edge APPEND_STRING PROPERTY LINK_FLAGS " -Wl,-z,node
 install(DIRECTORY include/
   DESTINATION ${CATKIN_GLOBAL_INCLUDE_DESTINATION})
 
+# The entity manifests find the libraries relative to themselves:
+#   <prefix>/share/ugv_modules/manifests/*.toml -> <prefix>/lib/ugv_modules/lib*.so
+install(DIRECTORY manifests
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+
 if(CATKIN_ENABLE_TESTING)
   # A module test loads the module as a shared library through an in-test host.
   function(ugv_add_module_test target source module)
@@ -120,6 +125,44 @@ if(CATKIN_ENABLE_TESTING)
   ugv_add_module_test(controller_module_test test/controller_module_test.cpp
     ugv_unicycle_controller
     CONTROLLER_MODULE_PATH="$<TARGET_FILE:ugv_unicycle_controller>")
+
+  # The payloads: one layout for C and C++, and the conversions from the cores' plain types.
+  add_library(ugv_payloads_c_check OBJECT test/payloads_check.c)
+  set_target_properties(ugv_payloads_c_check PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON
+                                                         POSITION_INDEPENDENT_CODE ON)
+  target_include_directories(ugv_payloads_c_check PRIVATE include)
+  target_link_libraries(ugv_payloads_c_check PRIVATE Xgc2Module::SDK)
+  catkin_add_gtest(payload_conversion_test test/payload_conversion_test.cpp
+                   $<TARGET_OBJECTS:ugv_payloads_c_check>)
+  if(TARGET payload_conversion_test)
+    target_include_directories(payload_conversion_test PRIVATE
+      include src ${unicycle_reference_trajectory_INCLUDE_DIRS})
+    target_link_libraries(payload_conversion_test Xgc2Module::SDK gtest_main)
+  endif()
+
+  # The manifests: the node configurations they carry; with a host binary ($XGC2_MODULE_HOST or on
+  # the PATH) the host loads the libraries and plans the channels.
+  if(DEFINED ENV{XGC2_MODULE_HOST} AND EXISTS "$ENV{XGC2_MODULE_HOST}")
+    set(XGC2_MODULE_HOST_BINARY "$ENV{XGC2_MODULE_HOST}")
+  else()
+    find_program(XGC2_MODULE_HOST_BINARY xgc2-module-host)
+  endif()
+  set(_manifest_test_args --modules $<TARGET_FILE_DIR:ugv_ros_edge>)
+  if(XGC2_MODULE_HOST_BINARY)
+    list(APPEND _manifest_test_args --host ${XGC2_MODULE_HOST_BINARY})
+  else()
+    message(STATUS "ugv_modules: xgc2-module-host not found (set XGC2_MODULE_HOST): "
+                   "the manifests are not checked by the host")
+  endif()
+  add_test(NAME ugv_modules_manifests
+    COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/manifests_test.py
+            ${_manifest_test_args})
+
+  # What a module exports and links.
+  add_test(NAME ugv_modules_linkage
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/check_module_linkage.sh
+            --ros-free $<TARGET_FILE:ugv_unicycle_reference> $<TARGET_FILE:ugv_unicycle_controller>
+            --ros $<TARGET_FILE:ugv_ros_edge>)
 
   # The module chain against the chain of the two ROS nodes, on the replay scenario of the generator.
   ugv_add_module_test(chain_parity_test test/chain_parity_test.cpp
