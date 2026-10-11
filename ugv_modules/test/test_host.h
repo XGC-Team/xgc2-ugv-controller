@@ -128,11 +128,21 @@ class TestHost {
     }
 
     // ---- clock ----
+    // The clock the module sees: the test's (setNow), or the host's own CLOCK_MONOTONIC.
     void setNow(int64_t ns) {
+        live_.store(false);
         now_ns_.store(ns);
     }
+    void useMonotonicClock() {
+        live_.store(true);
+    }
     int64_t now() const {
-        return now_ns_.load();
+        return live_.load() ? monotonicNs() : now_ns_.load();
+    }
+    static int64_t monotonicNs() {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                   std::chrono::steady_clock::now().time_since_epoch())
+            .count();
     }
 
     // ---- lifecycle ----
@@ -142,15 +152,18 @@ class TestHost {
         return desc_->create(&api_, this, &config, &instance_);
     }
     xgc2_status configure(const std::string& json) {
+        if (instance_ == nullptr) {
+            return XGC2_ERR_STATE;
+        }
         config_ = json;
         const xgc2_config config{config_.c_str(), config_.size()};
         return desc_->configure(instance_, &config);
     }
     xgc2_status start() {
-        return desc_->start(instance_);
+        return instance_ == nullptr ? XGC2_ERR_STATE : desc_->start(instance_);
     }
     xgc2_status stop() {
-        return desc_->stop(instance_);
+        return instance_ == nullptr ? XGC2_ERR_STATE : desc_->stop(instance_);
     }
     void destroy() {
         if (instance_ != nullptr) {
@@ -165,8 +178,11 @@ class TestHost {
     // One step at the current clock. changed_inputs is derived from the samples pushed since the
     // previous step.
     xgc2_status step(uint32_t reasons = XGC2_STEP_TIMER) {
+        if (instance_ == nullptr) {
+            return XGC2_ERR_STATE;
+        }
         xgc2_step_ctx ctx{};
-        ctx.now_ns = now_ns_.load();
+        ctx.now_ns = now();
         ctx.step_index = step_index_++;
         ctx.reasons = reasons;
         {
@@ -437,7 +453,7 @@ class TestHost {
         return h.ports_[index].changed_in_step ? 1 : 0;
     }
     static int64_t nowNs(void* ctx) {
-        return self(ctx).now_ns_.load();
+        return self(ctx).now();
     }
     static void wakeHost(void* ctx) {
         TestHost& h = self(ctx);
@@ -468,6 +484,7 @@ class TestHost {
     std::vector<Port> ports_;
     std::string config_;
     std::atomic<int64_t> now_ns_{0};
+    std::atomic<bool> live_{false};
     std::atomic<int64_t> period_ns_{0};
     std::atomic<uint64_t> wakes_{0};
     uint64_t step_index_{0};

@@ -78,6 +78,16 @@ target_link_libraries(ugv_unicycle_controller PRIVATE
   xgc2_state_machine::state_machine
   pthread)
 
+# The ROS edge is the one module that links ROS.
+ugv_add_module(ugv_ros_edge src/ugv_ros_edge.cpp)
+add_dependencies(ugv_ros_edge ${catkin_EXPORTED_TARGETS})
+target_include_directories(ugv_ros_edge BEFORE PRIVATE
+  ${catkin_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIRS})
+target_link_libraries(ugv_ros_edge PRIVATE ${catkin_LIBRARIES} pthread)
+# roscpp cannot be restarted in a process and ends at process exit (RosShutdown in the module), so
+# the library is never unmapped: unloading it, or replacing it by a new version, leaves ROS running.
+set_property(TARGET ugv_ros_edge APPEND_STRING PROPERTY LINK_FLAGS " -Wl,-z,nodelete")
+
 install(DIRECTORY include/
   DESTINATION ${CATKIN_GLOBAL_INCLUDE_DESTINATION})
 
@@ -101,4 +111,24 @@ if(CATKIN_ENABLE_TESTING)
   ugv_add_module_test(controller_module_test test/controller_module_test.cpp
     ugv_unicycle_controller
     CONTROLLER_MODULE_PATH="$<TARGET_FILE:ugv_unicycle_controller>")
+
+  # The ROS edge against the ROS master that rostest starts for the test (never the default master),
+  # and one without a master.
+  find_package(rostest REQUIRED)
+  function(ugv_add_edge_rostest target launch source)
+    add_rostest_gtest(${target} ${launch} ${source})
+    if(TARGET ${target})
+      add_dependencies(${target} ugv_ros_edge ${catkin_EXPORTED_TARGETS})
+      target_compile_definitions(${target} PRIVATE EDGE_MODULE_PATH="$<TARGET_FILE:ugv_ros_edge>")
+      target_include_directories(${target} PRIVATE
+        ${catkin_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/test ${EIGEN3_INCLUDE_DIRS})
+      target_link_libraries(${target} Xgc2Module::SDK ${catkin_LIBRARIES} dl pthread)
+    endif()
+  endfunction()
+  ugv_add_edge_rostest(ros_edge_test test/ros_edge.test test/ros_edge_test.cpp)
+  ugv_add_edge_rostest(ros_edge_sim_test test/ros_edge_sim.test test/ros_edge_sim_test.cpp)
+  ugv_add_module_test(ros_edge_no_master_test test/ros_edge_no_master_test.cpp
+    ugv_ros_edge
+    EDGE_MODULE_PATH="$<TARGET_FILE:ugv_ros_edge>")
 endif()
