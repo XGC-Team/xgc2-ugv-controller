@@ -1,8 +1,8 @@
 #pragma once
 
 #include <ros/ros.h>
-#include <ugv_reset_safety/ResetRequest.h>
-#include <ugv_reset_safety/ResetResponse.h>
+#include <ugv_reset_msgs/ResetRequest.h>
+#include <ugv_reset_msgs/ResetResponse.h>
 
 #include <functional>
 #include <string>
@@ -26,7 +26,7 @@ class ResetClient {
                 const std::string& request_topic = "reset/request",
                 const std::string& response_topic = "reset/response")
         : sink_(std::move(sink)) {
-        request_pub_ = nh.advertise<ugv_reset_safety::ResetRequest>(request_topic, 1);
+        request_pub_ = nh.advertise<ugv_reset_msgs::ResetRequest>(request_topic, 1);
         response_sub_ = nh.subscribe(response_topic, 1, &ResetClient::receive, this);
     }
 
@@ -48,7 +48,7 @@ class ResetClient {
         if (!request.valid) {
             return;
         }
-        ugv_reset_safety::ResetRequest message;
+        ugv_reset_msgs::ResetRequest message;
         message.generation = request.generation;
         message.header.stamp.fromNSec(request.stamp);
         message.header.frame_id = "world";
@@ -72,7 +72,7 @@ class ResetClient {
     }
 
    private:
-    void receive(const ugv_reset_safety::ResetResponse::ConstPtr& message) {
+    void receive(const ugv_reset_msgs::ResetResponse::ConstPtr& message) {
         if (!message || message->header.frame_id != "world" || message->command.linear.z != 0 ||
             message->command.angular.x != 0 || message->command.angular.y != 0) {
             return;

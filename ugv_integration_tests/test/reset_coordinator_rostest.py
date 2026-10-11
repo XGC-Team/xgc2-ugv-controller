@@ -15,7 +15,7 @@ import rospy
 import rostest
 from geometry_msgs.msg import Point, Pose2D, PoseStamped, Twist
 from std_msgs.msg import String
-from ugv_reset_safety.msg import ResetRequest, ResetResponse
+from ugv_reset_msgs.msg import ResetRequest, ResetResponse
 from xgc2_geometry_msgs.msg import SceneSnapshot, SceneState, SceneObstacle, ScenePart, SceneObstacleState
 
 

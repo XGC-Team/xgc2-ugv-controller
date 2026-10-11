@@ -12,7 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
   ugv_reset_client
-  ugv_reset_safety
+  ugv_reset_msgs
   unicycle_reference_trajectory
   unicycle_reference_trajectory_msgs
   unicycle_ugv_controller

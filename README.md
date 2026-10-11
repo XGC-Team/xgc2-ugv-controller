@@ -14,7 +14,8 @@ Packages:
   (world ENU velocity to body FLU, heading P to east). Algorithms publish
   `{ns}/alg/reference/twist` only; they do not publish `cmd_vel`.
 - `ugv_reset_client`: the vehicle's side of the Reset protocol, a request/response
-  lease for one vehicle; no other vehicle, no coordination.
+  lease for one vehicle using the shared `ugv_reset_msgs` messages from ros1-msgs;
+  no other vehicle, no coordination.
 - `ugv_reset_safety`: the station's Reset coordinator, geometric path planning,
   DWA with obstacle/inter-vehicle footprint checks, command limits and slew limits.
   The vehicle packages know one vehicle each and none of this package's code.

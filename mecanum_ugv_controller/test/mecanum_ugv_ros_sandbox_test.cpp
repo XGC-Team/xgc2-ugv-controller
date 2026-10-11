@@ -4,8 +4,8 @@
 #include <gtest/gtest.h>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_safety/ResetRequest.h>
-#include <ugv_reset_safety/ResetResponse.h>
+#include <ugv_reset_msgs/ResetRequest.h>
+#include <ugv_reset_msgs/ResetResponse.h>
 
 #include <cmath>
 #include <functional>
@@ -45,17 +45,17 @@ TEST(MecanumRosSandbox, PoseCommandFenceAndDrop) {
     ros::Publisher reset_pub = nh.advertise<geometry_msgs::Pose2D>("/ugv_test/reset_pose", 10);
 
     ros::Publisher safe_pub =
-        nh.advertise<ugv_reset_safety::ResetResponse>("/ugv_test/reset/response", 1);
+        nh.advertise<ugv_reset_msgs::ResetResponse>("/ugv_test/reset/response", 1);
     bool grant_response = false;
-    ros::Subscriber request_sub = nh.subscribe<ugv_reset_safety::ResetRequest>(
-        "/ugv_test/reset/request", 1, [&](const ugv_reset_safety::ResetRequest::ConstPtr& request) {
+    ros::Subscriber request_sub = nh.subscribe<ugv_reset_msgs::ResetRequest>(
+        "/ugv_test/reset/request", 1, [&](const ugv_reset_msgs::ResetRequest::ConstPtr& request) {
             if (!grant_response) {
                 return;
             }
-            ugv_reset_safety::ResetResponse reply;
+            ugv_reset_msgs::ResetResponse reply;
             reply.header = request->header;
             reply.generation = request->generation;
-            reply.status = ugv_reset_safety::ResetResponse::RUNNING;
+            reply.status = ugv_reset_msgs::ResetResponse::RUNNING;
             reply.command.linear.x = 0.1;
             safe_pub.publish(reply);
         });

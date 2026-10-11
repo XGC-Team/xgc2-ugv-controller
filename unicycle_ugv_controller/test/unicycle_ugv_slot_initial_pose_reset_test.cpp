@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_safety/ResetRequest.h>
+#include <ugv_reset_msgs/ResetRequest.h>
 
 #include <cmath>
 #include <functional>
@@ -40,13 +40,13 @@ TEST(UnicycleSlotInitialPoseReset, LaunchArgSlotPoseBecomesResetTarget) {
     ros::Publisher pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/ugv_test/pose", 10);
     ros::Publisher public_command_pub = nh.advertise<std_msgs::String>("/command", 10);
     std::string control_state;
-    ugv_reset_safety::ResetRequest request;
+    ugv_reset_msgs::ResetRequest request;
     bool have_request = false;
     ros::Subscriber state_sub = nh.subscribe<std_msgs::String>(
         "/ugv_test/custom/statustext", 10,
         [&](const std_msgs::String::ConstPtr& msg) { control_state = msg->data; });
-    ros::Subscriber request_sub = nh.subscribe<ugv_reset_safety::ResetRequest>(
-        "/ugv_test/reset/request", 10, [&](const ugv_reset_safety::ResetRequest::ConstPtr& msg) {
+    ros::Subscriber request_sub = nh.subscribe<ugv_reset_msgs::ResetRequest>(
+        "/ugv_test/reset/request", 10, [&](const ugv_reset_msgs::ResetRequest::ConstPtr& msg) {
             request = *msg;
             have_request = true;
         });

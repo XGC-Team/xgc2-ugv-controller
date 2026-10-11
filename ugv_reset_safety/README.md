@@ -7,8 +7,9 @@ each chassis controller remains the sole publisher of native `cmd_vel`.
 ## The station and the vehicles
 
 This package is the station: `ugv_reset_coordinator_node`, the path and DWA
-mathematics, the fleet schedule, the scene projection and the `ResetRequest` /
-`ResetResponse` messages. It contains no vehicle controller code and is not a
+mathematics, the fleet schedule and the scene projection. The shared
+`ugv_reset_msgs/ResetRequest` and `ugv_reset_msgs/ResetResponse` messages come
+from the ros1-msgs product. It contains no vehicle controller code and is not a
 dependency of any vehicle package's code.
 
 A vehicle runs its own side of the protocol. Its controller owns the Reset

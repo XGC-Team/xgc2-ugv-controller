@@ -20,7 +20,7 @@ import rospy
 import rostest
 from geometry_msgs.msg import Pose2D, PoseStamped, Twist
 from std_msgs.msg import String
-from ugv_reset_safety.msg import ResetRequest, ResetResponse
+from ugv_reset_msgs.msg import ResetRequest, ResetResponse
 from xgc2_geometry_msgs.msg import SceneObstacle, SceneObstacleState, ScenePart, SceneSnapshot, SceneState
 
 MAX_V = 0.35

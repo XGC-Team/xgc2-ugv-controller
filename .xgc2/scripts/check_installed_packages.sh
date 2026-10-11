@@ -92,8 +92,8 @@ else
 fi
 
 test -x "/opt/ros/${ROS_DISTRO}/lib/ugv_reset_safety/ugv_reset_coordinator_node"
-rosmsg show ugv_reset_safety/ResetRequest | grep -q "^uint32 generation$"
-rosmsg show ugv_reset_safety/ResetResponse | grep -q "^uint8 status$"
+rosmsg show ugv_reset_msgs/ResetRequest | grep -q "^uint32 generation$"
+rosmsg show ugv_reset_msgs/ResetResponse | grep -q "^uint8 status$"
 test "$(rospack find ugv_reset_safety)" = "/opt/ros/${ROS_DISTRO}/share/ugv_reset_safety"
 roslaunch --files ugv_reset_safety ugv_reset_coordinator.launch config_file:="/opt/ros/${ROS_DISTRO}/share/ugv_reset_safety/config/mixed_pair.yaml" >/tmp/xgc2-reset-coordinator-files.txt
 

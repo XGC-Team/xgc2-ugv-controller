@@ -46,9 +46,9 @@
   <exec_depend>xgc2-acados</exec_depend>
 
   <depend>ugv_reset_client</depend>
+  <depend>ugv_reset_msgs</depend>
 
   <test_depend>gtest</test_depend>
-  <test_depend>ugv_reset_safety</test_depend>
   <test_depend>rostest</test_depend>
 
   <export>

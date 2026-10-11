@@ -16,5 +16,5 @@ back to the controller, which executes them only for its current session and whi
 the lease holds. There is no other vehicle in this package and no coordination.
 
 Used by `unicycle_ugv_controller`, `mecanum_ugv_controller` and the ROS edge of
-`ugv_modules`. The messages stay in `ugv_reset_safety` until the cross-product
-messages move to the shared message repository.
+`ugv_modules`. The shared `ResetRequest` and `ResetResponse` messages are in
+`ugv_reset_msgs`, from the ros1-msgs product.

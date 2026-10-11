@@ -15,7 +15,7 @@
   <build_depend>roscpp</build_depend>
   <build_depend>std_msgs</build_depend>
   <build_depend>ugv_reset_client</build_depend>
-  <build_depend>ugv_reset_safety</build_depend>
+  <build_depend>ugv_reset_msgs</build_depend>
   <build_depend>unicycle_reference_trajectory</build_depend>
   <build_depend>unicycle_reference_trajectory_msgs</build_depend>
   <build_depend>unicycle_ugv_controller</build_depend>
@@ -25,6 +25,7 @@
   <build_export_depend>rosgraph_msgs</build_export_depend>
   <build_export_depend>roscpp</build_export_depend>
   <build_export_depend>std_msgs</build_export_depend>
+  <build_export_depend>ugv_reset_msgs</build_export_depend>
   <build_export_depend>unicycle_reference_trajectory_msgs</build_export_depend>
 
   <exec_depend>geometry_msgs</exec_depend>
@@ -34,7 +35,7 @@
   <exec_depend>roscpp</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>ugv_reset_client</exec_depend>
-  <exec_depend>ugv_reset_safety</exec_depend>
+  <exec_depend>ugv_reset_msgs</exec_depend>
   <exec_depend>unicycle_reference_trajectory</exec_depend>
   <exec_depend>unicycle_reference_trajectory_msgs</exec_depend>
   <exec_depend>unicycle_ugv_controller</exec_depend>

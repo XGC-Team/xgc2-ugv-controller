@@ -1,8 +1,8 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_safety/ResetRequest.h>
-#include <ugv_reset_safety/ResetResponse.h>
+#include <ugv_reset_msgs/ResetRequest.h>
+#include <ugv_reset_msgs/ResetResponse.h>
 #include <ugv_reset_safety/fleet_schedule.h>
 #include <ugv_reset_safety/reset_dwa.h>
 #include <ugv_reset_safety/reset_path.h>
@@ -64,7 +64,7 @@ class Coordinator {
         ResetPath path;
         ros::Subscriber request_sub, pose_sub, state_sub;
         ros::Publisher response_pub;
-        ResetRequest request;
+        ugv_reset_msgs::ResetRequest request;
         ros::WallTime request_wall, pose_wall, state_wall;
         ros::Time pose_stamp;
         Eigen::Vector2d measured_position = Eigen::Vector2d::Zero();
@@ -136,10 +136,11 @@ class Coordinator {
             }
             const std::size_t n = entries_.size();
             const std::string ns = "/" + e->robot.id;
-            e->response_pub = nh_.advertise<ResetResponse>(ns + "/reset/response", 1);
-            e->request_sub = nh_.subscribe<ResetRequest>(
+            e->response_pub =
+                nh_.advertise<ugv_reset_msgs::ResetResponse>(ns + "/reset/response", 1);
+            e->request_sub = nh_.subscribe<ugv_reset_msgs::ResetRequest>(
                 ns + "/reset/request", 1,
-                [this, n](const ResetRequest::ConstPtr& m) { request(n, *m); });
+                [this, n](const ugv_reset_msgs::ResetRequest::ConstPtr& m) { request(n, *m); });
             e->pose_sub = nh_.subscribe<geometry_msgs::PoseStamped>(
                 ns + "/pose", 1,
                 [this, n](const geometry_msgs::PoseStamped::ConstPtr& m) { pose(n, *m); });
@@ -172,7 +173,7 @@ class Coordinator {
     }
 
    private:
-    void request(std::size_t n, const ResetRequest& r) {
+    void request(std::size_t n, const ugv_reset_msgs::ResetRequest& r) {
         auto& e = *entries_[n];
         const auto now = ros::Time::now();
         if (r.header.stamp.isZero() || r.pose_stamp.isZero() || !finitePose(r.pose) ||
@@ -391,7 +392,7 @@ class Coordinator {
     }
     void reply(Entry& e, uint8_t status, const Eigen::Vector3d& command,
                const std::string& reason) {
-        ResetResponse r;
+        ugv_reset_msgs::ResetResponse r;
         r.header = e.request.header;
         r.generation = e.request.generation;
         r.status = status;
@@ -420,9 +421,9 @@ class Coordinator {
                 e.robot.previous.cwiseAbs().maxCoeff() <= dwa_config_.feasibility_tolerance &&
                 e.measured_speed <= 0.03 && std::abs(e.measured_omega) <= 0.05;
             if (arrived) {
-                reply(e, ResetResponse::ARRIVED, Eigen::Vector3d::Zero(), "");
+                reply(e, ugv_reset_msgs::ResetResponse::ARRIVED, Eigen::Vector3d::Zero(), "");
             } else {
-                reply(e, ResetResponse::RUNNING, command, "");
+                reply(e, ugv_reset_msgs::ResetResponse::RUNNING, command, "");
             }
         }
     }
@@ -431,7 +432,7 @@ class Coordinator {
             if (e->have_request && e->robot.active) {
                 e->rejected = true;
                 e->reason = reason;
-                reply(*e, ResetResponse::REJECTED, Eigen::Vector3d::Zero(), reason);
+                reply(*e, ugv_reset_msgs::ResetResponse::REJECTED, Eigen::Vector3d::Zero(), reason);
             }
         }
     }
@@ -470,7 +471,7 @@ class Coordinator {
              (awaiting_state && (wall - last_admission_).toSec() < state_timeout_))) {
             for (auto& e : entries_) {
                 if (e->robot.active) {
-                    reply(*e, ResetResponse::RUNNING, Eigen::Vector3d::Zero(),
+                    reply(*e, ugv_reset_msgs::ResetResponse::RUNNING, Eigen::Vector3d::Zero(),
                           "collecting reset batch");
                 }
             }
@@ -639,11 +640,12 @@ class Coordinator {
                 e.measured_speed <= 0.03 && std::abs(e.measured_omega) <= 0.05;
             if (arrived || completed_[i]) {
                 completed_[i] = true;
-                reply(e, ResetResponse::ARRIVED, Eigen::Vector3d::Zero(), "");
+                reply(e, ugv_reset_msgs::ResetResponse::ARRIVED, Eigen::Vector3d::Zero(), "");
             } else if (!robots[i].local_plan_feasible) {
-                reply(e, ResetResponse::RUNNING, Eigen::Vector3d::Zero(), "no feasible DWA sample");
+                reply(e, ugv_reset_msgs::ResetResponse::RUNNING, Eigen::Vector3d::Zero(),
+                      "no feasible DWA sample");
             } else {
-                reply(e, ResetResponse::RUNNING, robots[i].command, "");
+                reply(e, ugv_reset_msgs::ResetResponse::RUNNING, robots[i].command, "");
             }
         }
     }

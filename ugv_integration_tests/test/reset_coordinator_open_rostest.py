@@ -10,7 +10,7 @@ import rospy
 import rostest
 from geometry_msgs.msg import Pose2D, PoseStamped, Twist
 from std_msgs.msg import String
-from ugv_reset_safety.msg import ResetRequest, ResetResponse
+from ugv_reset_msgs.msg import ResetRequest, ResetResponse
 
 
 class ResetCoordinatorOpenTest(unittest.TestCase):

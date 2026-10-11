@@ -6,9 +6,8 @@
   <maintainer email="apt@example.com">XGC2</maintainer>
   <license>MIT</license>
   <buildtool_depend>catkin</buildtool_depend>
-  <!-- The ResetRequest/ResetResponse messages stay with the coordinator until the
-       cross-product messages move to the shared message repository. -->
+  <!-- The ResetRequest/ResetResponse messages are shared in ugv_reset_msgs. -->
   <depend>roscpp</depend>
-  <depend>ugv_reset_safety</depend>
+  <depend>ugv_reset_msgs</depend>
   <test_depend>gtest</test_depend>
 </package>

@@ -9,8 +9,8 @@
 #include <ros/ros.h>
 #include <std_msgs/Empty.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_safety/ResetRequest.h>
-#include <ugv_reset_safety/ResetResponse.h>
+#include <ugv_reset_msgs/ResetRequest.h>
+#include <ugv_reset_msgs/ResetResponse.h>
 #include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
 #include <unicycle_reference_trajectory_msgs/PlanarPvaReference.h>
 #include <unicycle_reference_trajectory_msgs/SampledReference.h>
@@ -666,9 +666,9 @@ TEST_F(EdgeTest, TheResetLeaseRunsBetweenTheControllerAndTheCoordinator) {
         "\"reset_response_topic\": \"/coordinator/answers\"}");
     ros::Publisher states = nh_.advertise<rigid_state_estimator_msgs::RigidStateEstimate>(
         "ugv1/alg/state_estimator/state", 5);
-    Probe<ugv_reset_safety::ResetRequest> requests(nh_, "ugv1/station/ask");
+    Probe<ugv_reset_msgs::ResetRequest> requests(nh_, "ugv1/station/ask");
     ros::Publisher responses =
-        nh_.advertise<ugv_reset_safety::ResetResponse>("/coordinator/answers", 5);
+        nh_.advertise<ugv_reset_msgs::ResetResponse>("/coordinator/answers", 5);
     Probe<geometry_msgs::Twist> twists(nh_, "ugv1/cmd_vel");
     ASSERT_TRUE(connected(states));
     ASSERT_TRUE(connected(responses));
@@ -722,7 +722,7 @@ TEST_F(EdgeTest, TheResetLeaseRunsBetweenTheControllerAndTheCoordinator) {
     // The coordinator answers the second request: the controller gets it in its clock, with the
     // wall time the request was issued at.
     const auto answered = requests.at(1);
-    ugv_reset_safety::ResetResponse response;
+    ugv_reset_msgs::ResetResponse response;
     response.header.stamp = answered.header.stamp;
     response.header.frame_id = "world";
     response.generation = 7;
@@ -748,7 +748,7 @@ TEST_F(EdgeTest, TheResetLeaseRunsBetweenTheControllerAndTheCoordinator) {
 
     // Answers the lease does not know are not forwarded: another generation, a stamp that was never
     // issued, a response that is not in the world frame.
-    ugv_reset_safety::ResetResponse wrong = response;
+    ugv_reset_msgs::ResetResponse wrong = response;
     wrong.generation = 8;
     responses.publish(wrong);
     wrong = response;

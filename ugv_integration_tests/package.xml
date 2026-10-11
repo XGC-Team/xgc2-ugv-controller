@@ -12,6 +12,7 @@
   <test_depend>std_msgs</test_depend>
   <test_depend>xgc2_geometry_msgs</test_depend>
   <test_depend>ugv_reset_safety</test_depend>
+  <test_depend>ugv_reset_msgs</test_depend>
   <test_depend>unicycle_ugv_controller</test_depend>
   <test_depend>ugv_modules</test_depend>
   <test_depend>rigid_state_estimator_msgs</test_depend>

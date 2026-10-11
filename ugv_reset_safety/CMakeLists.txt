@@ -3,19 +3,17 @@ project(ugv_reset_safety)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-find_package(catkin REQUIRED COMPONENTS geometry_msgs std_msgs roscpp message_generation xgc2_geometry_msgs)
+find_package(catkin REQUIRED COMPONENTS geometry_msgs std_msgs roscpp ugv_reset_msgs xgc2_geometry_msgs)
 find_package(Eigen3 REQUIRED)
 # Eigen's config exports uppercase variables, while catkin follows the spelling
 # in DEPENDS when exporting public includes to CMake and pkg-config consumers.
 set(Eigen3_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIRS})
-add_message_files(FILES ResetRequest.msg ResetResponse.msg)
-generate_messages(DEPENDENCIES geometry_msgs std_msgs)
-catkin_package(INCLUDE_DIRS include LIBRARIES ugv_reset_safety_math CATKIN_DEPENDS geometry_msgs std_msgs roscpp message_runtime xgc2_geometry_msgs DEPENDS Eigen3)
+catkin_package(INCLUDE_DIRS include LIBRARIES ugv_reset_safety_math CATKIN_DEPENDS geometry_msgs std_msgs roscpp ugv_reset_msgs xgc2_geometry_msgs DEPENDS Eigen3)
 include_directories(include ${catkin_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIRS})
 # The station's swarm Reset coordinator and its ROS-free core: geometry, path
 # planning and the (header-only) DWA and fleet schedule; scene_projection.h is
-# the ROS edge. The vehicle side of the protocol is ugv_reset_client; this
-# package holds nothing a single vehicle needs but the two message definitions.
+# the ROS edge. The vehicle side of the protocol is ugv_reset_client; the shared
+# message definitions are in ugv_reset_msgs.
 # The math library's include path is reset from the catkin directory path (which
 # puts the ROS headers on it) to this package's headers and Eigen; it links no
 # ROS library and is linked with -Wl,--no-undefined, so a ROS symbol reaching it
@@ -26,7 +24,7 @@ target_include_directories(ugv_reset_safety_math PUBLIC ${CMAKE_CURRENT_SOURCE_D
 target_link_libraries(ugv_reset_safety_math PUBLIC Eigen3::Eigen)
 set_property(TARGET ugv_reset_safety_math APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--no-undefined")
 add_executable(ugv_reset_coordinator_node src/reset_coordinator_node.cpp)
-add_dependencies(ugv_reset_coordinator_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(ugv_reset_coordinator_node ${catkin_EXPORTED_TARGETS})
 target_link_libraries(ugv_reset_coordinator_node ugv_reset_safety_math ${catkin_LIBRARIES})
 install(TARGETS ugv_reset_safety_math ugv_reset_coordinator_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
