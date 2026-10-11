@@ -79,11 +79,13 @@ ownership:
   - /opt/ros/noetic/lib/libugv_reset_safety_math.so
   - /opt/ros/noetic/lib/pkgconfig/ugv_reset_safety.pc
 release:
+  requires:
+  - xgc2-module
   dependency_policy:
     libxgc2-math-dev: rebuild
-    libxgc2-module-dev: rebuild
     libxgc2-state-machine-dev: rebuild
     xgc2-acados: rebuild
+    xgc2-module: rebuild
     xgc2-ros-msgs: rebuild
     xgc2-ros1-utils: rebuild
   apt_versions:
