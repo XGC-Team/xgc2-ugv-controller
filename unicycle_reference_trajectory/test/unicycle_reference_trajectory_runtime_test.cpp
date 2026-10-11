@@ -87,7 +87,7 @@ class Clock {
 
     std::vector<uint32_t> run(double seconds) {
         std::vector<uint32_t> ids;
-        const int steps = static_cast<int>(seconds / kDt + 0.5);
+        const int steps = static_cast<int>(std::lround(seconds / kDt));
         for (int k = 0; k < steps; ++k) {
             now_ += kDt;
             for (const auto& event : driver_.update(now_).events) {

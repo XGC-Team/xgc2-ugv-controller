@@ -181,10 +181,9 @@ void UnicycleUgvRosNode::updateOnce() {
     }
     dispatchOutputEvents(controller_.stateMachine().currentOutputEvents());
     const ResetSession reset = controller_.resetSession();
-    reset_client_.update(reset.active, reset.generation,
-                         {reset.target.x, reset.target.y, reset.target.yaw},
-                         {state_.x, state_.y, state_.yaw}, toRosTime(state_.stamp),
-                         controller_.healthReady());
+    reset_client_.update(
+        reset.active, reset.generation, {reset.target.x, reset.target.y, reset.target.yaw},
+        {state_.x, state_.y, state_.yaw}, toRosTime(state_.stamp), controller_.healthReady());
     const auto control_state = controller_.stateMachine().currentState(region_type::CONTROL);
     const auto health_state = controller_.stateMachine().currentState(region_type::HEALTH);
     logStateChanges(control_state, health_state);

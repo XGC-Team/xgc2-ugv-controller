@@ -364,7 +364,11 @@ class JsonSource {
     static void collectLeaves(const Json::Value& node, const std::string& prefix,
                               std::set<std::string>& leaves) {
         for (const std::string& name : node.getMemberNames()) {
-            const std::string path = prefix.empty() ? name : prefix + "/" + name;
+            std::string path = prefix;
+            if (!path.empty()) {
+                path += '/';
+            }
+            path += name;
             if (node[name].isObject()) {
                 collectLeaves(node[name], path, leaves);
             } else {

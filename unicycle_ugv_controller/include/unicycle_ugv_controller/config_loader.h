@@ -61,10 +61,14 @@ void loadControllerConfig(const Source& source, ControllerConfig& config) {
             throw std::invalid_argument(recovery + " must be a mapping");
         }
         for (const std::string& name : source.keys(recovery)) {
-            double* field = name == "gain"           ? &config.heading_recovery.gain
-                            : name == "axis_bias"    ? &config.heading_recovery.axis_bias
-                            : name == "rate_damping" ? &config.heading_recovery.rate_damping
-                                                     : nullptr;
+            double* field = nullptr;
+            if (name == "gain") {
+                field = &config.heading_recovery.gain;
+            } else if (name == "axis_bias") {
+                field = &config.heading_recovery.axis_bias;
+            } else if (name == "rate_damping") {
+                field = &config.heading_recovery.rate_damping;
+            }
             if (field == nullptr) {
                 throw std::invalid_argument("unknown " + recovery + "/" + name);
             }

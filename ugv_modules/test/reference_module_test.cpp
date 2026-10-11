@@ -376,10 +376,8 @@ TEST_F(ReferenceModuleTest, OutputsAreWrittenWholeAndSlotsAreNeverLeaked) {
     EXPECT_EQ(std::memcmp(&expected, &status, sizeof status), 0);
 
     const auto analytic = host_.outputs("active_analytic").back().as<xgc2_ugv_analytic_reference>();
-    xgc2_ugv_analytic_reference zero_params = analytic;
     for (uint32_t k = analytic.param_count; k < XGC2_UGV_MAX_ANALYTIC_PARAMS; ++k) {
         EXPECT_EQ(analytic.params[k], 0.0) << k;
-        zero_params.params[k] = 0.0;
     }
     EXPECT_EQ(analytic.reserved, 0u);
     EXPECT_EQ(host_.openSlots(), 0u);

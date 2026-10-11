@@ -35,8 +35,8 @@ bool makeNmpcRequest(const UnicycleUgvController& controller, const ::state_mach
     request.config = config;
     const double stage_dt =
         config.prediction_horizon / static_cast<double>(UnicycleNmpcSolver::horizonSteps());
-    if (!controller.referenceCache().sampleHorizon(now, stage_dt, UnicycleNmpcSolver::horizonSteps(),
-                                                   request.references)) {
+    if (!controller.referenceCache().sampleHorizon(
+            now, stage_dt, UnicycleNmpcSolver::horizonSteps(), request.references)) {
         UGV_LOG_WARN_THROTTLE(1.0,
                               "[UgvNmpcExecution] Reject solve seq=%lu: reference horizon "
                               "unavailable now=%.3f stage_dt=%.3f",

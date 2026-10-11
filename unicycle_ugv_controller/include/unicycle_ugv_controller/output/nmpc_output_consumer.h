@@ -29,7 +29,7 @@ class NmpcOutputConsumer final : public ::state_machine::runtime::EventConsumer 
     }
 
    private:
-    void publishPrediction(const Time& stamp, const NmpcTrackingBackend& backend);
+    void publishPrediction(const Time& time, const NmpcTrackingBackend& backend);
 
     ros::Publisher predicted_path_pub_;
     ros::Publisher predicted_poses_pub_;

@@ -61,9 +61,8 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
     const auto feedback = controller_.resetFeedback(Time(now).toNSec(), wall);
     if (feedback.valid && feedback.status != ResetClearance::RUNNING) {
         emitZero(ctx);
-        postDone(ctx, feedback.status == ResetClearance::ARRIVED
-                          ? event_type::RESET_ARRIVED
-                          : event_type::RESET_REJECTED);
+        postDone(ctx, feedback.status == ResetClearance::ARRIVED ? event_type::RESET_ARRIVED
+                                                                 : event_type::RESET_REJECTED);
         return {};
     }
     ControlCommand command;
@@ -71,8 +70,8 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
     command.valid = true;
     if (feedback.valid) {
         // Refuse a command outside chassis limits; do not silently saturate.
-        if (std::abs(feedback.linear_x) > cfg.chassis_max_linear_speed || feedback.linear_y != 0.0 ||
-            std::abs(feedback.yaw_rate) > cfg.chassis_max_yaw_rate) {
+        if (std::abs(feedback.linear_x) > cfg.chassis_max_linear_speed ||
+            feedback.linear_y != 0.0 || std::abs(feedback.yaw_rate) > cfg.chassis_max_yaw_rate) {
             emitZero(ctx);
             postDone(ctx, event_type::RESET_REJECTED);
             return {};
@@ -95,8 +94,7 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
 void ResetState::emitCommand(::state_machine::StateContext& ctx, const ControlCommand& command) {
     const auto cfg = controller_.config();
     controller_.setCommand(command);
-    if (!command_gate_.due(monotonicSeconds(),
-                           1.0 / cfg.command_publish_rate_hz)) {
+    if (!command_gate_.due(monotonicSeconds(), 1.0 / cfg.command_publish_rate_hz)) {
         return;
     }
     ctx.emitOutput(

@@ -229,8 +229,9 @@ struct Script {
 
     std::vector<Item> items;
 
-    void analytic(double at, uint16_t type, std::vector<double> params, double duration = 6.0,
-                  double ox = 0.0, double oy = 0.0, double oyaw = 0.0, double start = 0.0) {
+    void analytic(double at, uint16_t type, const std::vector<double>& params,
+                  double duration = 6.0, double ox = 0.0, double oy = 0.0, double oyaw = 0.0,
+                  double start = 0.0) {
         Item item;
         item.at = at;
         item.kind = Kind::kAnalytic;
@@ -248,7 +249,7 @@ struct Script {
         m.origin.position.y = oy;
         m.origin.orientation.z = std::sin(0.5 * oyaw);
         m.origin.orientation.w = std::cos(0.5 * oyaw);
-        m.params = std::move(params);
+        m.params = params;
         items.push_back(std::move(item));
     }
 
@@ -289,8 +290,8 @@ struct Script {
     }
 
     // Waypoints on a line segment pair; the header stamp is the requested start time.
-    void waypoint(double at, int count, std::vector<double> segment_times, double stamp_offset,
-                  double desired_speed = 0.6, double max_velocity = 0.0) {
+    void waypoint(double at, int count, const std::vector<double>& segment_times,
+                  double stamp_offset, double desired_speed = 0.6, double max_velocity = 0.0) {
         Item item;
         item.at = at;
         item.kind = Kind::kWaypoint;
@@ -310,7 +311,7 @@ struct Script {
             pose.orientation.w = std::cos(0.5 * yaw);
             m.waypoints.push_back(pose);
         }
-        m.segment_times = std::move(segment_times);
+        m.segment_times = segment_times;
         m.start_velocity.x = 0.2;
         m.end_velocity.y = -0.1;
         m.desired_speed = desired_speed;

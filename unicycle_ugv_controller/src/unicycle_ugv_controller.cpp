@@ -225,8 +225,8 @@ CmdVel UnicycleUgvController::cmdVel() const {
         const ResetClearance feedback =
             resetFeedback(Time(current_time_sec_).toNSec(), monotonicSeconds());
         if (!feedback.valid || feedback.status != ResetClearance::RUNNING ||
-            std::abs(feedback.linear_x) > cfg.chassis_max_linear_speed || feedback.linear_y != 0.0 ||
-            std::abs(feedback.yaw_rate) > cfg.chassis_max_yaw_rate) {
+            std::abs(feedback.linear_x) > cfg.chassis_max_linear_speed ||
+            feedback.linear_y != 0.0 || std::abs(feedback.yaw_rate) > cfg.chassis_max_yaw_rate) {
             return out;
         }
         out.linear_x = feedback.linear_x;
@@ -237,8 +237,8 @@ CmdVel UnicycleUgvController::cmdVel() const {
         out.linear_x = clamp(current.linear_speed, cfg.min_linear_speed, cfg.max_linear_speed);
         out.angular_z = clamp(current.angular_speed, -cfg.max_angular_speed, cfg.max_angular_speed);
     } else {
-        out.linear_x =
-            clamp(current.linear_speed, -cfg.chassis_max_linear_speed, cfg.chassis_max_linear_speed);
+        out.linear_x = clamp(current.linear_speed, -cfg.chassis_max_linear_speed,
+                             cfg.chassis_max_linear_speed);
         out.angular_z =
             clamp(current.angular_speed, -cfg.chassis_max_yaw_rate, cfg.chassis_max_yaw_rate);
     }

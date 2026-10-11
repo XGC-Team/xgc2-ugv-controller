@@ -53,8 +53,8 @@ extern "C" {
 #define XGC2_UGV_MAX_ANALYTIC_PARAMS 8u
 #define XGC2_UGV_MAX_SAMPLED_POINTS 512u
 #define XGC2_UGV_MAX_POLYNOMIAL_SEGMENTS 64u
-#define XGC2_UGV_POLYNOMIAL_COEFFS 8u /* order 7: one segment has order + 1 coefficients per axis \
-                                       */
+/* Order 7: one segment has order + 1 coefficients per axis. */
+#define XGC2_UGV_POLYNOMIAL_COEFFS 8u
 #define XGC2_UGV_MAX_WAYPOINTS 64u
 
 /* ------------------------------------------------------------------------------------------------
