@@ -93,7 +93,7 @@ public:
 struct Se2Reference {struct {double yaw=0;} state;};
 struct NmpcStateVector {double operator()(int)const{return 0;}};
 struct UnicycleNmpcSolver {static int horizonSteps(){return 10;}};
-struct ReferenceCache {bool sampleHorizon(Time,double,int,std::vector<Se2Reference>& r){r.resize(11);return true;}};
+struct ReferenceCache {bool sampleHorizon(Time,double,int,std::vector<Se2Reference>& r) const{r.resize(11);return true;}};
 class UnicycleUgvController {
     mutable std::mutex mutex;ControlCommand command_;UgvState state_;ReferenceCache cache;
 public:
@@ -106,6 +106,7 @@ public:
     bool worldPvaReady()const{return false;}
     WorldPvaReference liftedWorldPva()const{return {};}
     ReferenceCache& referenceCache(){return cache;}
+    const ReferenceCache& referenceCache() const{return cache;}
     void clearCommand(){setCommand({});}
     void setCommand(ControlCommand c){std::lock_guard<std::mutex> lock(mutex);command_=c;}
     ControlCommand command()const{std::lock_guard<std::mutex> lock(mutex);return command_;}
@@ -209,6 +210,8 @@ def main():
             "-I", str(package / "include"), str(root / "test.cpp"),
             str(package / "src/state_machine/custom1_state.cpp"),
             str(package / "src/output/nmpc_output_consumer.cpp"),
+            str(package / "src/nmpc/nmpc_execution.cpp"),
+            str(package / "src/core_log.cpp"),
             "-o", str(root / "test"),
         ], check=True, timeout=60)
         subprocess.run([str(root / "test")], check=True, timeout=10)
