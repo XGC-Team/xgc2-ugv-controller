@@ -17,6 +17,7 @@ from geometry_msgs.msg import Point, Pose2D, PoseStamped, Twist
 from std_msgs.msg import String
 from ugv_reset_msgs.msg import ResetRequest, ResetResponse
 from xgc2_geometry_msgs.msg import SceneSnapshot, SceneState, SceneObstacle, ScenePart, SceneObstacleState
+from xgc2_math.geometry import encode_geometry
 
 
 class ResetCoordinatorTransportTest(unittest.TestCase):
@@ -163,7 +164,8 @@ class ResetCoordinatorTransportTest(unittest.TestCase):
         state = SceneState(epoch=self.snapshot.epoch, revision=self.snapshot.revision)
         state.header.stamp = rospy.Time.now()
         state.header.frame_id = "world"
-        state.obstacles = [SceneObstacleState(id=o.id, pose=o.pose) for o in self.snapshot.obstacles]
+        state.obstacles = [SceneObstacleState(id=o.id, pose=o.pose) for o in self.snapshot.obstacles
+                           if o.dynamic]
         self.scene_state_pub.publish(state)
 
     def publish_scene(self, shape="cube", x=2.0):
@@ -175,8 +177,11 @@ class ResetCoordinatorTransportTest(unittest.TestCase):
         obstacle.pose.orientation.w = 1
         part = ScenePart(id="body")
         part.pose.orientation.w = 1
-        part.geometry.type = "box" if shape == "cube" else shape
-        part.geometry.size.x = part.geometry.size.y = part.geometry.size.z = .2
+        part.geometry.type, part.geometry.parameters = encode_geometry(
+            {"type": "box", "size": [.2, .2, .2]})
+        if shape != "cube":
+            # The existing rejection fixture uses an unregistered wire tag.
+            part.geometry.type = 0
         obstacle.parts = [part]
         scene.obstacles = [obstacle]
         self.snapshot = scene

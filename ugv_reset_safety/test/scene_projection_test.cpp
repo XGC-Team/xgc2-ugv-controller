@@ -17,16 +17,17 @@ xgc2_geometry_msgs::SceneSnapshot fixture(const std::string& type) {
     part.pose.orientation.w = 1;
     using xgc2_math::geometry::Geometry;
     Geometry geometry;
-    if (type == "box")
+    if (type == "box") {
         geometry = Geometry::box({.5, .5, 2});
-    else if (type == "sphere")
+    } else if (type == "sphere") {
         geometry = Geometry::sphere(.5);
-    else if (type == "cylinder")
+    } else if (type == "cylinder") {
         geometry = Geometry::cylinder(.5, 1);
-    else if (type == "capsule")
+    } else if (type == "capsule") {
         geometry = Geometry::capsule(.5, 1);
-    else
+    } else {
         throw std::invalid_argument("invalid fixture type");
+    }
     const auto payload = xgc2_math::geometry::encodeGeometry(geometry);
     part.geometry.type = payload.type;
     part.geometry.parameters = payload.parameters;
@@ -41,8 +42,9 @@ xgc2_geometry_msgs::SceneState liveState(const xgc2_geometry_msgs::SceneSnapshot
     state.epoch = scene.epoch;
     state.revision = scene.revision;
     for (const auto& obstacle : scene.obstacles) {
-        if (!obstacle.dynamic)
+        if (!obstacle.dynamic) {
             continue;
+        }
         xgc2_geometry_msgs::SceneObstacleState body;
         body.id = obstacle.id;
         body.pose = obstacle.pose;
@@ -185,8 +187,9 @@ TEST(SceneProjection, StaticDefinitionNeedsNoStaticStateAndPreparationIsReused) 
             current.live.begin(), current.live.end(),
             [](const auto& value) { return value.id.find("gate") != std::string::npos; });
         ASSERT_NE(fixed, current.live.end());
-        for (const auto& v : fixed->vertices)
+        for (const auto& v : fixed->vertices) {
             EXPECT_LT(v.x(), -1.7);
+        }
     }
     auto held = fixture("sphere");
     const auto held_prepared = projection::prepare(held, "world", cache);

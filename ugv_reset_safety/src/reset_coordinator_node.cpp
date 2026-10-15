@@ -319,8 +319,9 @@ class Coordinator {
             snapshot->revision == snapshot_.revision) {
             if (snapshot->obstacles == snapshot_.obstacles &&
                 snapshot->scene_id == snapshot_.scene_id &&
-                snapshot->header.frame_id == snapshot_.header.frame_id)
+                snapshot->header.frame_id == snapshot_.header.frame_id) {
                 return;
+            }
             scene_valid_ = false;
             scene_error_ = "scene definition changed at the same revision";
             return;
