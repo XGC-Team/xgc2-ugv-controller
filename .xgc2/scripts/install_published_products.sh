@@ -36,8 +36,8 @@ require_version() {
     exit 1
   }
 }
-require_version libxgc2-math-dev '0.5.12-1~'
-require_version "ros-${ROS_DISTRO:-noetic}-xgc2-geometry-msgs" 1.5.0-2
+require_version libxgc2-math-dev '0.6.0-4~focal'
+require_version "ros-${ROS_DISTRO:-noetic}-xgc2-geometry-msgs" 1.5.0-3
 require_version "ros-${ROS_DISTRO:-noetic}-xgc2-unicycle-reference-trajectory-msgs" 1.4.0-1
 require_version "ros-${ROS_DISTRO:-noetic}-xgc2-ugv-reset-msgs" 1.5.0-1
 

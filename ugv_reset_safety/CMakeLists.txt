@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(catkin REQUIRED COMPONENTS geometry_msgs std_msgs roscpp ugv_reset_msgs xgc2_geometry_msgs)
 find_package(Eigen3 REQUIRED)
+find_package(xgc2_math CONFIG REQUIRED)
 # Eigen's config exports uppercase variables, while catkin follows the spelling
 # in DEPENDS when exporting public includes to CMake and pkg-config consumers.
 set(Eigen3_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIRS})
@@ -25,7 +26,7 @@ target_link_libraries(ugv_reset_safety_math PUBLIC Eigen3::Eigen)
 set_property(TARGET ugv_reset_safety_math APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--no-undefined")
 add_executable(ugv_reset_coordinator_node src/reset_coordinator_node.cpp)
 add_dependencies(ugv_reset_coordinator_node ${catkin_EXPORTED_TARGETS})
-target_link_libraries(ugv_reset_coordinator_node ugv_reset_safety_math ${catkin_LIBRARIES})
+target_link_libraries(ugv_reset_coordinator_node ugv_reset_safety_math xgc2_math::geometry ${catkin_LIBRARIES})
 install(TARGETS ugv_reset_safety_math ugv_reset_coordinator_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
@@ -51,6 +52,9 @@ if(CATKIN_ENABLE_TESTING)
     if(TARGET ${case}_test)
       add_dependencies(${case}_test ${catkin_EXPORTED_TARGETS})
       target_link_libraries(${case}_test ugv_reset_safety_math ${catkin_LIBRARIES} gtest_main)
+      if(case STREQUAL "scene_projection")
+        target_link_libraries(${case}_test xgc2_math::geometry)
+      endif()
     endif()
   endforeach()
 endif()

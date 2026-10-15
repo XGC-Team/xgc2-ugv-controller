@@ -15,12 +15,21 @@ xgc2_geometry_msgs::SceneSnapshot fixture(const std::string& type) {
     xgc2_geometry_msgs::ScenePart part;
     part.id = "left";
     part.pose.orientation.w = 1;
-    part.geometry.type = type;
-    part.geometry.radius = .5;
-    part.geometry.height = 1;
-    part.geometry.size.x = .5;
-    part.geometry.size.y = .5;
-    part.geometry.size.z = 2;
+    using xgc2_math::geometry::Geometry;
+    Geometry geometry;
+    if (type == "box")
+        geometry = Geometry::box({.5, .5, 2});
+    else if (type == "sphere")
+        geometry = Geometry::sphere(.5);
+    else if (type == "cylinder")
+        geometry = Geometry::cylinder(.5, 1);
+    else if (type == "capsule")
+        geometry = Geometry::capsule(.5, 1);
+    else
+        throw std::invalid_argument("invalid fixture type");
+    const auto payload = xgc2_math::geometry::encodeGeometry(geometry);
+    part.geometry.type = payload.type;
+    part.geometry.parameters = payload.parameters;
     obstacle.parts.push_back(part);
     scene.obstacles.push_back(obstacle);
     return scene;
@@ -32,6 +41,8 @@ xgc2_geometry_msgs::SceneState liveState(const xgc2_geometry_msgs::SceneSnapshot
     state.epoch = scene.epoch;
     state.revision = scene.revision;
     for (const auto& obstacle : scene.obstacles) {
+        if (!obstacle.dynamic)
+            continue;
         xgc2_geometry_msgs::SceneObstacleState body;
         body.id = obstacle.id;
         body.pose = obstacle.pose;
@@ -74,7 +85,7 @@ TEST(SceneProjection, KeepsCompoundOpeningAndStableIdentities) {
 }
 TEST(SceneProjection, RejectsUnknownGeometryNonfiniteDataAndFrameMismatch) {
     auto scene = fixture("sphere");
-    scene.obstacles[0].parts[0].geometry.type = "torus";
+    scene.obstacles[0].parts[0].geometry.type = 0xffff;
     EXPECT_THROW(ugv_reset_safety::scene_projection::project(scene, "world"),
                  std::invalid_argument);
     scene = fixture("sphere");
@@ -146,5 +157,69 @@ TEST(SceneProjection, RejectsOldEpochMissingIdentitiesAndUnknownMotion) {
     scene.obstacles[0].motion_type = "spiral";
     EXPECT_THROW(ugv_reset_safety::scene_projection::project(scene, "world"),
                  std::invalid_argument);
+}
+TEST(SceneProjection, StaticDefinitionNeedsNoStaticStateAndPreparationIsReused) {
+    namespace projection = ugv_reset_safety::scene_projection;
+    auto scene = fixture("box");
+    scene.obstacles[0].pose.position.x = -2;
+    auto moving = scene.obstacles[0];
+    moving.id = "moving";
+    moving.dynamic = true;
+    moving.motion_type = "constant_twist";
+    moving.pose.position.x = 2;
+    scene.obstacles.push_back(moving);
+    xgc2_math::geometry::PreparedGeometryCache cache;
+    const auto prepared = projection::prepare(scene, "world", cache);
+    ASSERT_EQ(cache.size(), 1U);
+    const auto shape = prepared.obstacles[0].parts[0].geometry;
+    EXPECT_EQ(shape, prepared.obstacles[1].parts[0].geometry);
+    auto state = liveState(scene, 1, .2);
+    ASSERT_EQ(state.obstacles.size(), 1U);
+    for (int i = 0; i < 5; ++i) {
+        state.obstacles[0].pose.position.x = 3 + i;
+        const auto current = projection::live(prepared, state, "world");
+        ASSERT_EQ(current.live.size(), 2U);
+        EXPECT_EQ(cache.size(), 1U);
+        EXPECT_EQ(prepared.obstacles[0].parts[0].geometry, shape);
+        const auto fixed = std::find_if(
+            current.live.begin(), current.live.end(),
+            [](const auto& value) { return value.id.find("gate") != std::string::npos; });
+        ASSERT_NE(fixed, current.live.end());
+        for (const auto& v : fixed->vertices)
+            EXPECT_LT(v.x(), -1.7);
+    }
+    auto held = fixture("sphere");
+    const auto held_prepared = projection::prepare(held, "world", cache);
+    const auto heartbeat = liveState(held);
+    EXPECT_TRUE(heartbeat.obstacles.empty());
+    EXPECT_EQ(projection::live(held_prepared, heartbeat, "world").live.size(), 1U);
+}
+TEST(SceneProjection, RingProjectsEachConvexPartAndRetainsOpening) {
+    namespace projection = ugv_reset_safety::scene_projection;
+    auto scene = fixture("box");
+    const auto payload =
+        xgc2_math::geometry::encodeGeometry(xgc2_math::geometry::Geometry::ring({2, 1}, .1));
+    auto& geometry = scene.obstacles[0].parts[0].geometry;
+    geometry.type = payload.type;
+    geometry.parameters = payload.parameters;
+    xgc2_math::geometry::PreparedGeometryCache cache;
+    const auto prepared = projection::prepare(scene, "world", cache);
+    const auto parts = projection::project(prepared, "world");
+    ASSERT_GT(parts.size(), 4U);
+    std::set<std::string> ids;
+    for (const auto& shape : parts) {
+        EXPECT_TRUE(ids.insert(shape.id).second);
+        // Every small convex part has a separating edge from the ring's free center.
+        bool positive = false, negative = false;
+        for (std::size_t i = 0; i < shape.vertices.size(); ++i) {
+            const auto& a = shape.vertices[i];
+            const auto& b = shape.vertices[(i + 1) % shape.vertices.size()];
+            const double cross = (b.x() - a.x()) * (-a.y()) - (b.y() - a.y()) * (-a.x());
+            positive = positive || cross > 1e-12;
+            negative = negative || cross < -1e-12;
+        }
+        EXPECT_TRUE(positive && negative) << shape.id;
+    }
+    EXPECT_EQ(prepared.obstacles[0].parts[0].geometry->original, payload);
 }
 }  // namespace

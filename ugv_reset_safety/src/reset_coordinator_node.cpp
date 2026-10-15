@@ -275,7 +275,7 @@ class Coordinator {
             return;
         }
         try {
-            auto geometry = scene_projection::live(snapshot_, *state, world_frame_);
+            auto geometry = scene_projection::live(prepared_scene_, *state, world_frame_);
             bool moved = geometry.live.size() != obstacles_.size();
             if (!moved) {
                 for (std::size_t i = 0; i < geometry.live.size(); ++i) {
@@ -315,6 +315,16 @@ class Coordinator {
         if (snapshot->epoch == snapshot_.epoch && snapshot->revision < snapshot_.revision) {
             return;
         }
+        if (scene_parsed_ && snapshot->epoch == snapshot_.epoch &&
+            snapshot->revision == snapshot_.revision) {
+            if (snapshot->obstacles == snapshot_.obstacles &&
+                snapshot->scene_id == snapshot_.scene_id &&
+                snapshot->header.frame_id == snapshot_.header.frame_id)
+                return;
+            scene_valid_ = false;
+            scene_error_ = "scene definition changed at the same revision";
+            return;
+        }
         const bool definition_changed =
             !snapshot_.epoch.empty() &&
             (snapshot->epoch != snapshot_.epoch || snapshot->revision != snapshot_.revision);
@@ -327,13 +337,7 @@ class Coordinator {
         last_state_stamp_ = ros::Time();
         scene_state_wall_ = ros::WallTime();
         try {
-            std::set<std::string> ids;
-            for (const auto& obstacle : snapshot_.obstacles) {
-                scene_projection::validateObstacle(obstacle, &ids);
-            }
-            if (snapshot_.epoch.empty() || snapshot_.header.frame_id != world_frame_) {
-                throw std::invalid_argument("scene epoch/frame mismatch");
-            }
+            prepared_scene_ = scene_projection::prepare(snapshot_, world_frame_, geometry_cache_);
             scene_parsed_ = true;
             if (definition_changed) {
                 for (auto& e : entries_) {
@@ -610,6 +614,8 @@ class Coordinator {
     std::vector<std::unique_ptr<Entry>> entries_;
     ros::Subscriber scene_sub_, scene_state_sub_;
     xgc2_geometry_msgs::SceneSnapshot snapshot_;
+    scene_projection::PreparedScene prepared_scene_;
+    xgc2_math::geometry::PreparedGeometryCache geometry_cache_;
     xgc2_geometry_msgs::SceneState scene_state_;
     ros::Time last_state_stamp_;
     ros::WallTime scene_state_wall_;

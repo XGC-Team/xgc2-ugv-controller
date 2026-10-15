@@ -13,6 +13,8 @@
   <build_depend>xgc2_geometry_msgs</build_depend>
   <exec_depend>xgc2_geometry_msgs</exec_depend>
   <depend>eigen</depend>
+  <build_depend>libxgc2-math-dev</build_depend>
+  <build_export_depend>libxgc2-math-dev</build_export_depend>
   <exec_depend>roslaunch</exec_depend>
   <exec_depend>python3-rospkg-modules</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
