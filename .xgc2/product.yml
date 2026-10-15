@@ -1,7 +1,7 @@
 schema: xgc2.product.v1
 id: xgc2-ugv-controller
 name: XGC2 UGV Controller
-version: 2.1.0-1
+version: 2.1.0-2
 kind: ros1-apt
 summary: ROS1 unicycle NMPC, planar reference trajectory, reusable Mecanum chassis controller (health, Reset, first-order Custom1) and the Scout unicycle chain as xgc2-module modules for XGC2 robots.
 ros:
@@ -29,7 +29,7 @@ apt:
   - ros-noetic-roslaunch
   - libeigen3-dev
   - libjsoncpp1
-  - ros-noetic-xgc2-geometry-msgs (>= 1.2.0-1)
+  - ros-noetic-xgc2-geometry-msgs (>= 1.5.0-2)
   - ros-noetic-xgc2-ugv-reset-msgs (>= 1.5.0-1)
   - libxgc2-state-machine-dev (>= 0.1.3-4~focal)
   - libxgc2-math-dev (>= 0.5.12-1~)
@@ -93,4 +93,4 @@ release:
     xgc2-ros-msgs: rebuild
     xgc2-ros1-utils: rebuild
   apt_versions:
-    focal: 2.1.0-1
+    focal: 2.1.0-2
