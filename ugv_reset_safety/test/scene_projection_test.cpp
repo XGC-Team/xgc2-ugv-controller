@@ -29,8 +29,11 @@ xgc2_geometry_msgs::SceneSnapshot fixture(const std::string& type) {
         throw std::invalid_argument("invalid fixture type");
     }
     const auto payload = xgc2_math::geometry::encodeGeometry(geometry);
-    part.geometry.type = payload.type;
-    part.geometry.parameters = payload.parameters;
+    xgc2_geometry_msgs::SceneGeometry definition;
+    definition.type = payload.type;
+    definition.parameters = payload.parameters;
+    scene.geometries.push_back(std::move(definition));
+    part.geometry_index = 0;
     obstacle.parts.push_back(part);
     scene.obstacles.push_back(obstacle);
     return scene;
@@ -87,7 +90,11 @@ TEST(SceneProjection, KeepsCompoundOpeningAndStableIdentities) {
 }
 TEST(SceneProjection, RejectsUnknownGeometryNonfiniteDataAndFrameMismatch) {
     auto scene = fixture("sphere");
-    scene.obstacles[0].parts[0].geometry.type = 0xffff;
+    scene.geometries[0].type = 0xffff;
+    EXPECT_THROW(ugv_reset_safety::scene_projection::project(scene, "world"),
+                 std::invalid_argument);
+    scene = fixture("sphere");
+    scene.obstacles[0].parts[0].geometry_index = scene.geometries.size();
     EXPECT_THROW(ugv_reset_safety::scene_projection::project(scene, "world"),
                  std::invalid_argument);
     scene = fixture("sphere");
@@ -202,7 +209,7 @@ TEST(SceneProjection, RingProjectsEachConvexPartAndRetainsOpening) {
     auto scene = fixture("box");
     const auto payload =
         xgc2_math::geometry::encodeGeometry(xgc2_math::geometry::Geometry::ring({2, 1}, .1));
-    auto& geometry = scene.obstacles[0].parts[0].geometry;
+    auto& geometry = scene.geometries[0];
     geometry.type = payload.type;
     geometry.parameters = payload.parameters;
     xgc2_math::geometry::PreparedGeometryCache cache;

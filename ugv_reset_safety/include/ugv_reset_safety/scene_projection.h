@@ -163,6 +163,10 @@ inline PreparedScene prepare(const xgc2_geometry_msgs::SceneSnapshot& scene,
     result.epoch = scene.epoch;
     result.revision = scene.revision;
     result.frame = frame;
+    std::vector<std::shared_ptr<const xgc2_math::geometry::PreparedGeometry>> geometries;
+    geometries.reserve(scene.geometries.size());
+    for (const auto& geometry : scene.geometries)
+        geometries.push_back(cache.prepare({geometry.type, geometry.parameters}));
     std::set<std::string> ids;
     for (const auto& obstacle : scene.obstacles) {
         validateObstacle(obstacle, &ids);
@@ -176,7 +180,9 @@ inline PreparedScene prepare(const xgc2_geometry_msgs::SceneSnapshot& scene,
             prepared.pose.position = point(part.pose.position);
             prepared.pose.orientation = rotation(part.pose.orientation);
             try {
-                prepared.geometry = cache.prepare({part.geometry.type, part.geometry.parameters});
+                if (part.geometry_index >= geometries.size())
+                    throw std::invalid_argument("snapshot geometry index out of range");
+                prepared.geometry = geometries[part.geometry_index];
             } catch (const std::exception& error) {
                 throw std::invalid_argument("obstacle " + obstacle.id + " part " + part.id + ": " +
                                             error.what());
