@@ -24,11 +24,11 @@ dpkg -s "ros-${ROS_DISTRO}-xgc2-ugv-reset-msgs" >/dev/null
 dpkg -s "ros-${ROS_DISTRO}-xgc2-ros1-utils" >/dev/null
 dpkg -s "ros-${ROS_DISTRO}-xgc2-geometry-msgs" >/dev/null
 geometry_version="$(dpkg-query -W -f='${Version}' "ros-${ROS_DISTRO}-xgc2-geometry-msgs")"
-dpkg --compare-versions "${geometry_version}" ge 1.5.0-3
+dpkg --compare-versions "${geometry_version}" ge 1.5.0-4
 dpkg -s libxgc2-state-machine-dev >/dev/null
 dpkg -s libxgc2-math-dev >/dev/null
 math_version="$(dpkg-query -W -f='${Version}' libxgc2-math-dev)"
-dpkg --compare-versions "${math_version}" ge '0.6.0-4~focal'
+dpkg --compare-versions "${math_version}" ge '0.6.0-6~focal'
 dpkg -s xgc2-acados >/dev/null
 xgc2_acados_version="$(dpkg-query -W -f='${Version}' xgc2-acados)"
 dpkg --compare-versions "${xgc2_acados_version}" ge "0.1.0-10~focal"
