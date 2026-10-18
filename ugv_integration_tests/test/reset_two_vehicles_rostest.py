@@ -21,7 +21,8 @@ import rostest
 from geometry_msgs.msg import Pose2D, PoseStamped, Twist
 from std_msgs.msg import String
 from ugv_reset_msgs.msg import ResetRequest, ResetResponse
-from xgc2_geometry_msgs.msg import SceneObstacle, SceneObstacleState, ScenePart, SceneSnapshot, SceneState
+from xgc2_geometry_msgs.msg import (
+    SceneGeometry, SceneObstacle, SceneObstacleState, ScenePart, SceneSnapshot, SceneState)
 from xgc2_math.geometry import encode_geometry
 
 MAX_V = 0.35
@@ -235,10 +236,12 @@ class TwoVehicleResetTest(unittest.TestCase):
         obstacle.pose.position.x = 2.5
         obstacle.pose.position.y = 2.5
         obstacle.pose.orientation.w = 1
-        part = ScenePart(id="body")
+        part = ScenePart(id="body", geometry_index=0)
         part.pose.orientation.w = 1
-        part.geometry.type, part.geometry.parameters = encode_geometry(
+        geometry = SceneGeometry()
+        geometry.type, geometry.parameters = encode_geometry(
             {"type": "box", "size": [.2, .2, .2]})
+        scene.geometries = [geometry]
         obstacle.parts = [part]
         scene.obstacles = [obstacle]
         self.snapshot = scene

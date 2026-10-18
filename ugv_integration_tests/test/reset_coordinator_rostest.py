@@ -16,7 +16,8 @@ import rostest
 from geometry_msgs.msg import Point, Pose2D, PoseStamped, Twist
 from std_msgs.msg import String
 from ugv_reset_msgs.msg import ResetRequest, ResetResponse
-from xgc2_geometry_msgs.msg import SceneSnapshot, SceneState, SceneObstacle, ScenePart, SceneObstacleState
+from xgc2_geometry_msgs.msg import (
+    SceneGeometry, SceneObstacle, SceneObstacleState, ScenePart, SceneSnapshot, SceneState)
 from xgc2_math.geometry import encode_geometry
 
 
@@ -175,13 +176,15 @@ class ResetCoordinatorTransportTest(unittest.TestCase):
         obstacle = SceneObstacle(id="far-box", name="far fixture box", motion_type="hold")
         obstacle.pose.position.x = x
         obstacle.pose.orientation.w = 1
-        part = ScenePart(id="body")
+        part = ScenePart(id="body", geometry_index=0)
         part.pose.orientation.w = 1
-        part.geometry.type, part.geometry.parameters = encode_geometry(
+        geometry = SceneGeometry()
+        geometry.type, geometry.parameters = encode_geometry(
             {"type": "box", "size": [.2, .2, .2]})
         if shape != "cube":
             # The existing rejection fixture uses an unregistered wire tag.
-            part.geometry.type = 0
+            geometry.type = 0
+        scene.geometries = [geometry]
         obstacle.parts = [part]
         scene.obstacles = [obstacle]
         self.snapshot = scene
