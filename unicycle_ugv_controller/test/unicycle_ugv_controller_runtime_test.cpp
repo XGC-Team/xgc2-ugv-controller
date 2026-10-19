@@ -362,14 +362,14 @@ TEST(UnicycleSm, FlatnessRetainsCommandWhenClockDoesNotAdvance) {
     goReadyPose(controller, state, 1.0);
     setPose(state, 1.02, 0.0, 0.0, 0.0);
     controller.update(1.02);
+    postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.02);
+    controller.update(1.02);
     WorldPvaReference reference;
     reference.stamp = Time(1.02);
     reference.x = 0.1;
     reference.vx = 0.3;
     reference.valid = true;
     controller.setWorldPva(reference);
-    postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.02);
-    controller.update(1.02);
     setPose(state, 1.04, 0.0, 0.0, 0.0);
     controller.update(1.04);
     ASSERT_TRUE(controller.command().valid);
@@ -523,6 +523,60 @@ TEST(UnicycleLaw, PvaDoesNotValidateAlgorithmTimestamp) {
     reference.stamp = Time(1001.0);
     EXPECT_TRUE(worldPvaReady(reference));
     EXPECT_TRUE(liftWorldPva(reference, 1.0).valid);
+}
+
+TEST(UnicycleSm, Custom1EntryDropsTheReferenceReceivedBeforeTheHold) {
+    ros::Time::init();
+    UgvState state;
+    UnicycleUgvController controller(state);
+    auto cfg = controller.config();
+    cfg.tracking_strategy = TrackingStrategy::FLATNESS;
+    controller.setConfig(cfg);
+    goReadyPose(controller, state, 1.0);
+    postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.01);
+    controller.update(1.01);
+    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Custom1);
+
+    WorldPvaReference reference;
+    reference.valid = true;
+    reference.stamp = Time(1.02);
+    reference.x = 0.1;
+    reference.vx = 1.0;
+    controller.setWorldPva(reference);
+    setPose(state, 1.03, 0.0, 0.0, 0.0);
+    controller.update(1.03);
+    ASSERT_TRUE(controller.worldPvaReady());
+
+    // Pause, then resume: the reference from before the hold must not be tracked.
+    postCommand(controller, event_type::STOP_REQUESTED, 1.04);
+    controller.update(1.04);
+    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.05);
+    setPose(state, 1.05, 0.0, 0.0, 0.0);
+    controller.update(1.05);
+    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Custom1);
+    EXPECT_FALSE(controller.worldPvaReady());
+    EXPECT_FALSE(controller.worldPva().valid);
+
+    bool commanded = false;
+    for (int tick = 0; tick < 50; ++tick) {
+        const double now = 1.052 + tick * 0.002;
+        setPose(state, now, 0.0, 0.0, 0.0);
+        controller.update(now);
+        commanded |= controller.command().valid;
+    }
+    EXPECT_FALSE(commanded);
+
+    // A reference published after the entry is tracked.
+    reference.stamp = Time(1.16);
+    controller.setWorldPva(reference);
+    for (int tick = 0; tick < 50; ++tick) {
+        const double now = 1.16 + tick * 0.002;
+        setPose(state, now, 0.0, 0.0, 0.0);
+        controller.update(now);
+        commanded |= controller.command().valid;
+    }
+    EXPECT_TRUE(commanded);
 }
 
 TEST(UnicycleUgvControllerRuntime, ProductHealthTimeoutIsHalfSecond) {

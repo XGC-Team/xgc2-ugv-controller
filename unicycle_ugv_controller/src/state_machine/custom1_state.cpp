@@ -14,6 +14,9 @@ Custom1State::Custom1State(UnicycleUgvController& controller) : controller_(cont
 ::state_machine::ActionResult Custom1State::onEnter(::state_machine::StateContext& ctx) {
     (void)ctx;
     controller_.clearCommand();
+    // A reference received before this activation (before the hold of a pause, say) is not the
+    // planner's answer to this one: wait for a fresh one, and publish zero until it arrives.
+    controller_.setWorldPva(WorldPvaReference{});
     solve_gate_.reset();
     command_gate_.reset();
     zero_gate_.reset();

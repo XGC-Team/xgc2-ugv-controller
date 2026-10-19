@@ -104,6 +104,7 @@ public:
     UgvState controlState()const{return state_;}
     bool referenceReady()const{return true;}
     bool worldPvaReady()const{return false;}
+    void setWorldPva(WorldPvaReference){}
     WorldPvaReference liftedWorldPva()const{return {};}
     ReferenceCache& referenceCache(){return cache;}
     const ReferenceCache& referenceCache() const{return cache;}
