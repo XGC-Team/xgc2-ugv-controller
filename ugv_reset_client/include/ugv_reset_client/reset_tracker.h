@@ -91,40 +91,27 @@ class EllEstimator {
         bound_ = bound;
     }
     void reset() {
-        have_anchor_ = false;
+        fast_ = Track{};
+        slow_ = Track{};
         ell_ = 0.0;
         turn_total_ = 0.0;
-        samples_.clear();
     }
     // A fresh pose (stamps must increase; the caller filters repeats).
+    //
+    // Two tracks sample the same turns: a fast one (0.06 rad since its anchor) learns the offset
+    // quickly, a slow one (0.2 rad) measures it well, because the noise of a sample is the pose noise
+    // divided by the turn. The estimate follows both; the spread it reports comes from the slow
+    // samples as soon as there are enough of them.
     void add(const Pose& q) {
-        if (!have_anchor_) {
-            anchor_ = q;
-            have_anchor_ = true;
-            return;
-        }
-        const double turn = wrapAngle(q.yaw - anchor_.yaw);
-        if (std::abs(turn) >= kMinTurn) {
-            const double mid = anchor_.yaw + 0.5 * turn;
-            // The origin's displacement in the frame of the mean heading. The offset only explains
-            // the lateral part of a turn in place; an interval that also contains a drive (the
-            // anchor lies before a stop) says nothing about it and is dropped.
-            const double along = (q.x - anchor_.x) * std::cos(mid) + (q.y - anchor_.y) * std::sin(mid);
-            const double lat = -(q.x - anchor_.x) * std::sin(mid) + (q.y - anchor_.y) * std::cos(mid);
-            if (std::abs(along) > 2.0 * bound_ * std::abs(turn) + 0.02) {
-                anchor_ = q;
-                return;
-            }
-            const double sample = std::clamp(-lat / (2.0 * std::sin(0.5 * turn)), -bound_, bound_);
+        double sample = 0.0, turn = 0.0;
+        if (step(fast_, q, kFastTurn, &sample, &turn)) {
             ell_ += 0.5 * (sample - ell_);
             turn_total_ += std::abs(turn);
-            samples_.push_back(sample);
-            if (samples_.size() > kKeep) {
-                samples_.pop_front();
-            }
-            anchor_ = q;
-        } else if (std::abs(turn) < 0.002 && std::hypot(q.x - anchor_.x, q.y - anchor_.y) > 0.5) {
-            anchor_ = q;  // a long straight run: refresh so the anchor does not go stale
+            fast_.push(sample);
+        }
+        if (step(slow_, q, kSlowTurn, &sample, &turn)) {
+            ell_ += 0.25 * (sample - ell_);
+            slow_.push(sample);
         }
     }
     double ell() const {
@@ -133,29 +120,74 @@ class EllEstimator {
     // The error the planner must still cover around ell(); negative while it is not known, then
     // the declared bound applies. It is known after three samples and half a radian of turning:
     // the filtered estimate converges within that, and before it the error of the estimate can be
-    // the whole offset (a first turn about a centre believed to be elsewhere).
+    // the whole offset (a first turn about a centre believed to be elsewhere). Once three slow
+    // samples exist the spread is their worst deviation plus 1 cm (at least 2 cm); until then it is
+    // the fast samples' worst deviation plus 2 cm.
     double spread() const {
-        if (samples_.size() < 3 || turn_total_ < 0.5) {
+        if (fast_.samples.size() < 3 || turn_total_ < 0.5) {
             return -1.0;
         }
-        double worst = 0.0;
-        for (double s : samples_) {
-            worst = std::max(worst, std::abs(s - ell_));
+        if (slow_.samples.size() >= 3) {
+            return std::min(bound_, std::max(0.02, worst(slow_) + 0.01));
         }
-        return std::min(bound_, std::max(0.02, worst + 0.01));
+        return std::min(bound_, std::max(0.02, worst(fast_) + 0.02));
     }
 
    private:
+    struct Track {
+        Pose anchor;
+        bool have{false};
+        std::deque<double> samples;
+        void push(double s) {
+            samples.push_back(s);
+            if (samples.size() > kKeep) {
+                samples.pop_front();
+            }
+        }
+    };
+    double worst(const Track& t) const {
+        double w = 0.0;
+        for (double s : t.samples) {
+            w = std::max(w, std::abs(s - ell_));
+        }
+        return w;
+    }
+    // One track: a sample when the heading changed by `min_turn` since the anchor.
+    bool step(Track& t, const Pose& q, double min_turn, double* sample, double* turn_out) const {
+        if (!t.have) {
+            t.anchor = q;
+            t.have = true;
+            return false;
+        }
+        const double turn = wrapAngle(q.yaw - t.anchor.yaw);
+        if (std::abs(turn) >= min_turn) {
+            const double mid = t.anchor.yaw + 0.5 * turn;
+            // The origin's displacement in the frame of the mean heading. The offset only explains
+            // the lateral part of a turn in place; an interval that also contains a drive (the
+            // anchor lies before a stop) says nothing about it and is dropped.
+            const double along = (q.x - t.anchor.x) * std::cos(mid) + (q.y - t.anchor.y) * std::sin(mid);
+            const double lat = -(q.x - t.anchor.x) * std::sin(mid) + (q.y - t.anchor.y) * std::cos(mid);
+            t.anchor = q;
+            if (std::abs(along) > 2.0 * bound_ * std::abs(turn) + 0.02) {
+                return false;
+            }
+            *sample = std::clamp(-lat / (2.0 * std::sin(0.5 * turn)), -bound_, bound_);
+            *turn_out = turn;
+            return true;
+        }
+        if (std::abs(turn) < 0.002 && std::hypot(q.x - t.anchor.x, q.y - t.anchor.y) > 0.5) {
+            t.anchor = q;  // a long straight run: refresh so the anchor does not go stale
+        }
+        return false;
+    }
+
     static constexpr size_t kKeep = 6;
-    // A sample needs this much turning since its anchor: the offset is the lateral displacement over
-    // the turn, so the noise of the pose divided by the turn is the noise of the sample.
-    static constexpr double kMinTurn = 0.2;
+    static constexpr double kFastTurn = 0.06;
+    static constexpr double kSlowTurn = 0.2;
     double bound_;
-    Pose anchor_;
-    bool have_anchor_{false};
+    Track fast_, slow_;
     double ell_{0.0};
     double turn_total_{0.0};
-    std::deque<double> samples_;
 };
 
 class RouteTracker {
