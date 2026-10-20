@@ -255,7 +255,7 @@ class IdealFollower {
         s.phase = phase_;
         s.spec = spec_;
         s.ell_hat = ell_known_ ? ell_true_ : 0.0;
-        s.ell_spread = ell_known_ ? 0.04 : -1.0;
+        s.ell_spread = ell_known_ ? 0.02 : -1.0;
         s.healthy = true;
         return s;
     }

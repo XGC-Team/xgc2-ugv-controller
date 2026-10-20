@@ -423,7 +423,7 @@ TEST(ResetExecutor, TheRotationCentreOffsetIsLearnedFromTurnsAndDoesNotFollowPos
             rig.run(1.0);
             const double tolerance = noise > 0.0 ? 0.06 : 0.03;
             EXPECT_NEAR(rig.exec().ell().ell(), ell, tolerance) << "noise " << noise;
-            EXPECT_GE(rig.exec().ell().spread(), 0.04) << "known after a few turns";
+            EXPECT_GE(rig.exec().ell().spread(), 0.02) << "known after a few turns";
             EXPECT_LE(rig.exec().ell().spread(), 0.25);
         }
     }

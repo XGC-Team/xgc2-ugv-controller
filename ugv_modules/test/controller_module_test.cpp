@@ -616,7 +616,10 @@ TEST_F(ResetTest, ExecutesTheGrantOfItsSessionAndStopsWhenItsHeartbeatLapses) {
     rig_.host().push("reset_grant", grant(session, XGC2_UGV_RESET_GRANT_GO), rig_.now());
     rig_.ticks(200);
     EXPECT_EQ(rig_.twists().back().kind, XGC2_UGV_CMD_VEL_COMMAND);
-    EXPECT_GT(rig_.twists().back().linear_x, 0.05);
+    // The first segment is 14 degrees off the heading: the vehicle turns in place onto it before it
+    // drives (the planner verified that turn at the vertex), so the grant shows as a turn first.
+    EXPECT_TRUE(rig_.twists().back().linear_x > 0.05 || std::abs(rig_.twists().back().angular_z) > 0.05)
+        << "linear " << rig_.twists().back().linear_x << " angular " << rig_.twists().back().angular_z;
     EXPECT_LE(rig_.twists().back().linear_x, 0.35 + 1e-9);
     EXPECT_EQ(rig_.session().phase, XGC2_UGV_RESET_PHASE_MOVING);
     // The coordinator falls silent: within the heartbeat (1 s) the vehicle ends its own session.

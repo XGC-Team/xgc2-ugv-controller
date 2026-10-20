@@ -45,8 +45,8 @@ struct PlannerConfig {
     // A prefix shorter than this is not worth a grant.
     double min_prefix{0.25};
     // Sweep sampling: the route is sampled at most this far apart.
-    double step{0.04};
-    double step_yaw{3.0 * ugv_reset_client::kPi / 180.0};
+    double step{0.02};
+    double step_yaw{1.5 * ugv_reset_client::kPi / 180.0};
     // Waiting vehicles are re-evaluated at this period, and prefixes of movers are extended at this
     // one (events trigger an evaluation at once).
     double replan_period{0.5};

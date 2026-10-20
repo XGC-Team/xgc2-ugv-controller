@@ -172,6 +172,7 @@ struct Outcome {
     double min_planning_clear{1e9};   // planning footprints (chassis + margin) between pairs that started clear
     double min_planning_at{-1.0};     // simulation time of that minimum, and the pair
     std::string min_planning_pair;
+    std::string details;              // why the vehicles that did not arrive ended: "ugvN OUTCOME reason: detail"
     std::string outcomes;             // one letter per vehicle: A arrived, T timeout, R rejected, I infeasible, X aborted, S stopped
     int reversals{0};
     double mean_speed{0.0};
@@ -362,6 +363,7 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
     const char* trace_name = std::getenv("RESET_SCENARIOS_TRACE");
     const bool trace = trace_name != nullptr && scenario.name == trace_name;
     std::vector<double> next_trace(n, t);
+    std::map<std::string, std::string> grant_signature;
     double next_sample = t, next_coordinator = t, next_audit = t, last_step = -1.0;
     bool event = false;
     const double kStep = 0.002;
@@ -407,6 +409,35 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
                 out.work_ms.push_back(ms);
             }
             for (const rs::OutgoingGrant& g : grants) {
+                if (trace) {
+                    char sig[160];
+                    std::snprintf(sig, sizeof(sig), "%d/%u/%.1f/%d/%d", static_cast<int>(g.grant.state), g.grant.grant_id,
+                                  std::min(g.grant.s_limit, 99.0), static_cast<int>(g.grant.reason), static_cast<int>(g.grant.via.size()));
+                    if (grant_signature[g.vehicle] != sig) {
+                        grant_signature[g.vehicle] = sig;
+                        std::printf("  GRANT %5.1f %s state=%d reason=%s id=%u s_limit=%.2f via=%zu final=%d goal=(%.2f,%.2f,%.2f) %s\n", t - t0,
+                                    g.vehicle.c_str(), static_cast<int>(g.grant.state), rc::name(g.grant.reason), g.grant.grant_id,
+                                    std::min(g.grant.s_limit, 99.0), g.grant.via.size(), g.grant.final_move, g.grant.goal.x,
+                                    g.grant.goal.y, g.grant.goal.yaw, g.grant.detail.c_str());
+                        if (g.grant.state != rc::GrantState::Go) {
+                            std::string who;
+                            for (const std::string& b : g.grant.blockers) {
+                                who += " " + b;
+                            }
+                            std::printf("        blockers:%s   poses:", who.c_str());
+                            for (size_t k = 0; k < n; ++k) {
+                                std::printf(" %s(%.2f,%.2f,%.2f%s)", names[k].c_str(), plants[k].pose().x(), plants[k].pose().y(),
+                                            plants[k].pose().z(), ended[k] ? " done" : "");
+                            }
+                            std::printf("\n        ell:");
+                            for (size_t k = 0; k < n; ++k) {
+                                const rc::Session ss = executors[k].makeSession(measurement(k, t));
+                                std::printf(" %s(hat %.3f spread %.3f phase %d)", names[k].c_str(), ss.ell_hat, ss.ell_spread, static_cast<int>(ss.phase));
+                            }
+                            std::printf("\n");
+                        }
+                    }
+                }
                 if (o.loss > 0 && uniform(rng) < o.loss) {
                     continue;
                 }
@@ -429,6 +460,10 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
                 rc::Result result;
                 executors[i].takeResult(&result);
                 outcome[i] = result.outcome;
+                if (result.outcome != rc::Outcome::Arrived) {
+                    out.details += " [" + names[i] + " " + rc::name(result.outcome) + " " +
+                                   rc::name(result.reason) + ": " + result.detail + "]";
+                }
                 end_time[i] = t - t0;
                 ended[i] = true;
                 latest[i] = rc::Command{};

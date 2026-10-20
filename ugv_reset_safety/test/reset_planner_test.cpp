@@ -307,6 +307,87 @@ TEST(ResetPlanner, AParkedBodyThatBlocksTheRestOfAHeldRouteRevokesItAndTheVehicl
     EXPECT_GE(revoked[1].s_limit, 6.0);
 }
 
+TEST(ResetPlanner, AVehicleMayTurnInPlaceAtItsSlotBesideAParkedNeighbourAtTheSlotPitch) {
+    // The TASE slot line: targets 1.6 m apart. ugv3 stands at its slot; ugv2 is two metres from
+    // its own and must end with a 2.7 rad turn about its rotation centre. The footprints are
+    // 0.9 x 0.8 m; the turn clears the neighbour's envelope by about 0.15 m at the pitch.
+    for (const double spread : {0.0, 0.02, -1.0}) {
+        ResetPlanner planner;
+        planner.setWorld({}, Fence());
+        PlannerVehicle two, three;
+        two.id = "ugv2";
+        two.session = 1;
+        two.spec = scoutSpec();
+        two.pose = {-6.09, -2.41, -1.60};
+        two.target = {-6.0, -2.8, 1.08};
+        two.phase = rc::Phase::Requesting;
+        two.ell_hat = -0.229;
+        two.ell_spread = spread;
+        three = two;
+        three.id = "ugv3";
+        three.session = 2;
+        three.pose = {-6.0, -4.4, -1.53};
+        three.target = {-6.0, -4.4, -1.53};
+        three.phase = rc::Phase::Idle;
+        std::map<std::string, PlannerDecision> by;
+        for (const auto& d : planner.update(0.0, {two, three})) {
+            by[d.id] = d;
+        }
+        ASSERT_EQ(by.count("ugv2"), 1U);
+        std::ostringstream text;
+        text << "spread " << spread << ": state " << static_cast<int>(by["ugv2"].state) << " reason "
+             << rc::name(by["ugv2"].reason) << " " << by["ugv2"].detail << " s_limit " << by["ugv2"].s_limit
+             << " final " << by["ugv2"].final_move << " goal (" << by["ugv2"].goal.x << "," << by["ugv2"].goal.y << ")";
+        EXPECT_EQ(by["ugv2"].state, rc::GrantState::Go) << text.str();
+        EXPECT_TRUE(by["ugv2"].final_move) << text.str();
+        EXPECT_GE(by["ugv2"].s_limit, 0.8) << text.str();
+    }
+}
+
+TEST(ResetPlanner, ASlotNeighbourThatArrivesBesideAHeldVehicleDoesNotRevokeItsFinalTurn) {
+    for (const double spread : {0.0, 0.02, -1.0}) {
+        ResetPlanner planner;
+        planner.setWorld({}, Fence());
+        PlannerVehicle two, three;
+        two.id = "ugv2";
+        two.session = 1;
+        two.spec = scoutSpec();
+        two.pose = {-5.99, 0.74, -1.59};
+        two.target = {-6.0, -2.8, 1.08};
+        two.phase = rc::Phase::Requesting;
+        two.ell_hat = -0.229;
+        two.ell_spread = spread;
+        three = two;
+        three.id = "ugv3";
+        three.session = 2;
+        three.pose = {-6.0, -0.76, -1.49};
+        three.target = {-6.0, -4.4, -1.53};
+        three.ell_hat = -0.234;
+        std::map<std::string, PlannerDecision> by;
+        double t = 0.0;
+        for (const auto& d : planner.update(t, {two, three})) {
+            by[d.id] = d;
+        }
+        // ugv3 goes first and arrives; ugv2 follows down the slot line and is held at its prefix.
+        three.phase = rc::Phase::Idle;
+        three.pose = {-6.0, -4.4, -1.53};
+        two.phase = rc::Phase::Waiting;
+        two.pose = {-6.09, -2.41, -1.60};
+        bool revoked = false;
+        std::string what;
+        for (int k = 0; k < 20; ++k) {
+            t += 0.1;
+            for (const auto& d : planner.update(t, {two, three})) {
+                if (d.id == "ugv2" && d.state == rc::GrantState::Brake) {
+                    revoked = true;
+                    what = d.detail;
+                }
+            }
+        }
+        EXPECT_FALSE(revoked) << "spread " << spread << ": " << what;
+    }
+}
+
 TEST(ResetPlanner, MoversThatNobodyAdvancesAreRejectedAsStalledAfterTenSeconds) {
     ResetPlanner planner;
     planner.setWorld({}, Fence());

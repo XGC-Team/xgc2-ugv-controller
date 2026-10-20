@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <set>
 #include <sstream>
 #include <ugv_reset_safety/reset_path.h>
 #include <utility>
@@ -20,7 +21,8 @@ using rc::Route;
 
 constexpr double kInf = std::numeric_limits<double>::infinity();
 constexpr int kChunk = 8;     // samples per broadphase box
-constexpr int kBehind = 12;   // samples kept reserved behind a mover's cursor
+constexpr int kBehind = 6;   // samples kept reserved behind a mover's cursor
+constexpr double kCycleReach = 2.0;  // m of free prefix that justify breaking a cycle of precedence
 constexpr int kWindow = 160;  // cursor search window [samples]
 
 // ---------------------------------------------------------------------------------------------
@@ -583,12 +585,19 @@ struct ResetPlanner::Impl {
         struct Attempt {
             bool peers;
             double radius;
+            double clearance;
         };
+        // The last two are for a vehicle that starts close to a peer (inside the clearance the
+        // earlier ones demand, but not in contact): a thin routing envelope finds the way out and
+        // the exact verifier decides whether the body sweep really clears.
         const std::vector<Attempt> attempts = {
-            {false, rho + 0.05},
-            {false, rho + (unicycle ? body.spec.ell_bound : 0.05)},
-            {true, std::min(body.spec.footprint.half_width, body.spec.footprint.half_length) + 0.05},
-            {true, rho + 0.05}};
+            {false, rho + 0.05, cfg.static_margin},
+            {false, rho + (unicycle ? body.spec.ell_bound : 0.05), cfg.static_margin},
+            {true, std::min(body.spec.footprint.half_width, body.spec.footprint.half_length) + 0.05,
+             cfg.static_margin},
+            {true, rho + 0.05, cfg.static_margin},
+            {true, 0.5 * std::min(body.spec.footprint.half_width, body.spec.footprint.half_length), 0.04},
+            {true, 0.0, 0.02}};
         const std::vector<ConvexObstacle>& base = staticObstacles();
         bool static_route_found = false;
         for (size_t a = 0; a < attempts.size(); ++a) {
@@ -623,7 +632,7 @@ struct ResetPlanner::Impl {
             }
             const VisibilityPath path = planVisibilityPath(
                 Eigen::Vector2d(body.pose.x, body.pose.y), Eigen::Vector2d(goal.x, goal.y), obstacles,
-                fence, at.radius, cfg.static_margin);
+                fence, at.radius, at.clearance);
             if (!path.valid) {
                 cand.why = "route: " + path.message;
                 continue;
@@ -1177,8 +1186,27 @@ struct ResetPlanner::Impl {
         }
         int granted = 0;
         std::map<std::string, Candidate> failed;
+        // Who each waiting vehicle defers to. A vehicle whose deferrers all wait themselves is in a
+        // cycle of "that one passes first" (or behind one): the ordering rule can not break it, and
+        // it would otherwise wait for every mover to finish. Such vehicles are planned without the
+        // rule, in id order, as are all of them when nobody moves.
+        std::map<std::string, std::vector<std::string>> deferrers;
+        for (Body* b : waiting) {
+            deferrers[b->id] = deferredBy(*b, waiting, routes);
+        }
+        std::set<std::string> in_cycle;
+        for (Body* b : waiting) {
+            const auto& by = deferrers[b->id];
+            bool all_wait = !by.empty();
+            for (const std::string& id : by) {
+                all_wait = all_wait && deferrers.count(id) != 0 && !deferrers[id].empty();
+            }
+            if (all_wait) {
+                in_cycle.insert(b->id);
+            }
+        }
         for (int pass = 0; pass < 2; ++pass) {
-            if (pass == 1 && (granted > 0 || anyMover())) {
+            if (pass == 1 && (granted > 0 || anyMover()) && in_cycle.empty()) {
                 break;
             }
             for (Body* b : waiting) {
@@ -1186,15 +1214,30 @@ struct ResetPlanner::Impl {
                     continue;
                 }
                 if (pass == 0) {
-                    const std::vector<std::string> by = deferredBy(*b, waiting, routes);
+                    const std::vector<std::string>& by = deferrers[b->id];
                     if (!by.empty()) {
                         emitHold(*b, Reason::Precedence, "waiting for " + by[0] + " to pass", by);
+                        continue;
+                    }
+                } else if (granted > 0 || anyMover()) {
+                    // The fallback while others move: only the members of a cycle.
+                    if (in_cycle.count(b->id) == 0) {
                         continue;
                     }
                 }
                 Candidate cand = planRoute(*b, b->target, true);
                 if (!cand.ok) {
                     failed[b->id] = std::move(cand);
+                    continue;
+                }
+                if (pass == 1 && (granted > 0 || anyMover()) &&
+                    cand.plan.s_limit < std::min(cand.plan.total, kCycleReach)) {
+                    // Breaking a cycle while others move is only worth a route that gets somewhere:
+                    // a short prefix would only park the vehicle in the way of the others.
+                    Candidate held;
+                    held.why = "sweep: only a short prefix is free";
+                    held.blockers = cand.blockers;
+                    failed[b->id] = std::move(held);
                     continue;
                 }
                 const double predicted = predictedDuration(*b, cand.plan);

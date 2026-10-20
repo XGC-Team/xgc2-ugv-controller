@@ -110,9 +110,12 @@ std::vector<Outcome> runAll(const ScenarioFile& world, const Options& options, s
 void expectSafe(const std::vector<Outcome>& outcomes, const std::string& label) {
     for (const Outcome& o : outcomes) {
         if (std::getenv("RESET_SCENARIOS_VERBOSE") != nullptr) {
-            std::printf("  %-14s %s completed=%d t=%5.1f cross=%.3f planning=%.3f chassis=%.3f chatter=%d  (planning min at %.1f s, %s)\n", o.name.c_str(),
+            std::printf("  %-14s %s completed=%d t=%5.1f cross=%.3f planning=%.3f chassis=%.3f chatter=%d  (planning min at %.1f s, %s) parks=%ld adm=%ld rev=%ld speed=%.3f\n", o.name.c_str(),
                         o.outcomes.c_str(), o.completed, o.t_last, o.max_cross, o.min_planning_clear, o.min_clear, o.reversals,
-                        o.min_planning_at, o.min_planning_pair.c_str());
+                        o.min_planning_at, o.min_planning_pair.c_str(), o.parks, o.admissions, o.revocations, o.mean_speed);
+            if (!o.details.empty()) {
+                std::printf("      unfinished:%s\n", o.details.c_str());
+            }
             if (o.max_cross > 0.10) {
                 std::printf("      max cross-track: %s\n", o.max_cross_where.c_str());
             }
@@ -148,6 +151,31 @@ TEST(ResetScenarios, OmniHeadOn) {
     const std::vector<Outcome> outcomes = runAll(world, o);
     expectSafe(outcomes, "omni head-on");
     EXPECT_TRUE(outcomes[0].completed) << outcomes[0].outcomes;
+}
+
+// Diagnosis: RESET_SCENARIOS_ONLY="rand_field_1,perm_23" runs just those of the 235 scenarios, verbosely.
+TEST(ResetScenarios, Selected) {
+    const char* only = std::getenv("RESET_SCENARIOS_ONLY");
+    if (only == nullptr) {
+        GTEST_SKIP() << "set RESET_SCENARIOS_ONLY=name,name to run selected scenarios";
+    }
+    ScenarioFile world = loadScenarios(dataFile("tase_scenarios.txt"));
+    const std::string wanted = std::string(",") + only + ",";
+    std::vector<Scenario> chosen;
+    for (const Scenario& sc : world.scenarios) {
+        if (std::string(only) == "ALL" || wanted.find("," + sc.name + ",") != std::string::npos) {
+            chosen.push_back(sc);
+        }
+    }
+    world.scenarios = chosen;
+    setenv("RESET_SCENARIOS_VERBOSE", "1", 1);
+    Options o;
+    if (std::getenv("RESET_SCENARIOS_UNKNOWN") != nullptr) {
+        o.teach = false;
+    }
+    const std::vector<Outcome> outcomes = runAll(world, o);
+    print("selected", outcomes);
+    expectSafe(outcomes, "selected");
 }
 
 TEST(ResetScenarios, FullFamily) {

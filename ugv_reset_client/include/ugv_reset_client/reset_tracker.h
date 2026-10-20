@@ -142,7 +142,7 @@ class EllEstimator {
         for (double s : samples_) {
             worst = std::max(worst, std::abs(s - ell_));
         }
-        return std::min(bound_, std::max(0.04, worst + 0.02));
+        return std::min(bound_, std::max(0.02, worst + 0.02));
     }
 
    private:
@@ -318,7 +318,7 @@ class RouteTracker {
                     vcap = std::max(vcap, std::min(0.04, 4.0 * d));
                 }
                 vcap = std::min(vcap, stopSpeed(allowed - 0.05));
-                const bool near_vertex = segment_ > 0 && progress_ - cum[segment_] < 0.12;
+                const bool near_vertex = progress_ - cum[segment_] < 0.12;
                 const bool vertex_ungranted =
                     segment_ > 0 && segment_ < cum.size() && cum[segment_] > s_limit + 1e-6;
                 if (vertex_ungranted && progress_ >= cum[segment_] - 0.08) {
