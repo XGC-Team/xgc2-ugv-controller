@@ -3,13 +3,13 @@ project(ugv_reset_safety)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-find_package(catkin REQUIRED COMPONENTS geometry_msgs std_msgs roscpp ugv_reset_msgs xgc2_geometry_msgs)
+find_package(catkin REQUIRED COMPONENTS geometry_msgs std_msgs roscpp ugv_reset_client ugv_reset_msgs xgc2_geometry_msgs)
 find_package(Eigen3 REQUIRED)
 find_package(xgc2_math CONFIG REQUIRED)
 # Eigen's config exports uppercase variables, while catkin follows the spelling
 # in DEPENDS when exporting public includes to CMake and pkg-config consumers.
 set(Eigen3_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIRS})
-catkin_package(INCLUDE_DIRS include LIBRARIES ugv_reset_safety_math CATKIN_DEPENDS geometry_msgs std_msgs roscpp ugv_reset_msgs xgc2_geometry_msgs DEPENDS Eigen3)
+catkin_package(INCLUDE_DIRS include LIBRARIES ugv_reset_safety_math CATKIN_DEPENDS geometry_msgs std_msgs roscpp ugv_reset_client ugv_reset_msgs xgc2_geometry_msgs DEPENDS Eigen3)
 include_directories(include ${catkin_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIRS})
 # The station's swarm Reset coordinator and its ROS-free core: geometry, path
 # planning and the (header-only) DWA and fleet schedule; scene_projection.h is
@@ -19,9 +19,9 @@ include_directories(include ${catkin_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIRS})
 # puts the ROS headers on it) to this package's headers and Eigen; it links no
 # ROS library and is linked with -Wl,--no-undefined, so a ROS symbol reaching it
 # fails the link.
-add_library(ugv_reset_safety_math src/reset_geometry.cpp src/reset_path.cpp)
+add_library(ugv_reset_safety_math src/reset_geometry.cpp src/reset_path.cpp src/reset_planner.cpp)
 set_property(TARGET ugv_reset_safety_math PROPERTY INCLUDE_DIRECTORIES "")
-target_include_directories(ugv_reset_safety_math PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(ugv_reset_safety_math PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${ugv_reset_client_INCLUDE_DIRS})
 target_link_libraries(ugv_reset_safety_math PUBLIC Eigen3::Eigen)
 set_property(TARGET ugv_reset_safety_math APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--no-undefined")
 add_executable(ugv_reset_coordinator_node src/reset_coordinator_node.cpp)
@@ -47,11 +47,12 @@ if(CATKIN_ENABLE_TESTING)
     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/test/slot_pose_mapper_rosrun_path_test.py
             ${CATKIN_DEVEL_PREFIX}/lib/${PROJECT_NAME}/launch_control_with_slot_poses.py
             ${CMAKE_INSTALL_PREFIX}/lib/${PROJECT_NAME}/launch_control_with_slot_poses.py)
-  foreach(case scene_projection reset_path reset_dwa reset_closed_loop reset_scenarios fleet_schedule)
+  foreach(case scene_projection reset_path reset_dwa reset_closed_loop reset_scenarios fleet_schedule reset_planner)
     catkin_add_gtest(${case}_test test/${case}_test.cpp)
     if(TARGET ${case}_test)
       add_dependencies(${case}_test ${catkin_EXPORTED_TARGETS})
       target_link_libraries(${case}_test ugv_reset_safety_math ${catkin_LIBRARIES} gtest_main)
+      target_compile_definitions(${case}_test PRIVATE RESET_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/data")
       if(case STREQUAL "scene_projection")
         target_link_libraries(${case}_test xgc2_math::geometry)
       endif()
