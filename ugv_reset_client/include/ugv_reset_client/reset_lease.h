@@ -6,6 +6,7 @@
 #include <deque>
 #include <limits>
 #include <mutex>
+#include <string>
 
 namespace ugv_reset_client {
 
@@ -54,6 +55,7 @@ class ResetLease {
         Status status{RUNNING};
         Command command;
         double lease_seconds{0};
+        std::string reason;  // the coordinator's text; set when it rejects
     };
 
     // Starts the session `generation` towards `target`. A session with a non-finite
@@ -114,7 +116,7 @@ class ResetLease {
 
     // Validates a response. On success `clearance` is what the controller executes.
     bool accept(uint32_t generation, uint64_t stamp, uint8_t status, Command command, uint64_t now,
-                double wall, Clearance& clearance) {
+                double wall, Clearance& clearance, const std::string& reason = std::string()) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!active_ || generation != generation_ || stamp <= last_accepted_ || status > REJECTED ||
             !finite(command) || !freshRos(stamp, now)) {
@@ -133,7 +135,7 @@ class ResetLease {
             last_accepted_ = stamp;
             // The issue time, never the delayed receive time, starts the wall lease.
             clearance = {generation, stamp,        issued.wall, static_cast<Status>(status),
-                         command,    kLeaseSeconds};
+                         command,    kLeaseSeconds, reason};
             return true;
         }
         return false;

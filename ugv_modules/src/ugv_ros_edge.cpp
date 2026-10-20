@@ -622,6 +622,12 @@ class Instance {
 
     // The lease validated the response; the controller gets it in its own clock.
     void onClearance(const ugv_reset_client::ResetLease::Clearance& clearance) {
+        if (clearance.status == ugv_reset_client::ResetLease::REJECTED) {
+            // The payload carries no text; the reason is only on the log.
+            host_.log(kLogError, format("The Reset coordinator rejected the session: %s",
+                                        clearance.reason.empty() ? "no reason given"
+                                                                 : clearance.reason.c_str()));
+        }
         auto slot = host_.write<xgc2_ugv_reset_clearance>(kResetClearance);
         if (!slot) {
             dropped("a reset clearance");

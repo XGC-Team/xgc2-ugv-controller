@@ -62,6 +62,7 @@ ResetClearance toResetClearance(const ugv_reset_client::ResetLease::Clearance& c
     out.linear_y = clearance.command.y;
     out.yaw_rate = clearance.command.yaw;
     out.lease_seconds = clearance.lease_seconds;
+    out.reason = clearance.reason;
     return out;
 }
 

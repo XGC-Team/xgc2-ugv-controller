@@ -23,12 +23,14 @@ class ResetState final : public ::state_machine::State {
    private:
     void emitCommand(::state_machine::StateContext& ctx, const ControlCommand& command);
     void emitZero(::state_machine::StateContext& ctx, bool force = false);
-    void postDone(::state_machine::StateContext& ctx, ::state_machine::EventId id);
+    void postDone(::state_machine::StateContext& ctx, ::state_machine::EventId id,
+                  const std::string& detail = std::string());
 
     MecanumUgvController& controller_;
     PeriodicGate command_gate_;
     double enter_time_{0.0};
     double enter_wall_{0.0};
+    bool ended_{false};  // the session already ended with a logged outcome
 };
 
 }  // namespace mecanum_ugv_controller

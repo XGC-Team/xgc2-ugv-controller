@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstdio>
 #include <utility>
 
 #include "mecanum_ugv_controller/common/core_log.h"
@@ -91,6 +92,7 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
 ::state_machine::ActionResult ResetState::onEnter(::state_machine::StateContext& ctx) {
     controller_.clearCommand();
     command_gate_.reset();
+    ended_ = false;
     enter_time_ = controller_.currentTime();
     enter_wall_ = monotonicSeconds();
     const auto target = controller_.resetTarget();
@@ -138,8 +140,10 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
     const auto feedback = controller_.resetFeedback(Time(now).toNSec(), wall);
     if (feedback.valid && feedback.status != ResetClearance::RUNNING) {
         emitZero(ctx);
-        postDone(ctx, feedback.status == ResetClearance::ARRIVED ? event_type::RESET_ARRIVED
-                                                                 : event_type::RESET_REJECTED);
+        postDone(ctx,
+                 feedback.status == ResetClearance::ARRIVED ? event_type::RESET_ARRIVED
+                                                            : event_type::RESET_REJECTED,
+                 feedback.reason);
         return {};
     }
     ControlCommand command;
@@ -151,7 +155,13 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
             std::abs(feedback.linear_y) > cfg.max_linear_speed ||
             std::abs(feedback.yaw_rate) > cfg.max_yaw_rate) {
             emitZero(ctx);
-            postDone(ctx, event_type::RESET_REJECTED);
+            char detail[160];
+            std::snprintf(detail, sizeof(detail),
+                          "the coordinator command is outside the chassis limits "
+                          "(vx=%.3f vy=%.3f wz=%.3f; limits %.3f m/s, %.3f rad/s)",
+                          feedback.linear_x, feedback.linear_y, feedback.yaw_rate,
+                          cfg.max_linear_speed, cfg.max_yaw_rate);
+            postDone(ctx, event_type::RESET_REJECTED, detail);
             return {};
         }
         command.linear_x = feedback.linear_x;
@@ -164,6 +174,11 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
 }
 
 ::state_machine::ActionResult ResetState::onExit(::state_machine::StateContext& ctx) {
+    if (!ended_) {
+        // Left without an outcome of its own: Stop, or the health monitor.
+        MECANUM_LOG_WARN("[MecanumUgvController] Reset ended after %.1f s: stopped or unhealthy",
+                         controller_.currentTime() - enter_time_);
+    }
     controller_.cancelResetSession();
     emitZero(ctx, true);
     command_gate_.reset();
@@ -195,7 +210,20 @@ void ResetState::emitZero(::state_machine::StateContext& ctx, bool force) {
                                ::state_machine::EventTimestamp{controller_.currentTime()}));
 }
 
-void ResetState::postDone(::state_machine::StateContext& ctx, ::state_machine::EventId id) {
+void ResetState::postDone(::state_machine::StateContext& ctx, ::state_machine::EventId id,
+                          const std::string& detail) {
+    // Every outcome is on the log with its reason: Ready alone does not say how Reset ended.
+    const double seconds = controller_.currentTime() - enter_time_;
+    if (id == event_type::RESET_ARRIVED) {
+        MECANUM_LOG_INFO("[MecanumUgvController] Reset arrived after %.1f s", seconds);
+    } else if (id == event_type::RESET_TIMEOUT) {
+        MECANUM_LOG_ERROR("[MecanumUgvController] Reset timed out after %.1f s without arriving",
+                          seconds);
+    } else {
+        MECANUM_LOG_ERROR("[MecanumUgvController] Reset rejected after %.1f s: %s", seconds,
+                          detail.empty() ? "the coordinator gave no reason" : detail.c_str());
+    }
+    ended_ = true;
     ::state_machine::Event event(id, ::state_machine::EventTimestamp{controller_.currentTime()});
     event.source = "reset_state";
     event.category = ::state_machine::EventCategory::kInternal;

@@ -81,7 +81,7 @@ class ResetClient {
         if (lease_.accept(
                 message->generation, message->header.stamp.toNSec(), message->status,
                 {message->command.linear.x, message->command.linear.y, message->command.angular.z},
-                ros::Time::now().toNSec(), monotonicSeconds(), clearance)) {
+                ros::Time::now().toNSec(), monotonicSeconds(), clearance, message->reason)) {
             sink_(clearance);
         }
     }

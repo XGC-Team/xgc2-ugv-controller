@@ -10,7 +10,9 @@
 #include <random>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "unicycle_ugv_controller/common/core_log.h"
 #include "unicycle_ugv_controller/common/operator_command.h"
 #include "unicycle_ugv_controller/common/reference_cache.h"
 #include "unicycle_ugv_controller/common/rigid_to_unicycle.h"
@@ -946,6 +948,96 @@ TEST(UnicycleSm, ResetRejectionReturnsReadyAndAcceptsFreshRetry) {
     controller.setResetClearance(clearanceAt(retry, 1.022, ResetClearance::RUNNING, -0.1));
     controller.update(1.024);
     EXPECT_DOUBLE_EQ(controller.command().linear_speed, -0.1);
+}
+
+// Every Reset outcome is on the log with its reason (R0): Ready alone does not say how it ended.
+std::vector<std::string>& capturedLog() {
+    static std::vector<std::string> lines;
+    return lines;
+}
+void captureSink(LogLevel, const char* message) {
+    capturedLog().emplace_back(message);
+}
+bool logged(const std::string& needle) {
+    return std::any_of(capturedLog().begin(), capturedLog().end(),
+                       [&](const std::string& line) { return line.find(needle) != std::string::npos; });
+}
+
+TEST(UnicycleSm, ResetOutcomesAreLoggedWithTheirReason) {
+    ros::Time::init();
+    setLogSink(&captureSink);
+    {
+        capturedLog().clear();
+        UgvState state;
+        UnicycleUgvController controller(state);
+        enterReset(controller, state, 1.0);
+        ResetClearance rejected =
+            clearanceAt(controller.resetSession(), 1.012, ResetClearance::REJECTED, 0.0);
+        rejected.reason = "target occupied by ugv3";
+        controller.setResetClearance(rejected);
+        controller.update(1.014);
+        controller.update(1.016);
+        EXPECT_TRUE(logged("Reset rejected after")) << "no rejection line";
+        EXPECT_TRUE(logged("target occupied by ugv3")) << "the coordinator's reason is dropped";
+    }
+    {
+        capturedLog().clear();
+        UgvState state;
+        UnicycleUgvController controller(state);
+        enterReset(controller, state, 1.0);
+        controller.setResetClearance(
+            clearanceAt(controller.resetSession(), 1.012, ResetClearance::REJECTED, 0.0));
+        controller.update(1.014);
+        controller.update(1.016);
+        EXPECT_TRUE(logged("the coordinator gave no reason"));
+    }
+    {
+        capturedLog().clear();
+        UgvState state;
+        UnicycleUgvController controller(state);
+        enterReset(controller, state, 1.0);
+        ResetClearance fast = clearanceAt(controller.resetSession(), 1.012, ResetClearance::RUNNING, 2.0);
+        controller.setResetClearance(fast);
+        controller.update(1.014);
+        controller.update(1.016);
+        EXPECT_TRUE(logged("outside the chassis limits")) << "a limit refusal is silent";
+        EXPECT_TRUE(logged("vx=2.000"));
+    }
+    {
+        capturedLog().clear();
+        UgvState state;
+        UnicycleUgvController controller(state);
+        enterReset(controller, state, 0.0);
+        controller.setResetClearance(
+            clearanceAt(controller.resetSession(), 1.012, ResetClearance::ARRIVED, 0.0));
+        controller.update(1.014);
+        controller.update(1.016);
+        EXPECT_TRUE(logged("Reset arrived after"));
+    }
+    {
+        capturedLog().clear();
+        UgvState state;
+        UnicycleUgvController controller(state);
+        enterReset(controller, state, 1.0);
+        postCommand(controller, event_type::STOP_REQUESTED, 1.016);
+        controller.update(1.016);
+        EXPECT_TRUE(logged("stopped or unhealthy"));
+        EXPECT_FALSE(logged("Reset rejected"));
+    }
+    {
+        capturedLog().clear();
+        UgvState state;
+        UnicycleUgvController controller(state);
+        enterReset(controller, state, 1.0);
+        auto config = controller.config();
+        config.reset_timeout = 0.5;
+        controller.setConfig(config);
+        setPose(state, 2.0, 0.0, 0.0, 0.0);
+        controller.update(2.0);
+        controller.update(2.002);
+        EXPECT_TRUE(logged("Reset timed out after"));
+    }
+    setLogSink(nullptr);
 }
 
 TEST(UnicycleSm, ResetClearanceLeaseExpiresOnEitherClock) {

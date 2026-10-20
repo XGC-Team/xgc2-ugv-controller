@@ -71,6 +71,18 @@ TEST(ResetLease, OwnershipReplayAndDualClockLease) {
     ASSERT_TRUE(!lease.active());
 }
 
+TEST(ResetLease, TheCoordinatorsReasonReachesTheClearance) {
+    ResetLease lease;
+    lease.begin(7U, {1.0, 2.0, 0.0});
+    const auto request = lease.issue({0, 0, 0}, t, 2.0);
+    ASSERT_TRUE(request.valid);
+    ResetLease::Clearance cleared;
+    ASSERT_TRUE(lease.accept(request.generation, t, ResetLease::REJECTED, {}, t, 2.01, cleared,
+                             "target occupied by ugv3"));
+    EXPECT_EQ(cleared.status, ResetLease::REJECTED);
+    EXPECT_EQ(cleared.reason, "target occupied by ugv3");
+}
+
 TEST(ResetLease, RequestsAreSpacedAndInvalidInputsAreNotIssued) {
     ResetLease lease;
     lease.begin(1U, {0, 0, 0});

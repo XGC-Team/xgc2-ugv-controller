@@ -1,6 +1,7 @@
 #include "unicycle_ugv_controller/state_machine/reset_state.h"
 
 #include <cmath>
+#include <cstdio>
 
 #include "unicycle_ugv_controller/common/core_log.h"
 #include "unicycle_ugv_controller/common/types.h"
@@ -14,6 +15,7 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
 ::state_machine::ActionResult ResetState::onEnter(::state_machine::StateContext& ctx) {
     controller_.clearCommand();
     command_gate_.reset();
+    ended_ = false;
     enter_time_ = controller_.currentTime();
     enter_wall_ = monotonicSeconds();
     const auto target = controller_.resetTarget();
@@ -61,8 +63,10 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
     const auto feedback = controller_.resetFeedback(Time(now).toNSec(), wall);
     if (feedback.valid && feedback.status != ResetClearance::RUNNING) {
         emitZero(ctx);
-        postDone(ctx, feedback.status == ResetClearance::ARRIVED ? event_type::RESET_ARRIVED
-                                                                 : event_type::RESET_REJECTED);
+        postDone(ctx,
+                 feedback.status == ResetClearance::ARRIVED ? event_type::RESET_ARRIVED
+                                                            : event_type::RESET_REJECTED,
+                 feedback.reason);
         return {};
     }
     ControlCommand command;
@@ -73,7 +77,13 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
         if (std::abs(feedback.linear_x) > cfg.chassis_max_linear_speed ||
             feedback.linear_y != 0.0 || std::abs(feedback.yaw_rate) > cfg.chassis_max_yaw_rate) {
             emitZero(ctx);
-            postDone(ctx, event_type::RESET_REJECTED);
+            char detail[160];
+            std::snprintf(detail, sizeof(detail),
+                          "the coordinator command is outside the chassis limits "
+                          "(vx=%.3f vy=%.3f wz=%.3f; limits %.3f m/s, vy 0, %.3f rad/s)",
+                          feedback.linear_x, feedback.linear_y, feedback.yaw_rate,
+                          cfg.chassis_max_linear_speed, cfg.chassis_max_yaw_rate);
+            postDone(ctx, event_type::RESET_REJECTED, detail);
             return {};
         }
         command.linear_speed = feedback.linear_x;
@@ -85,6 +95,11 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
 }
 
 ::state_machine::ActionResult ResetState::onExit(::state_machine::StateContext& ctx) {
+    if (!ended_) {
+        // Left without an outcome of its own: Stop, or the health monitor.
+        UGV_LOG_WARN("[UnicycleUgvController] Reset ended after %.1f s: stopped or unhealthy",
+                     controller_.currentTime() - enter_time_);
+    }
     controller_.cancelResetSession();
     emitZero(ctx, true);
     command_gate_.reset();
@@ -116,7 +131,20 @@ void ResetState::emitZero(::state_machine::StateContext& ctx, bool force) {
                                ::state_machine::EventTimestamp{controller_.currentTime()}));
 }
 
-void ResetState::postDone(::state_machine::StateContext& ctx, ::state_machine::EventId id) {
+void ResetState::postDone(::state_machine::StateContext& ctx, ::state_machine::EventId id,
+                          const std::string& detail) {
+    // Every outcome is on the log with its reason: Ready alone does not say how Reset ended.
+    const double seconds = controller_.currentTime() - enter_time_;
+    if (id == event_type::RESET_ARRIVED) {
+        UGV_LOG_INFO("[UnicycleUgvController] Reset arrived after %.1f s", seconds);
+    } else if (id == event_type::RESET_TIMEOUT) {
+        UGV_LOG_ERROR("[UnicycleUgvController] Reset timed out after %.1f s without arriving",
+                      seconds);
+    } else {
+        UGV_LOG_ERROR("[UnicycleUgvController] Reset rejected after %.1f s: %s", seconds,
+                      detail.empty() ? "the coordinator gave no reason" : detail.c_str());
+    }
+    ended_ = true;
     ::state_machine::Event event(id, ::state_machine::EventTimestamp{controller_.currentTime()});
     event.source = "reset_state";
     event.category = ::state_machine::EventCategory::kInternal;

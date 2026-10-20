@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <string>
 #include <state_machine/state_machine.hpp>
 
 #include "mecanum_ugv_controller/common/time.h"
@@ -77,6 +78,7 @@ struct ResetClearance {
     double linear_y{0.0};
     double yaw_rate{0.0};
     double lease_seconds{0.0};
+    std::string reason;  // the coordinator's text when it rejects, for the log
     bool valid{false};
 };
 
