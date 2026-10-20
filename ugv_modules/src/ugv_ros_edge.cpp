@@ -8,20 +8,19 @@
 //   PoseStamped)
 //            command and /command                -> command          (std_msgs/String, parsed here)
 //            reset_pose                          -> reset_target     (geometry_msgs/Pose2D)
-//            reset/response                      -> reset_clearance  (validated by the Reset lease)
+//            reset/grant                         -> reset_grant      (the coordinator's messages, in order)
 //            alg/reference/pva                   -> pva              (flatness strategy only)
 //            .../request/{analytic,sampled,waypoint}, .../reset -> the generator's request ports
 //            /clock                              -> clock            (simulation time only)
 //   ROS out  cmd_vel                             <- cmd_vel          (geometry_msgs/Twist)
 //            custom/statustext                   <- controller_status
-//            reset/request                       <- reset_session    (with the pose of the latest
-//            state)
+//            reset/session                       <- reset_session    (the vehicle's side of its session)
+//            reset/result                        <- reset_result     (latched: the one outcome)
 //            .../status, .../active/{analytic,polynomial,sampled} <- the generator's outputs
 //
 // ROS runs on a private callback queue served by one thread. That thread is the only writer of the
 // output ports (all of them are ASYNC_WRITER); the instance's step reads the input ports and
-// publishes. The step is also the period of the Reset lease: it asks the lease for a request about
-// every 20 ms, so the instance is run by a period (period_ms = 10 in the manifests).
+// publishes; the instance is run by a period (period_ms = 10 in the manifests).
 //
 // Clocks. The host clock is CLOCK_MONOTONIC, or in simulation the /clock topic (the manifest's
 // clock mode "external" with the channel of this module's clock port, and sim_time = true here).
@@ -42,7 +41,8 @@
 //   the relative topics below, and those of the Reset lease, resolve under it), sim_time,
 //   queue_size, state_source ("state_estimator" | "platform_pose"), tracking_strategy ("nmpc" |
 //   "flatness"), state_estimate_topic, platform_pose_topic, reset_pose_topic, cmd_vel_topic,
-//   control_state_topic, pva_reference_topic, reset_request_topic, reset_response_topic,
+//   control_state_topic, pva_reference_topic, reset_session_topic, reset_grant_topic,
+//   reset_result_topic,
 //   analytic_topic, waypoint_topic, sampled_topic, reset_topic, status_topic,
 //   active_analytic_topic, active_polynomial_topic, active_sampled_topic.
 
@@ -55,7 +55,7 @@
 #include <rosgraph_msgs/Clock.h>
 #include <std_msgs/Empty.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_client/reset_client.h>
+#include <ugv_reset_client/reset_ros.h>
 #include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
 #include <unicycle_reference_trajectory_msgs/PlanarPvaReference.h>
 #include <unicycle_reference_trajectory_msgs/SampledReference.h>
@@ -95,6 +95,7 @@ enum Port : uint32_t {
     kCmdVel = 0,
     kControllerStatus,
     kResetSession,
+    kResetResult,
     kReferenceStatus,
     kActiveAnalytic,
     kActivePolynomial,
@@ -103,7 +104,7 @@ enum Port : uint32_t {
     kState,
     kCommand,
     kResetTarget,
-    kResetClearance,
+    kResetGrant,
     kPva,
     kAnalyticRequest,
     kSampledRequest,
@@ -122,6 +123,8 @@ const xgc2_port_desc kPorts[kPortCount] = {
                                      XGC2_UGV_SCHEMA_CONTROLLER_STATUS),
     port<xgc2_ugv_reset_session>("reset_session", XGC2_PORT_IN, XGC2_PORT_STATE,
                                  XGC2_UGV_SCHEMA_RESET_SESSION),
+    port<xgc2_ugv_reset_result>("reset_result", XGC2_PORT_IN, XGC2_PORT_EVENT,
+                                XGC2_UGV_SCHEMA_RESET_RESULT, 4U),
     port<xgc2_ugv_reference_status>("reference_status", XGC2_PORT_IN, XGC2_PORT_STATE,
                                     XGC2_UGV_SCHEMA_REFERENCE_STATUS),
     port<xgc2_ugv_analytic_reference>("active_analytic", XGC2_PORT_IN, XGC2_PORT_STATE,
@@ -136,8 +139,8 @@ const xgc2_port_desc kPorts[kPortCount] = {
                            kAsync),
     port<xgc2_ugv_reset_target>("reset_target", XGC2_PORT_OUT, XGC2_PORT_STATE,
                                 XGC2_UGV_SCHEMA_RESET_TARGET, 0U, kAsync),
-    port<xgc2_ugv_reset_clearance>("reset_clearance", XGC2_PORT_OUT, XGC2_PORT_STATE,
-                                   XGC2_UGV_SCHEMA_RESET_CLEARANCE, 0U, kAsync),
+    port<xgc2_ugv_reset_grant>("reset_grant", XGC2_PORT_OUT, XGC2_PORT_EVENT,
+                               XGC2_UGV_SCHEMA_RESET_GRANT, 16U, kAsync),
     port<xgc2_ugv_planar_pva>("pva", XGC2_PORT_OUT, XGC2_PORT_STATE, XGC2_UGV_SCHEMA_PLANAR_PVA, 0U,
                               kAsync),
     port<xgc2_ugv_analytic_reference>("analytic_request", XGC2_PORT_OUT, XGC2_PORT_EVENT,
@@ -169,8 +172,9 @@ struct EdgeConfig {
     std::string cmd_vel_topic{"cmd_vel"};
     std::string control_state_topic{"custom/statustext"};
     std::string pva_reference_topic{"alg/reference/pva"};
-    std::string reset_request_topic{"reset/request"};
-    std::string reset_response_topic{"reset/response"};
+    std::string reset_session_topic{"reset/session"};
+    std::string reset_grant_topic{"reset/grant"};
+    std::string reset_result_topic{"reset/result"};
     std::string analytic_topic{"alg/unicycle_reference_trajectory/request/analytic"};
     std::string waypoint_topic{"alg/unicycle_reference_trajectory/request/waypoint"};
     std::string sampled_topic{"alg/unicycle_reference_trajectory/request/sampled"};
@@ -189,8 +193,9 @@ struct EdgeConfig {
                reset_pose_topic == other.reset_pose_topic && cmd_vel_topic == other.cmd_vel_topic &&
                control_state_topic == other.control_state_topic &&
                pva_reference_topic == other.pva_reference_topic &&
-               reset_request_topic == other.reset_request_topic &&
-               reset_response_topic == other.reset_response_topic &&
+               reset_session_topic == other.reset_session_topic &&
+               reset_grant_topic == other.reset_grant_topic &&
+               reset_result_topic == other.reset_result_topic &&
                analytic_topic == other.analytic_topic && waypoint_topic == other.waypoint_topic &&
                sampled_topic == other.sampled_topic && reset_topic == other.reset_topic &&
                status_topic == other.status_topic &&
@@ -232,8 +237,9 @@ EdgeConfig loadEdgeConfig(const JsonSource& source) {
     source.get("cmd_vel_topic", config.cmd_vel_topic);
     source.get("control_state_topic", config.control_state_topic);
     source.get("pva_reference_topic", config.pva_reference_topic);
-    source.get("reset_request_topic", config.reset_request_topic);
-    source.get("reset_response_topic", config.reset_response_topic);
+    source.get("reset_session_topic", config.reset_session_topic);
+    source.get("reset_grant_topic", config.reset_grant_topic);
+    source.get("reset_result_topic", config.reset_result_topic);
     source.get("analytic_topic", config.analytic_topic);
     source.get("waypoint_topic", config.waypoint_topic);
     source.get("sampled_topic", config.sampled_topic);
@@ -379,7 +385,8 @@ class Instance {
         publishCmdVel(ctx.now_ns);
         publishControllerStatus();
         publishReferenceOutputs();
-        updateResetClient(ctx.now_ns);
+        publishResetSession();
+        publishResetResult();
     }
 
    private:
@@ -436,12 +443,12 @@ class Instance {
         sampled_pub_ =
             nh_->advertise<msgs::SampledReference>(config_.active_sampled_topic, q, true);
 
-        reset_client_ = std::make_unique<ugv_reset_client::ResetClient>(
-            *nh_,
-            [this](const ugv_reset_client::ResetLease::Clearance& clearance) {
-                onClearance(clearance);
-            },
-            config_.reset_request_topic, config_.reset_response_topic);
+        reset_session_pub_ =
+            nh_->advertise<ugv_reset_msgs::ResetSession>(config_.reset_session_topic, 5);
+        reset_result_pub_ =
+            nh_->advertise<ugv_reset_msgs::ResetResult>(config_.reset_result_topic, 1, true);
+        // Every grant matters (a brake and a new route can follow each other at once).
+        reset_grant_sub_ = nh_->subscribe(config_.reset_grant_topic, 50, &Instance::onGrant, this);
         spinner_ = std::make_unique<ros::AsyncSpinner>(1, queue_.get());
         spinner_->start();
         connected_ = true;
@@ -455,7 +462,9 @@ class Instance {
             spinner_->stop();
             spinner_.reset();
         }
-        reset_client_.reset();
+        reset_grant_sub_.shutdown();
+        reset_session_pub_.shutdown();
+        reset_result_pub_.shutdown();
         clock_sub_.shutdown();
         state_sub_.shutdown();
         pose_sub_.shutdown();
@@ -495,12 +504,6 @@ class Instance {
         }
     }
 
-    void rememberPose(double x, double y, double yaw, const ros::Time& stamp) {
-        std::lock_guard<std::mutex> lock(pose_mutex_);
-        pose_ = {x, y, yaw};
-        pose_stamp_ = stamp;
-    }
-
     void onClock(const rosgraph_msgs::Clock::ConstPtr& msg) {
         const int64_t ns = static_cast<int64_t>(msg->clock.toNSec());
         auto slot = host_.write<int64_t>(kClock);
@@ -536,7 +539,6 @@ class Instance {
         slot->velocity_valid =
             std::isfinite(msg.velocity.x) && std::isfinite(msg.velocity.y) ? 1 : 0;
         slot.commit(bridge_.toHost(receipt));
-        rememberPose(planar.x, planar.y, planar.yaw, stamp);
     }
 
     void onPose(const ros::MessageEvent<const geometry_msgs::PoseStamped>& event) {
@@ -563,7 +565,6 @@ class Instance {
         slot->yaw = yaw;
         slot->source = XGC2_UGV_STATE_SOURCE_POSE;
         slot.commit(bridge_.toHost(receipt));
-        rememberPose(msg.pose.position.x, msg.pose.position.y, yaw, stamp);
     }
 
     void onNamespacedCommand(const ros::MessageEvent<const std_msgs::String>& event) {
@@ -620,28 +621,46 @@ class Instance {
         slot.commit(bridge_.toHost(event.getReceiptTime()));
     }
 
-    // The lease validated the response; the controller gets it in its own clock.
-    void onClearance(const ugv_reset_client::ResetLease::Clearance& clearance) {
-        if (clearance.status == ugv_reset_client::ResetLease::REJECTED) {
-            // The payload carries no text; the reason is only on the log.
-            host_.log(kLogError, format("The Reset coordinator rejected the session: %s",
-                                        clearance.reason.empty() ? "no reason given"
-                                                                 : clearance.reason.c_str()));
-        }
-        auto slot = host_.write<xgc2_ugv_reset_clearance>(kResetClearance);
-        if (!slot) {
-            dropped("a reset clearance");
+    // One message of the coordinator for the vehicle: to the controller as it came, with the
+    // blockers' names appended to the text (the payload holds the text only).
+    void onGrant(const ros::MessageEvent<const ugv_reset_msgs::ResetGrant>& event) {
+        const auto& msg = *event.getConstMessage();
+        if (msg.via.size() > XGC2_UGV_MAX_RESET_VIA) {
+            refused("a reset grant", "it has more via points than the payload holds");
             return;
         }
-        slot->stamp_ns = bridge_.toHost(ros::Time().fromNSec(clearance.stamp));
-        slot->issue_wall = clearance.issue_wall;
-        slot->linear_x = clearance.command.x;
-        slot->linear_y = clearance.command.y;
-        slot->yaw_rate = clearance.command.yaw;
-        slot->lease_seconds = clearance.lease_seconds;
-        slot->generation = clearance.generation;
-        slot->status = clearance.status;
-        slot.commit(host_.nowNs());
+        auto slot = host_.write<xgc2_ugv_reset_grant>(kResetGrant);
+        if (!slot) {
+            dropped("a reset grant");
+            return;
+        }
+        const int64_t receipt = bridge_.toHost(event.getReceiptTime());
+        slot->stamp_ns = receipt;
+        slot->start_x = msg.start.x;
+        slot->start_y = msg.start.y;
+        slot->start_yaw = msg.start.theta;
+        slot->goal_x = msg.goal.x;
+        slot->goal_y = msg.goal.y;
+        slot->goal_yaw = msg.goal.theta;
+        slot->ell_plan = msg.ell_plan;
+        slot->s_limit = msg.s_limit;
+        slot->ttl = msg.ttl;
+        for (size_t i = 0; i < msg.via.size(); ++i) {
+            slot->via[i][0] = msg.via[i].x;
+            slot->via[i][1] = msg.via[i].y;
+        }
+        slot->via_count = static_cast<uint32_t>(msg.via.size());
+        slot->session = msg.session;
+        slot->state = msg.state;
+        slot->grant_id = msg.grant_id;
+        slot->reason = msg.reason;
+        slot->final_move = msg.final_move ? 1U : 0U;
+        std::string text = msg.detail;
+        for (const std::string& who : msg.blockers) {
+            text += " [" + who + "]";
+        }
+        std::strncpy(slot->detail, text.c_str(), sizeof(slot->detail) - 1U);
+        slot.commit(receipt);
     }
 
     void onPva(const ros::MessageEvent<const msgs::PlanarPvaReference>& event) {
@@ -724,9 +743,6 @@ class Instance {
         twist.linear.y = sample->linear_y;
         twist.angular.z = sample->angular_z;
         cmd_vel_pub_.publish(twist);
-        if (reset_client_) {
-            reset_client_->noteApplied({twist.linear.x, twist.linear.y, twist.angular.z});
-        }
     }
 
     void publishControllerStatus() {
@@ -785,25 +801,63 @@ class Instance {
             kActiveSampled, sampled_pub_, "sampled reference");
     }
 
-    // The lease follows the controller's Reset session and asks the coordinator for a clearance
-    // with the latest pose of the vehicle. It is called at every step: the lease limits itself to a
-    // request about every 20 ms.
-    void updateResetClient(int64_t) {
-        const auto session = host_.latest<xgc2_ugv_reset_session>(kResetSession);
-        if (!session || !reset_client_) {
+    // The vehicle's Session and its Result, as the controller made them.
+    void publishResetSession() {
+        const auto sample = host_.latest<xgc2_ugv_reset_session>(kResetSession);
+        if (!seen_.fresh(kResetSession, sample)) {
             return;
         }
-        ugv_reset_client::ResetLease::Pose pose;
-        ros::Time pose_stamp;
-        {
-            std::lock_guard<std::mutex> lock(pose_mutex_);
-            pose = pose_;
-            pose_stamp = pose_stamp_;
+        const xgc2_ugv_reset_session& p = *sample;
+        ugv_reset_msgs::ResetSession m;
+        m.header.stamp = bridge_.toRos(p.stamp_ns);
+        m.header.frame_id = "world";
+        m.session = p.session;
+        m.pose_stamp = bridge_.toRos(p.pose_stamp_ns);
+        m.pose.x = p.pose_x;
+        m.pose.y = p.pose_y;
+        m.pose.theta = p.pose_yaw;
+        m.target.x = p.target_x;
+        m.target.y = p.target_y;
+        m.target.theta = p.target_yaw;
+        m.phase = static_cast<uint8_t>(p.phase);
+        m.progress = p.progress;
+        m.cross_track = p.cross_track;
+        m.model = static_cast<uint8_t>(p.model);
+        m.half_length = p.half_length;
+        m.half_width = p.half_width;
+        m.offset_x = p.offset_x;
+        m.offset_y = p.offset_y;
+        m.max_v = p.max_v;
+        m.max_vy = p.max_vy;
+        m.max_w = p.max_w;
+        m.acc_v = p.acc_v;
+        m.acc_w = p.acc_w;
+        m.ell_hat = p.ell_hat;
+        m.ell_spread = p.ell_spread;
+        m.ell_bound = p.ell_bound;
+        m.healthy = p.healthy != 0U;
+        reset_session_pub_.publish(m);
+    }
+
+    void publishResetResult() {
+        for (;;) {
+            const auto sample = host_.next<xgc2_ugv_reset_result>(kResetResult);
+            if (!sample) {
+                return;
+            }
+            const xgc2_ugv_reset_result& p = *sample;
+            ugv_reset_msgs::ResetResult m;
+            m.header.stamp = bridge_.toRos(p.stamp_ns);
+            m.header.frame_id = "world";
+            m.session = p.session;
+            m.outcome = static_cast<uint8_t>(p.outcome);
+            m.reason = static_cast<uint8_t>(p.reason);
+            m.final_planar_error = p.final_planar_error;
+            m.final_yaw_error = p.final_yaw_error;
+            m.duration = p.duration;
+            m.detail.assign(p.detail, strnlen(p.detail, sizeof(p.detail)));
+            reset_result_pub_.publish(m);
         }
-        reset_client_->update((session->flags & XGC2_UGV_RESET_SESSION_ACTIVE) != 0U,
-                              session->generation,
-                              {session->target_x, session->target_y, session->target_yaw}, pose,
-                              pose_stamp, (session->flags & XGC2_UGV_RESET_SESSION_HEALTHY) != 0U);
     }
 
     Host host_;
@@ -814,14 +868,11 @@ class Instance {
     LogThrottle drop_throttle_;
     LogThrottle refuse_throttle_;
 
-    std::mutex pose_mutex_;
-    ugv_reset_client::ResetLease::Pose pose_;
-    ros::Time pose_stamp_;
-
     std::unique_ptr<ros::CallbackQueue> queue_;
     std::unique_ptr<ros::NodeHandle> nh_;
     std::unique_ptr<ros::AsyncSpinner> spinner_;
-    std::unique_ptr<ugv_reset_client::ResetClient> reset_client_;
+    ros::Publisher reset_session_pub_, reset_result_pub_;
+    ros::Subscriber reset_grant_sub_;
     ros::Subscriber clock_sub_, state_sub_, pose_sub_, command_sub_, public_command_sub_,
         reset_target_sub_, pva_sub_, analytic_sub_, waypoint_sub_, sampled_sub_, reset_sub_;
     ros::Publisher cmd_vel_pub_, control_state_pub_, status_pub_, analytic_pub_, polynomial_pub_,

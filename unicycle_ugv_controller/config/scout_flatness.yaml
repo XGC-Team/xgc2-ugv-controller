@@ -59,6 +59,19 @@ pva_reference_topic: alg/reference/pva
 queue_size: 10
 reset:
   timeout: 90.0
+  # What the vehicle declares to the Reset coordinator (the Scout chassis 0.62 x 0.52 m plus 0.14 m
+  # per side), the limits its Reset tracker obeys, and the bound of its rotation-centre offset.
+  footprint:
+    length: 0.90
+    width: 0.80
+    offset_x: 0.0
+    offset_y: 0.0
+  limits:
+    max_linear_speed: 0.35
+    max_yaw_rate: 0.5
+    linear_acceleration: 0.35
+    angular_acceleration: 0.6
+  lateral_offset_bound: 0.25
 reset_pose_topic: reset_pose
 state_estimate_topic: alg/state_estimator/state
 state_source: platform_pose

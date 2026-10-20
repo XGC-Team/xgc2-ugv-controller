@@ -5,9 +5,8 @@
 namespace unicycle_ugv_controller {
 CmdVelOutputConsumer::CmdVelOutputConsumer(
     ros::NodeHandle& nh, ::state_machine::runtime::AsyncTaskExecutor<ros::NodeHandle>& executor,
-    UnicycleUgvController& controller, ugv_reset_client::ResetClient& reset_client,
-    const std::string& cmd_vel_topic, uint32_t queue_size)
-    : controller_(controller), reset_client_(reset_client) {
+    UnicycleUgvController& controller, const std::string& cmd_vel_topic, uint32_t queue_size)
+    : controller_(controller) {
     (void)executor;
     (void)queue_size;
     cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>(cmd_vel_topic, 1);
@@ -23,7 +22,6 @@ bool CmdVelOutputConsumer::handle(const ::state_machine::Event& event) {
         return false;
     }
     cmd_vel_pub_.publish(twist);
-    reset_client_.noteApplied({twist.linear.x, twist.linear.y, twist.angular.z});
     return true;
 }
 

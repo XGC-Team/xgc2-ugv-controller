@@ -206,7 +206,7 @@ TEST(ControllerModule, DescribesItsPortsForTheHost) {
     const xgc2_module_desc* d = library.desc();
     EXPECT_EQ(d->abi_major, XGC2_MODULE_ABI_MAJOR);
     EXPECT_STREQ(d->name, "ugv_unicycle_controller");
-    ASSERT_EQ(d->port_count, 11u);
+    ASSERT_EQ(d->port_count, 12u);
     struct Expect {
         const char* name;
         xgc2_port_direction direction;
@@ -223,8 +223,8 @@ TEST(ControllerModule, DescribesItsPortsForTheHost) {
          8, 0},
         {"reset_target", XGC2_PORT_IN, XGC2_PORT_STATE, "xgc2.ugv.reset_target.v1",
          sizeof(xgc2_ugv_reset_target), 0, 0},
-        {"reset_clearance", XGC2_PORT_IN, XGC2_PORT_STATE, "xgc2.ugv.reset_clearance.v1",
-         sizeof(xgc2_ugv_reset_clearance), 0, 0},
+        {"reset_grant", XGC2_PORT_IN, XGC2_PORT_EVENT, "xgc2.ugv.reset_grant.v1",
+         sizeof(xgc2_ugv_reset_grant), 16, 0},
         {"active_analytic", XGC2_PORT_IN, XGC2_PORT_STATE,
          "xgc2.ugv.unicycle_reference.analytic.v1", sizeof(xgc2_ugv_analytic_reference), 0, 0},
         {"active_polynomial", XGC2_PORT_IN, XGC2_PORT_STATE,
@@ -237,8 +237,10 @@ TEST(ControllerModule, DescribesItsPortsForTheHost) {
          0, 0},
         {"status", XGC2_PORT_OUT, XGC2_PORT_STATE, "xgc2.ugv.controller_status.v1",
          sizeof(xgc2_ugv_controller_status), 0, 0},
-        {"reset_session", XGC2_PORT_OUT, XGC2_PORT_STATE, "xgc2.ugv.reset_session.v1",
+        {"reset_session", XGC2_PORT_OUT, XGC2_PORT_STATE, "xgc2.ugv.reset_session.v2",
          sizeof(xgc2_ugv_reset_session), 0, 0},
+        {"reset_result", XGC2_PORT_OUT, XGC2_PORT_EVENT, "xgc2.ugv.reset_result.v1",
+         sizeof(xgc2_ugv_reset_result), 4, 0},
     };
     for (uint32_t i = 0; i < d->port_count; ++i) {
         const xgc2_port_desc& p = d->ports[i];
@@ -306,7 +308,8 @@ TEST(ControllerModule, StaysInSelfCheckWithoutAVehicleStateAndIdlesZero) {
         EXPECT_EQ(twist.angular_z, 0.0);
     }
     const auto session = rig.session();
-    EXPECT_EQ(session.flags, 0u);
+    EXPECT_EQ(session.healthy, 0u);
+    EXPECT_EQ(session.phase, XGC2_UGV_RESET_PHASE_IDLE);
 }
 
 TEST(ControllerModule, ABadVehicleStateKeepsTheControllerOutOfReady) {
@@ -357,8 +360,12 @@ TEST(ControllerModule, BecomesReadyOnAFreshStateAndPublishesItsStatus) {
     const auto samples = rig.host().outputs("status");
     ASSERT_GE(samples.size(), 4u);
     EXPECT_NEAR(static_cast<double>(samples[3].stamp_ns - samples[2].stamp_ns), 0.2e9, 3e6);
-    EXPECT_EQ(rig.session().flags, XGC2_UGV_RESET_SESSION_HEALTHY);
-    EXPECT_EQ(rig.session().generation, 0u);
+    // An idle vehicle still reports itself to the coordinator: its body, its declared footprint.
+    EXPECT_EQ(rig.session().phase, XGC2_UGV_RESET_PHASE_IDLE);
+    EXPECT_EQ(rig.session().healthy, 1u);
+    EXPECT_EQ(rig.session().session, 0u);
+    EXPECT_DOUBLE_EQ(rig.session().half_length, 0.45);
+    EXPECT_DOUBLE_EQ(rig.session().half_width, 0.40);
     // The idle zero is a command of kind zero.
     ASSERT_FALSE(rig.twists().empty());
     EXPECT_EQ(rig.twists().back().kind, XGC2_UGV_CMD_VEL_ZERO);
@@ -527,7 +534,8 @@ class ResetTest : public ::testing::Test {
     void SetUp() override {
         rig_.ticks(500);
         ASSERT_EQ(rig_.controlState(), "Ready");
-        // The Reset state paces its commands on the wall clock, so these tests run in real time.
+        // The Reset state's deadlines and the grants' heartbeat run on the wall clock, so these
+        // tests run in real time.
         rig_.pace(true);
     }
 
@@ -536,18 +544,33 @@ class ResetTest : public ::testing::Test {
         ASSERT_TRUE(rig_.reach("Reset"));
     }
 
-    xgc2_ugv_reset_clearance clearance(uint32_t generation, uint32_t status, double lx, double wz,
-                                       int64_t stamp_ns) {
-        xgc2_ugv_reset_clearance c;
-        std::memset(&c, 0, sizeof c);
-        c.stamp_ns = stamp_ns;
-        c.issue_wall = wallSeconds();
-        c.linear_x = lx;
-        c.yaw_rate = wz;
-        c.lease_seconds = 0.15;
-        c.generation = generation;
-        c.status = status;
-        return c;
+    xgc2_ugv_reset_grant grant(uint32_t session, uint32_t state, double s_limit = 1e9) {
+        xgc2_ugv_reset_grant g;
+        std::memset(&g, 0, sizeof g);
+        g.stamp_ns = rig_.now();
+        g.start_x = rig_.plant().x;
+        g.start_y = rig_.plant().y;
+        g.start_yaw = rig_.plant().yaw;
+        g.goal_x = 2.0;
+        g.goal_y = 0.5;
+        g.goal_yaw = 0.0;
+        g.s_limit = s_limit;
+        g.ttl = 1.0;
+        g.session = session;
+        g.state = state;
+        g.grant_id = 1;
+        g.final_move = 1;
+        return g;
+    }
+
+    // The newest result of the controller, if any.
+    bool result(xgc2_ugv_reset_result* out) {
+        const auto results = rig_.host().outputsAs<xgc2_ugv_reset_result>("reset_result");
+        if (results.empty()) {
+            return false;
+        }
+        *out = results.back();
+        return true;
     }
 
     Rig rig_;
@@ -556,17 +579,19 @@ class ResetTest : public ::testing::Test {
 TEST_F(ResetTest, AResetCommandBeginsASessionTowardsTheSeededTarget) {
     requestReset();
     const auto session = rig_.session();
-    EXPECT_EQ(session.flags, XGC2_UGV_RESET_SESSION_ACTIVE | XGC2_UGV_RESET_SESSION_HEALTHY);
-    EXPECT_NE(session.generation, 0u);
+    EXPECT_EQ(session.phase, XGC2_UGV_RESET_PHASE_REQUESTING);
+    EXPECT_EQ(session.healthy, 1u);
+    EXPECT_NE(session.session, 0u);
     EXPECT_DOUBLE_EQ(session.target_x, 2.0);
     EXPECT_DOUBLE_EQ(session.target_y, 0.5);
     EXPECT_DOUBLE_EQ(session.target_yaw, 0.0);
-    // Without a clearance the vehicle is held.
+    EXPECT_EQ(session.model, XGC2_UGV_RESET_MODEL_UNICYCLE);
+    EXPECT_DOUBLE_EQ(session.max_v, 0.35);
+    EXPECT_DOUBLE_EQ(session.ell_bound, 0.25);
+    // Without a grant the vehicle is held.
     rig_.ticks(100);
     EXPECT_EQ(rig_.twists().back().linear_x, 0.0);
     EXPECT_EQ(rig_.twists().back().angular_z, 0.0);
-    // The session is written when it changes, not at the control rate.
-    EXPECT_LE(rig_.host().outputs("reset_session").size(), 3u);
 }
 
 TEST_F(ResetTest, ATargetFromThePortReplacesTheSeededOne) {
@@ -580,80 +605,83 @@ TEST_F(ResetTest, ATargetFromThePortReplacesTheSeededOne) {
     EXPECT_NEAR(session.target_yaw, 3.5 - 2.0 * M_PI, 1e-12);  // wrapped to (-pi, pi]
 }
 
-TEST_F(ResetTest, ExecutesTheClearanceOfItsSessionWhileTheLeaseHolds) {
+TEST_F(ResetTest, ExecutesTheGrantOfItsSessionAndStopsWhenItsHeartbeatLapses) {
     requestReset();
-    const uint32_t generation = rig_.session().generation;
-    // An answer to another session is ignored.
-    rig_.host().push("reset_clearance",
-                     clearance(generation + 1, XGC2_UGV_RESET_RUNNING, 0.5, 0.2, rig_.now()),
-                     rig_.now());
+    const uint32_t session = rig_.session().session;
+    // A grant of another session is ignored.
+    rig_.host().push("reset_grant", grant(session + 1, XGC2_UGV_RESET_GRANT_GO), rig_.now());
     rig_.ticks(100);
     EXPECT_EQ(rig_.twists().back().linear_x, 0.0);
-    // The answer to this one is executed while the lease holds ...
-    rig_.host().push("reset_clearance",
-                     clearance(generation, XGC2_UGV_RESET_RUNNING, 0.3, 0.1, rig_.now()),
-                     rig_.now());
-    rig_.ticks(20);
+    // The grant of this one is driven.
+    rig_.host().push("reset_grant", grant(session, XGC2_UGV_RESET_GRANT_GO), rig_.now());
+    rig_.ticks(200);
     EXPECT_EQ(rig_.twists().back().kind, XGC2_UGV_CMD_VEL_COMMAND);
-    EXPECT_DOUBLE_EQ(rig_.twists().back().linear_x, 0.3);
-    EXPECT_DOUBLE_EQ(rig_.twists().back().angular_z, 0.1);
-    // ... and the vehicle stops when it does not, although no one cancelled it.
-    rig_.ticks(120);  // 0.24 s: the lease is 0.15 s
-    EXPECT_EQ(rig_.twists().back().linear_x, 0.0);
-    EXPECT_EQ(rig_.twists().back().angular_z, 0.0);
-    EXPECT_EQ(rig_.controlState(), "Reset");
-}
-
-TEST_F(ResetTest, AnOldClearanceIsNotRenewedByTheClock) {
-    requestReset();
-    const uint32_t generation = rig_.session().generation;
-    const int64_t old_stamp = rig_.now() - 400 * kMs;
-    rig_.host().push("reset_clearance",
-                     clearance(generation, XGC2_UGV_RESET_RUNNING, 0.3, 0.1, old_stamp),
-                     rig_.now());
-    rig_.ticks(20);
+    EXPECT_GT(rig_.twists().back().linear_x, 0.05);
+    EXPECT_LE(rig_.twists().back().linear_x, 0.35 + 1e-9);
+    EXPECT_EQ(rig_.session().phase, XGC2_UGV_RESET_PHASE_MOVING);
+    // The coordinator falls silent: within the heartbeat (1 s) the vehicle ends its own session.
+    rig_.ticks(700);
+    EXPECT_EQ(rig_.controlState(), "Ready");
+    xgc2_ugv_reset_result r;
+    ASSERT_TRUE(result(&r));
+    EXPECT_EQ(r.session, session);
+    EXPECT_EQ(r.outcome, 32u) << "ABORTED_COORDINATOR_LOST";
     EXPECT_EQ(rig_.twists().back().linear_x, 0.0);
 }
 
-TEST_F(ResetTest, ArrivalEndsTheSessionAndRejectionEndsItToo) {
+TEST_F(ResetTest, RejectionEndsTheSessionWithItsTypedResultAndASilentCoordinatorDoesToo) {
     requestReset();
-    uint32_t generation = rig_.session().generation;
-    rig_.host().push("reset_clearance",
-                     clearance(generation, XGC2_UGV_RESET_ARRIVED, 0.0, 0.0, rig_.now()),
-                     rig_.now());
+    uint32_t session = rig_.session().session;
+    xgc2_ugv_reset_grant g = grant(session, XGC2_UGV_RESET_GRANT_REJECT);
+    g.reason = 20;  // GOAL_OCCUPIED
+    std::strcpy(g.detail, "the target is occupied by ugv3");
+    rig_.host().push("reset_grant", g, rig_.now());
     ASSERT_TRUE(rig_.reach("Ready"));
-    EXPECT_EQ(rig_.session().flags, XGC2_UGV_RESET_SESSION_HEALTHY);
+    xgc2_ugv_reset_result r;
+    ASSERT_TRUE(result(&r));
+    EXPECT_EQ(r.session, session);
+    EXPECT_EQ(r.outcome, 20u) << "INFEASIBLE";
+    EXPECT_EQ(r.reason, 20u);
+    EXPECT_STREQ(r.detail, "the target is occupied by ugv3");
+    EXPECT_EQ(rig_.session().phase, XGC2_UGV_RESET_PHASE_IDLE);
+    EXPECT_TRUE(rig_.host().logged(3, "INFEASIBLE"));
 
+    // Nobody answers a second click: it ends after 2 s, typed.
     requestReset();
-    const auto second = rig_.session();
-    EXPECT_NE(second.generation, generation);  // a new session is told apart from the old one
-    generation = second.generation;
-    rig_.host().push("reset_clearance",
-                     clearance(generation, XGC2_UGV_RESET_REJECTED, 0.0, 0.0, rig_.now()),
-                     rig_.now());
-    ASSERT_TRUE(rig_.reach("Ready"));
+    const uint32_t second = rig_.session().session;
+    EXPECT_NE(second, session);
+    rig_.ticks(1100);
+    ASSERT_TRUE(rig_.reach("Ready", 200));
+    ASSERT_TRUE(result(&r));
+    EXPECT_EQ(r.session, second);
+    EXPECT_EQ(r.outcome, 11u) << "REJECTED_NO_COORDINATOR";
 }
 
-TEST_F(ResetTest, AStopEndsTheSessionAndAMalformedClearanceChangesNothing) {
+TEST_F(ResetTest, AStopEndsTheSessionAndAMalformedGrantChangesNothing) {
     requestReset();
-    const uint32_t generation = rig_.session().generation;
-    rig_.host().push("reset_clearance", clearance(generation, 7, 0.3, 0.1, rig_.now()), rig_.now());
+    const uint32_t session = rig_.session().session;
+    rig_.host().push("reset_grant", grant(session, 7), rig_.now());
     rig_.ticks(120);
-    EXPECT_TRUE(rig_.host().logged(2, "Ignoring a malformed reset clearance"));
+    EXPECT_TRUE(rig_.host().logged(2, "Ignoring a malformed reset grant"));
     EXPECT_EQ(rig_.controlState(), "Reset");
     rig_.host().push("command", commandOf(XGC2_UGV_COMMAND_STOP, rig_.now()), rig_.now());
     ASSERT_TRUE(rig_.reach("Ready"));
-    EXPECT_EQ(rig_.session().flags, XGC2_UGV_RESET_SESSION_HEALTHY);
+    xgc2_ugv_reset_result r;
+    ASSERT_TRUE(result(&r));
+    EXPECT_EQ(r.outcome, 3u) << "STOPPED";
+    EXPECT_EQ(rig_.session().phase, XGC2_UGV_RESET_PHASE_IDLE);
 }
 
-TEST_F(ResetTest, ALostVehicleStateWithdrawsHealthFromTheSession) {
+TEST_F(ResetTest, ALostVehicleStateEndsTheSessionUnhealthy) {
     requestReset();
-    ASSERT_EQ(rig_.session().flags & XGC2_UGV_RESET_SESSION_HEALTHY,
-              XGC2_UGV_RESET_SESSION_HEALTHY);
+    ASSERT_EQ(rig_.session().healthy, 1u);
     rig_.ticks(400, false);  // no state for 0.8 s
-    EXPECT_EQ(rig_.session().flags & XGC2_UGV_RESET_SESSION_HEALTHY, 0u);
     EXPECT_EQ(rig_.controlState(), "SelfCheck");
-    EXPECT_EQ(rig_.session().flags & XGC2_UGV_RESET_SESSION_ACTIVE, 0u);
+    EXPECT_EQ(rig_.session().healthy, 0u);
+    EXPECT_EQ(rig_.session().phase, XGC2_UGV_RESET_PHASE_IDLE);
+    xgc2_ugv_reset_result r;
+    ASSERT_TRUE(result(&r));
+    EXPECT_EQ(r.outcome, 33u) << "ABORTED_UNHEALTHY";
 }
 
 TEST(ControllerModule, WritesItsOutputsWholeAndNeverLeaksASlot) {
@@ -671,10 +699,11 @@ TEST(ControllerModule, WritesItsOutputsWholeAndNeverLeaksASlot) {
     EXPECT_EQ(std::memcmp(&expected_status, &status, sizeof status), 0);
 
     const auto session = rig.session();
-    xgc2_ugv_reset_session expected_session;
-    std::memset(&expected_session, 0, sizeof expected_session);
-    expected_session.flags = XGC2_UGV_RESET_SESSION_HEALTHY;
-    EXPECT_EQ(std::memcmp(&expected_session, &session, sizeof session), 0);
+    EXPECT_EQ(session.phase, XGC2_UGV_RESET_PHASE_IDLE);
+    EXPECT_EQ(session.healthy, 1u);
+    EXPECT_EQ(session.progress, 0.0);
+    EXPECT_EQ(session.cross_track, 0.0);
+    EXPECT_EQ(session.session, 0u);
 
     ASSERT_FALSE(rig.twists().empty());
     for (const auto& twist : rig.twists()) {

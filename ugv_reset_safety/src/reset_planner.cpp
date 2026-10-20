@@ -632,6 +632,10 @@ struct ResetPlanner::Impl {
                 static_route_found = true;
             }
             const std::vector<rc::Point> via = viaOf(path);
+            if (via.size() > rc::kMaxVia) {
+                cand.why = "route: more than " + std::to_string(rc::kMaxVia) + " via points";
+                continue;
+            }
             const double lc = body.ell_spread >= 0.0 ? body.ell_hat : 0.0;
             const double ls = body.ell_spread >= 0.0 ? body.ell_spread : body.spec.ell_bound;
             const std::vector<double> ells =

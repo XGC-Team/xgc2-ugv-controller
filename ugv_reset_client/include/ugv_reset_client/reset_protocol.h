@@ -10,6 +10,7 @@
 // declares everything the planner needs to know about it in its Session; there is no roster.
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -210,5 +211,7 @@ constexpr double kArriveYaw = 5.0 * kPi / 180.0; // rad
 constexpr double kNoCoordinatorTimeout = 2.0;    // s without any answer
 constexpr double kHeartbeatLoss = 1.0;           // s moving without a refresh
 constexpr double kSessionPeriod = 0.2;           // s between Session messages (5 Hz)
+// A route has at most this many interior vertices (the module payload holds that many).
+constexpr size_t kMaxVia = 24;
 
 }  // namespace ugv_reset_client

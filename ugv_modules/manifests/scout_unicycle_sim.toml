@@ -155,12 +155,25 @@ terminal_speed = 10.0
 
 [instance.config.reset]
 timeout = 90.0
+lateral_offset_bound = 0.25
+
+[instance.config.reset.footprint]
+length = 0.9
+width = 0.8
+offset_x = 0.0
+offset_y = 0.0
+
+[instance.config.reset.limits]
+max_linear_speed = 0.35
+max_yaw_rate = 0.5
+linear_acceleration = 0.35
+angular_acceleration = 0.6
 
 [instance.bind]
 state = "state"
 command = "command"
 reset_target = "reset_target"
-reset_clearance = "reset_clearance"
+reset_grant = "reset_grant"
 active_analytic = "active_analytic"
 active_polynomial = "active_polynomial"
 active_sampled = "active_sampled"
@@ -168,11 +181,12 @@ pva = "pva"
 cmd_vel = "cmd_vel"
 status = "controller_status"
 reset_session = "reset_session"
+reset_result = "reset_result"
 
 [[instance]]
 name = "edge"
 module = "edge"
-period_ms = 10                          # the Reset lease asks for a request about every 20 ms
+period_ms = 10
 affinity = "sticky"                     # (the edge has no state machine; every instance is explicit)
 
 [instance.config]
@@ -185,6 +199,7 @@ tracking_strategy = "nmpc"
 cmd_vel = "cmd_vel"
 controller_status = "controller_status"
 reset_session = "reset_session"
+reset_result = "reset_result"
 reference_status = "reference_status"
 active_analytic = "active_analytic"
 active_polynomial = "active_polynomial"
@@ -192,7 +207,7 @@ active_sampled = "active_sampled"
 state = "state"
 command = "command"
 reset_target = "reset_target"
-reset_clearance = "reset_clearance"
+reset_grant = "reset_grant"
 pva = "pva"
 analytic_request = "analytic_request"
 sampled_request = "sampled_request"

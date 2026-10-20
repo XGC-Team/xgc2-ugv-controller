@@ -77,6 +77,9 @@ class ResetExecutor {
         cfg_.spec = spec;
         ell_.setBound(spec.ell_bound);
     }
+    void setTimeout(double seconds) {
+        cfg_.timeout = seconds;
+    }
     const ExecutorConfig& config() const {
         return cfg_;
     }
@@ -216,6 +219,10 @@ class ResetExecutor {
     StepOutput step(const Measurement& m) {
         StepOutput out;
         out.phase = phase_;
+        if (phase_ == Phase::Done && !end_reported_) {
+            // Ended by a grant (a rejection) between two steps: the controller hears of it here.
+            return finished(m);
+        }
         if (!active()) {
             return out;
         }
@@ -360,6 +367,7 @@ class ResetExecutor {
     }
 
     StepOutput finished(const Measurement&) {
+        end_reported_ = true;
         StepOutput out;
         out.ended = true;
         out.phase = Phase::Done;
@@ -490,6 +498,7 @@ class ResetExecutor {
         result_.final_yaw_error = std::abs(wrapAngle(target_.yaw - m.pose.yaw));
         result_.duration = m.ros_now - enter_ros_;
         result_pending_ = true;
+        end_reported_ = false;
         phase_ = Phase::Done;
         tracker_.clear();
         have_route_ = false;
@@ -522,6 +531,7 @@ class ResetExecutor {
     Pose stall_pose_;
     Result result_;
     bool result_pending_{false};
+    bool end_reported_{true};
     Reason hold_reason_{Reason::None};
     std::string hold_detail_;
     std::vector<std::string> hold_blockers_;

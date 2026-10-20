@@ -373,7 +373,7 @@ TEST(MecanumSm, ResetWithoutTargetStaysResetAndLogs) {
     controller.update(1.02);
     EXPECT_FALSE(hasOutputEvent(controller, output_event_type::PUBLISH_ZERO_CMD_VEL));
     EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
-    EXPECT_FALSE(controller.resetSession().active);
+    EXPECT_TRUE(controller.resetExecutor().active());
     EXPECT_NE(controller.lastResetHoldReason().find("no target"), std::string::npos);
     std::cout << controller.lastResetHoldReason() << std::endl;
 }
@@ -574,17 +574,29 @@ TEST(MecanumLaw, IdealPlantCustom1SaturatesWorldVelocityOnFluBox) {
 
 namespace {
 
-// The coordinator's response to the request stamped `t`, as the transport hands it over.
-ResetClearance clearanceAt(const ResetSession& session, double t, ResetClearance::Status status,
-                           double linear_x) {
-    ResetClearance clearance;
-    clearance.generation = session.generation;
-    clearance.stamp_ns = Time(t).toNSec();
-    clearance.issue_wall = monotonicSeconds();
-    clearance.status = status;
-    clearance.linear_x = linear_x;
-    clearance.lease_seconds = 0.15;
-    return clearance;
+ugv_reset_client::Grant goFor(const MecanumUgvController& controller, const ugv_reset_client::Pose& start,
+                              const std::vector<ugv_reset_client::Point>& via,
+                              const ugv_reset_client::Pose& goal, double s_limit, uint32_t id = 1U) {
+    ugv_reset_client::Grant g;
+    g.session = controller.resetExecutor().sessionId();
+    g.state = ugv_reset_client::GrantState::Go;
+    g.grant_id = id;
+    g.start = start;
+    g.via = via;
+    g.goal = goal;
+    g.s_limit = s_limit;
+    g.ttl = 1.0;
+    return g;
+}
+
+ugv_reset_client::Grant rejectFor(const MecanumUgvController& controller, ugv_reset_client::Reason reason,
+                                  const std::string& detail) {
+    ugv_reset_client::Grant g;
+    g.session = controller.resetExecutor().sessionId();
+    g.state = ugv_reset_client::GrantState::Reject;
+    g.reason = reason;
+    g.detail = detail;
+    return g;
 }
 
 void enterReset(MecanumUgvController& controller, UgvState& state, double goal_x) {
@@ -600,51 +612,6 @@ void enterReset(MecanumUgvController& controller, UgvState& state, double goal_x
     ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
 }
 
-}  // namespace
-
-TEST(MecanumSm, ResetHasNoUnfilteredFallbackAndCancelsLateResponses) {
-    UgvState state;
-    MecanumUgvController controller(state);
-    enterReset(controller, state, 1.0);
-    EXPECT_DOUBLE_EQ(controller.command().linear_x, 0.0);
-    EXPECT_DOUBLE_EQ(controller.command().linear_y, 0.0);
-    const ResetSession session = controller.resetSession();
-    ASSERT_TRUE(session.active);
-    EXPECT_DOUBLE_EQ(session.target.x, 1.0);
-    const ResetClearance running = clearanceAt(session, 1.012, ResetClearance::RUNNING, 0.1);
-    controller.setResetClearance(running);
-    controller.update(1.014);
-    EXPECT_DOUBLE_EQ(controller.command().linear_x, 0.1);
-    postCommand(controller, event_type::STOP_REQUESTED, 1.016);
-    controller.update(1.016);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
-    EXPECT_FALSE(controller.resetSession().active);
-    // A response that arrives after the session ended never moves the vehicle.
-    controller.setResetClearance(running);
-    controller.update(1.017);
-    EXPECT_DOUBLE_EQ(controller.command().linear_x, 0.0);
-    postCommand(controller, event_type::RESET_REQUESTED, 1.018);
-    controller.update(1.018);
-    EXPECT_GT(controller.resetSession().generation, session.generation);
-    // ... nor does it start the next session: it answers the previous one.
-    controller.setResetClearance(running);
-    controller.update(1.020);
-    EXPECT_DOUBLE_EQ(controller.command().linear_x, 0.0);
-    EXPECT_FALSE(controller.resetFeedback(Time(1.020).toNSec(), monotonicSeconds()).valid);
-}
-
-TEST(MecanumSm, ResetRequiresCoordinatorArrivalEvenAtTarget) {
-    UgvState state;
-    MecanumUgvController controller(state);
-    enterReset(controller, state, 0.0);
-    controller.setResetClearance(
-        clearanceAt(controller.resetSession(), 1.012, ResetClearance::ARRIVED, 0.0));
-    controller.update(1.014);
-    controller.update(1.016);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
-    EXPECT_FALSE(controller.resetSession().active);
-}
-
 // Every Reset outcome is on the log with its reason (R0): Ready alone does not say how it ended.
 std::vector<std::string>& capturedLog() {
     static std::vector<std::string> lines;
@@ -658,6 +625,101 @@ bool logged(const std::string& needle) {
                        [&](const std::string& line) { return line.find(needle) != std::string::npos; });
 }
 
+}  // namespace
+
+TEST(MecanumSm, ResetBeginsASessionThatDeclaresTheVehicleToTheCoordinator) {
+    UgvState state;
+    MecanumUgvController controller(state);
+    enterReset(controller, state, 1.0);
+    ASSERT_TRUE(controller.resetExecutor().active());
+    ugv_reset_client::Session session;
+    ASSERT_TRUE(controller.takeResetSession(&session));
+    EXPECT_EQ(session.phase, ugv_reset_client::Phase::Requesting);
+    EXPECT_EQ(session.spec.model, ugv_reset_client::Model::Omni);
+    EXPECT_DOUBLE_EQ(session.spec.footprint.half_length, 0.345);  // 0.41 x 0.36 m plus 0.14 m a side
+    EXPECT_DOUBLE_EQ(session.spec.footprint.half_width, 0.32);
+    EXPECT_DOUBLE_EQ(session.spec.ell_bound, 0.0);
+    EXPECT_DOUBLE_EQ(session.target.x, 1.0);
+}
+
+TEST(MecanumSm, AGrantedRouteDrivesTheTwistAndAStopEndsTheSessionWithOneResult) {
+    UgvState state;
+    MecanumUgvController controller(state);
+    enterReset(controller, state, 1.0);
+    controller.onResetGrant(goFor(controller, {0, 0, 0}, {}, {1.0, 0.0, 0.0}, 1e9));
+    for (int i = 0; i < 20; ++i) {
+        setPose(state, 1.02 + 0.02 * i, 0.0, 0.0, 0.0);
+        controller.update(1.02 + 0.02 * i);
+    }
+    EXPECT_GT(controller.command().linear_x, 0.05);
+    EXPECT_LE(controller.command().linear_x, 0.35 + 1e-9);
+    postCommand(controller, event_type::STOP_REQUESTED, 1.5);
+    setPose(state, 1.5, 0.1, 0.0, 0.0);
+    controller.update(1.5);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    ugv_reset_client::Result result;
+    ASSERT_TRUE(controller.takeResetResult(&result));
+    EXPECT_EQ(result.outcome, ugv_reset_client::Outcome::Stopped);
+    EXPECT_FALSE(controller.takeResetResult(&result));
+    // A grant that arrives after the session ended never moves the vehicle.
+    controller.onResetGrant(goFor(controller, {0, 0, 0}, {}, {1.0, 0.0, 0.0}, 1e9, 2U));
+    controller.update(1.51);
+    EXPECT_DOUBLE_EQ(controller.command().linear_x, 0.0);
+}
+
+TEST(MecanumSm, ArrivalAtTheTargetEndsResetThroughTheCoordinatorsRoute) {
+    UgvState state;
+    MecanumUgvController controller(state);
+    enterReset(controller, state, 0.0);
+    double t = 1.02;
+    for (int i = 0; i < 100 && controller.stateMachine().currentState(region_type::CONTROL) ==
+                                   state_type::Reset;
+         ++i, t += 0.02) {
+        if (i % 10 == 0) {
+            controller.onResetGrant(goFor(controller, {0, 0, 0}, {}, {0.0, 0.0, 0.0}, 1e9));
+        }
+        setPose(state, t, 0.0, 0.0, 0.0);
+        controller.update(t);
+    }
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    ugv_reset_client::Result result;
+    ASSERT_TRUE(controller.takeResetResult(&result));
+    EXPECT_EQ(result.outcome, ugv_reset_client::Outcome::Arrived);
+}
+
+TEST(MecanumSm, ARejectionByTheCoordinatorReturnsReadyAndAFreshRetryGetsANewSession) {
+    UgvState state;
+    MecanumUgvController controller(state);
+    enterReset(controller, state, 1.0);
+    const uint32_t first = controller.resetExecutor().sessionId();
+    controller.onResetGrant(rejectFor(controller, ugv_reset_client::Reason::NoRoute, "no route"));
+    setPose(state, 1.014, 0.0, 0.0, 0.0);
+    controller.update(1.014);
+    controller.update(1.016);
+    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    EXPECT_TRUE(controller.healthReady());
+    ugv_reset_client::Result result;
+    ASSERT_TRUE(controller.takeResetResult(&result));
+    EXPECT_EQ(result.outcome, ugv_reset_client::Outcome::Infeasible);
+    postCommand(controller, event_type::RESET_REQUESTED, 1.02);
+    setPose(state, 1.02, 0.0, 0.0, 0.0);
+    controller.update(1.02);
+    controller.update(1.022);
+    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
+    EXPECT_GT(controller.resetExecutor().sessionId(), first);
+}
+
+TEST(MecanumSm, TheResetTimeoutIsNinetySecondsUnlessConfiguredOtherwise) {
+    UgvState state;
+    MecanumUgvController controller(state);
+    EXPECT_DOUBLE_EQ(controller.config().reset_timeout, 90.0);
+    EXPECT_DOUBLE_EQ(controller.resetExecutor().config().timeout, 90.0);
+    auto config = controller.config();
+    config.reset_timeout = 12.0;
+    controller.setConfig(config);
+    EXPECT_DOUBLE_EQ(controller.resetExecutor().config().timeout, 12.0);
+}
+
 TEST(MecanumSm, ResetOutcomesAreLoggedWithTheirReason) {
     setLogSink(&captureSink);
     {
@@ -665,47 +727,27 @@ TEST(MecanumSm, ResetOutcomesAreLoggedWithTheirReason) {
         UgvState state;
         MecanumUgvController controller(state);
         enterReset(controller, state, 1.0);
-        ResetClearance rejected =
-            clearanceAt(controller.resetSession(), 1.012, ResetClearance::REJECTED, 0.0);
-        rejected.reason = "target occupied by ugv3";
-        controller.setResetClearance(rejected);
+        controller.onResetGrant(rejectFor(controller, ugv_reset_client::Reason::GoalOccupied,
+                                          "target occupied by ugv3"));
         controller.update(1.014);
         controller.update(1.016);
-        EXPECT_TRUE(logged("Reset rejected after"));
+        EXPECT_TRUE(logged("Reset ended after"));
+        EXPECT_TRUE(logged("INFEASIBLE"));
         EXPECT_TRUE(logged("target occupied by ugv3")) << "the coordinator's reason is dropped";
     }
     {
         capturedLog().clear();
         UgvState state;
         MecanumUgvController controller(state);
-        enterReset(controller, state, 1.0);
-        controller.setResetClearance(
-            clearanceAt(controller.resetSession(), 1.012, ResetClearance::REJECTED, 0.0));
-        controller.update(1.014);
-        controller.update(1.016);
-        EXPECT_TRUE(logged("the coordinator gave no reason"));
-    }
-    {
-        capturedLog().clear();
-        UgvState state;
-        MecanumUgvController controller(state);
-        enterReset(controller, state, 1.0);
-        controller.setResetClearance(
-            clearanceAt(controller.resetSession(), 1.012, ResetClearance::RUNNING, 2.0));
-        controller.update(1.014);
-        controller.update(1.016);
-        EXPECT_TRUE(logged("outside the chassis limits")) << "a limit refusal is silent";
-        EXPECT_TRUE(logged("vx=2.000"));
-    }
-    {
-        capturedLog().clear();
-        UgvState state;
-        MecanumUgvController controller(state);
         enterReset(controller, state, 0.0);
-        controller.setResetClearance(
-            clearanceAt(controller.resetSession(), 1.012, ResetClearance::ARRIVED, 0.0));
-        controller.update(1.014);
-        controller.update(1.016);
+        double t = 1.02;
+        for (int i = 0; i < 100; ++i, t += 0.02) {
+            if (i % 10 == 0) {
+                controller.onResetGrant(goFor(controller, {0, 0, 0}, {}, {0.0, 0.0, 0.0}, 1e9));
+            }
+            setPose(state, t, 0.0, 0.0, 0.0);
+            controller.update(t);
+        }
         EXPECT_TRUE(logged("Reset arrived after"));
     }
     {
@@ -715,8 +757,8 @@ TEST(MecanumSm, ResetOutcomesAreLoggedWithTheirReason) {
         enterReset(controller, state, 1.0);
         postCommand(controller, event_type::STOP_REQUESTED, 1.016);
         controller.update(1.016);
-        EXPECT_TRUE(logged("stopped or unhealthy"));
-        EXPECT_FALSE(logged("Reset rejected"));
+        EXPECT_TRUE(logged("Reset ended after"));
+        EXPECT_TRUE(logged("stopped"));
     }
     {
         capturedLog().clear();
@@ -732,33 +774,6 @@ TEST(MecanumSm, ResetOutcomesAreLoggedWithTheirReason) {
         EXPECT_TRUE(logged("Reset timed out after"));
     }
     setLogSink(nullptr);
-}
-
-TEST(MecanumSm, ResetClearanceLeaseExpiresOnEitherClock) {
-    UgvState state;
-    MecanumUgvController controller(state);
-    enterReset(controller, state, 1.0);
-    const ResetClearance running =
-        clearanceAt(controller.resetSession(), 1.012, ResetClearance::RUNNING, 0.1);
-    controller.setResetClearance(running);
-    const uint64_t at = Time(1.012).toNSec();
-    const double wall = running.issue_wall;
-    EXPECT_TRUE(controller.resetFeedback(at, wall).valid);
-    // The wall-clock edge is tested just inside the lease: (a + 0.15) - a is not exactly 0.15 for
-    // every wall clock value.
-    EXPECT_TRUE(controller.resetFeedback(at + 150000000ULL, wall + 0.1499).valid);
-    EXPECT_FALSE(controller.resetFeedback(at + 150000001ULL, wall).valid);  // controller clock
-    EXPECT_FALSE(controller.resetFeedback(at, wall + 0.151).valid);  // wall clock, clock paused
-    EXPECT_FALSE(controller.resetFeedback(at - 1, wall).valid);      // rewound clock
-    EXPECT_FALSE(controller.resetFeedback(at, wall - 0.001).valid);
-    EXPECT_FALSE(controller.resetFeedback(at, std::nan("")).valid);
-    // A command outside the chassis limits is refused, not saturated.
-    ResetClearance fast = running;
-    fast.linear_x = 2.0;
-    controller.setResetClearance(fast);
-    controller.update(1.014);
-    controller.update(1.016);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
 }
 
 }  // namespace mecanum_ugv_controller

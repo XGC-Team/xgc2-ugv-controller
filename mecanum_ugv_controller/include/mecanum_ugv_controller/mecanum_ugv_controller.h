@@ -4,6 +4,7 @@
 #include <mutex>
 #include <state_machine/state_machine.hpp>
 #include <string>
+#include <ugv_reset_client/reset_executor.h>
 
 #include "mecanum_ugv_controller/common/types.h"
 
@@ -35,16 +36,21 @@ class MecanumUgvController {
     void setCommand(ControlCommand command);
     ControlCommand command() const;
     void clearCommand();
-    // The Reset session. The Reset state begins it on entry and cancels it on exit; the
-    // transport to the station's coordinator follows resetSession() and gives every
-    // validated response to setResetClearance().
-    ResetSession resetSession() const;
+    // The Reset session of this vehicle. The executor owns it (its motion, its deadline, its
+    // fail-stops, its one typed Result); the Reset state begins it on entry and ends it on exit.
+    // The transport to the station's coordinator publishes what takeResetSession() and
+    // takeResetResult() hand out and gives every grant to onResetGrant().
+    ugv_reset_client::ResetExecutor& resetExecutor() {
+        return reset_executor_;
+    }
+    const ugv_reset_client::ResetExecutor& resetExecutor() const {
+        return reset_executor_;
+    }
+    ugv_reset_client::Measurement resetMeasurement() const;
     void beginResetSession(const ResetTarget& target);
-    void cancelResetSession();
-    void setResetClearance(const ResetClearance& clearance);
-    // The clearance if it answers the current session and its lease holds at `now_ns`
-    // (the controller's clock) and `wall` (seconds); invalid otherwise.
-    ResetClearance resetFeedback(uint64_t now_ns, double wall) const;
+    void onResetGrant(const ugv_reset_client::Grant& grant);
+    bool takeResetSession(ugv_reset_client::Session* session);
+    bool takeResetResult(ugv_reset_client::Result* result);
     const std::string& lastResetAdmissionMiss() const {
         return last_reset_admission_miss_;
     }
@@ -57,6 +63,8 @@ class MecanumUgvController {
     void setupMachine();
     void maybeAutoStartCustom1();
     void noteResetAdmissionAfterUpdate();
+    void applyResetSpec();
+    void logResetHold();
     std::string describeResetAdmissionMiss(const std::string& source) const;
 
     const UgvState& state_;
@@ -66,10 +74,10 @@ class MecanumUgvController {
     ControlCommand command_;
     mutable std::mutex reset_mutex_;
     ResetTarget reset_target_;
-    ResetSession reset_session_;
-    ResetClearance reset_clearance_;
-    // Not reused after a restart while the clock is paused: the first generation is random.
-    uint32_t reset_generation_;
+    ugv_reset_client::ResetExecutor reset_executor_;
+    // Not reused after a restart while the clock is paused: the first session id is random.
+    uint32_t reset_session_counter_;
+    std::string last_hold_logged_;
     mutable std::mutex reference_mutex_;
     WorldVelocityReference world_reference_;
     std::unique_ptr<::state_machine::StateMachine> machine_;

@@ -34,8 +34,9 @@ extern "C" {
 #define XGC2_UGV_SCHEMA_PLANAR_STATE "xgc2.ugv.planar_state.v1"
 #define XGC2_UGV_SCHEMA_COMMAND "xgc2.ugv.command.v1"
 #define XGC2_UGV_SCHEMA_RESET_TARGET "xgc2.ugv.reset_target.v1"
-#define XGC2_UGV_SCHEMA_RESET_CLEARANCE "xgc2.ugv.reset_clearance.v1"
-#define XGC2_UGV_SCHEMA_RESET_SESSION "xgc2.ugv.reset_session.v1"
+#define XGC2_UGV_SCHEMA_RESET_GRANT "xgc2.ugv.reset_grant.v1"
+#define XGC2_UGV_SCHEMA_RESET_SESSION "xgc2.ugv.reset_session.v2"
+#define XGC2_UGV_SCHEMA_RESET_RESULT "xgc2.ugv.reset_result.v1"
 #define XGC2_UGV_SCHEMA_CMD_VEL "xgc2.ugv.cmd_vel.v1"
 #define XGC2_UGV_SCHEMA_CONTROLLER_STATUS "xgc2.ugv.controller_status.v1"
 #define XGC2_UGV_SCHEMA_PLANAR_PVA "xgc2.ugv.planar_pva.v1"
@@ -101,34 +102,75 @@ typedef struct xgc2_ugv_reset_target {
     double x, y, yaw;
 } xgc2_ugv_reset_target;
 
-#define XGC2_UGV_RESET_RUNNING 0u
-#define XGC2_UGV_RESET_ARRIVED 1u
-#define XGC2_UGV_RESET_REJECTED 2u
+/* Reset sessions: the numbers are those of ugv_reset_client/reset_protocol.h and of ugv_reset_msgs. */
+#define XGC2_UGV_RESET_PHASE_IDLE 0u
+#define XGC2_UGV_RESET_PHASE_REQUESTING 1u
+#define XGC2_UGV_RESET_PHASE_WAITING 2u
+#define XGC2_UGV_RESET_PHASE_MOVING 3u
+#define XGC2_UGV_RESET_PHASE_SETTLING 4u
+#define XGC2_UGV_RESET_PHASE_DONE 5u
+#define XGC2_UGV_RESET_MODEL_UNICYCLE 0u
+#define XGC2_UGV_RESET_MODEL_OMNI 1u
 
 /*
- * State port. The coordinator's response to a request of the vehicle's current Reset session, as
- * the vehicle-side lease validated it. The controller executes it while `lease_seconds` have not
- * passed since stamp_ns on the host clock and since issue_wall on the wall clock.
+ * State port (controller -> edge). The vehicle's side of its Reset session: what the edge publishes as
+ * ResetSession at 5 Hz and on change (the controller's executor decides when it is due). Times are on
+ * the host clock.
  */
-typedef struct xgc2_ugv_reset_clearance {
-    int64_t stamp_ns;  /* stamp of the request it answers */
-    double issue_wall; /* steady wall clock seconds when that request was issued */
-    double linear_x, linear_y, yaw_rate; /* the commanded twist, vehicle frame */
-    double lease_seconds;
-    uint32_t generation; /* the session it answers */
-    uint32_t status;     /* XGC2_UGV_RESET_* */
-} xgc2_ugv_reset_clearance;
-
-#define XGC2_UGV_RESET_SESSION_ACTIVE 0x1u /* the controller is in Reset with a valid target */
-#define XGC2_UGV_RESET_SESSION_HEALTHY \
-    0x2u /* the controller's state is fresh and inside the fence */
-
-/* State port (controller -> edge). The Reset session the controller runs; the edge follows it. */
 typedef struct xgc2_ugv_reset_session {
+    int64_t stamp_ns;
+    int64_t pose_stamp_ns;
+    double pose_x, pose_y, pose_yaw;
     double target_x, target_y, target_yaw;
-    uint32_t generation;
-    uint32_t flags; /* XGC2_UGV_RESET_SESSION_* */
+    double progress, cross_track;
+    double half_length, half_width, offset_x, offset_y; /* the declared footprint */
+    double max_v, max_vy, max_w, acc_v, acc_w;           /* the limits of the Reset tracker */
+    double ell_hat, ell_spread, ell_bound;               /* rotation-centre offset; spread < 0: unknown */
+    uint32_t session;
+    uint32_t phase; /* XGC2_UGV_RESET_PHASE_* */
+    uint32_t model; /* XGC2_UGV_RESET_MODEL_* */
+    uint32_t healthy;
 } xgc2_ugv_reset_session;
+
+#define XGC2_UGV_RESET_GRANT_HOLD 0u
+#define XGC2_UGV_RESET_GRANT_GO 1u
+#define XGC2_UGV_RESET_GRANT_BRAKE 2u
+#define XGC2_UGV_RESET_GRANT_REJECT 3u
+#define XGC2_UGV_MAX_RESET_VIA 24u
+#define XGC2_UGV_RESET_TEXT 96u
+
+/*
+ * Event port (edge -> controller, queue 16). One message of the coordinator for the vehicle's session:
+ * a frozen route and the prefix of it that may be driven, or a hold, a brake, a rejection. The ttl is
+ * counted by the controller on the wall clock from the moment it takes the message.
+ */
+typedef struct xgc2_ugv_reset_grant {
+    int64_t stamp_ns; /* receipt time on the host clock */
+    double start_x, start_y, start_yaw;
+    double goal_x, goal_y, goal_yaw;
+    double ell_plan;
+    double s_limit;
+    double ttl;
+    double via[XGC2_UGV_MAX_RESET_VIA][2]; /* interior vertices of the rotation-centre polyline */
+    uint32_t session;
+    uint32_t state; /* XGC2_UGV_RESET_GRANT_* */
+    uint32_t grant_id;
+    uint32_t via_count;
+    uint32_t reason;     /* ResetGrant.REASON_* */
+    uint32_t final_move; /* 1: the route ends at the target */
+    char detail[XGC2_UGV_RESET_TEXT]; /* the coordinator's text, with the blockers' names appended */
+} xgc2_ugv_reset_grant;
+
+/* Event port (controller -> edge, queue 4). The one outcome of a session. */
+typedef struct xgc2_ugv_reset_result {
+    int64_t stamp_ns;
+    double final_planar_error, final_yaw_error, duration;
+    uint32_t session;
+    uint32_t outcome; /* ResetResult.OUTCOME_* */
+    uint32_t reason;
+    uint32_t reserved;
+    char detail[XGC2_UGV_RESET_TEXT];
+} xgc2_ugv_reset_result;
 
 /* ------------------------------------------------------------------------------------------------
  */
@@ -295,8 +337,9 @@ typedef struct xgc2_ugv_reference_reset {
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_planar_state, 80u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_command, 16u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_target, 24u);
-XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_clearance, 56u);
-XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_session, 32u);
+XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_session, 192u);
+XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_grant, 584u);
+XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_result, 144u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_cmd_vel, 40u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_controller_status, 40u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_planar_pva, 64u);

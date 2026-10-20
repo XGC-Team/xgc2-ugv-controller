@@ -3,7 +3,6 @@
 #include <Eigen/Dense>
 #include <cstdint>
 #include <limits>
-#include <string>
 #include <state_machine/state_machine.hpp>
 
 #include "unicycle_ugv_controller/common/heading_recovery.h"
@@ -62,6 +61,19 @@ struct ControllerConfig {
     StateSource state_source{StateSource::STATE_ESTIMATOR};
     TrackingStrategy tracking_strategy{TrackingStrategy::NMPC};
     double reset_timeout{90.0};
+    // What this vehicle declares to the Reset coordinator: its footprint (the chassis plus the
+    // project's 0.14 m margin per side: 0.62 x 0.52 -> 0.90 x 0.80), the limits its Reset tracker
+    // obeys (clamped to the chassis limits) and the bound of its rotation-centre offset (the
+    // uncommanded lateral velocity of a skid-steer is -ell * omega, |ell| <= bound).
+    double reset_footprint_length{0.90};
+    double reset_footprint_width{0.80};
+    double reset_footprint_offset_x{0.0};
+    double reset_footprint_offset_y{0.0};
+    double reset_max_linear_speed{0.35};
+    double reset_max_yaw_rate{0.5};
+    double reset_linear_acceleration{0.35};
+    double reset_angular_acceleration{0.6};
+    double reset_lateral_offset_bound{0.25};
     double chassis_max_linear_speed{1.05};
     double chassis_max_yaw_rate{1.05};
     double max_linear_speed{3.0};
@@ -115,35 +127,6 @@ struct ResetTarget {
     double x{0.0};
     double y{0.0};
     double yaw{0.0};
-    bool valid{false};
-};
-
-// The Reset session this controller runs: the frozen target it drives to and
-// the generation that tells it apart from every earlier session. The
-// controller owns it; whatever carries the vehicle's requests to the station
-// follows it.
-struct ResetSession {
-    bool active{false};
-    uint32_t generation{0U};
-    ResetTarget target;
-};
-
-// What the controller executes in Reset: the station coordinator's response to
-// the vehicle's last request, validated by whatever carries the protocol. The
-// command is only used while `lease_seconds` have not passed since `stamp_ns`
-// on the controller's clock and since `issue_wall` on the wall clock, so a
-// stopped or lost coordinator stops the vehicle, also when the clock is paused.
-struct ResetClearance {
-    enum Status : uint8_t { RUNNING = 0, ARRIVED = 1, REJECTED = 2 };
-    uint32_t generation{0U};  // the session it answers
-    uint64_t stamp_ns{0U};    // the request it answers, on the controller's clock
-    double issue_wall{0.0};   // wall clock seconds when that request was issued
-    Status status{RUNNING};
-    double linear_x{0.0};
-    double linear_y{0.0};
-    double yaw_rate{0.0};
-    double lease_seconds{0.0};
-    std::string reason;  // the coordinator's text when it rejects, for the log
     bool valid{false};
 };
 

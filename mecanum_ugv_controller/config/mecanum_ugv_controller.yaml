@@ -16,7 +16,20 @@ pose_topic: pose
 queue_size: 10
 reference_twist_topic: alg/reference/twist
 reset:
-  timeout: 600.0
+  # T14: the total Reset timeout is 90 s for every vehicle.
+  timeout: 90.0
+  # What the vehicle declares to the Reset coordinator (the Wheeltec chassis 0.41 x 0.36 m plus
+  # 0.14 m per side), and the limits its Reset tracker obeys.
+  footprint:
+    length: 0.69
+    width: 0.64
+    offset_x: 0.0
+    offset_y: 0.0
+  limits:
+    max_linear_speed: 0.35
+    max_yaw_rate: 0.5
+    linear_acceleration: 0.35
+    angular_acceleration: 0.6
 reset_pose_topic: reset_pose
 state_timeout: 0.5
 status_publish_rate_hz: 5.0

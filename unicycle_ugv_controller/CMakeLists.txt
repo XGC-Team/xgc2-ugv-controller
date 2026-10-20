@@ -152,8 +152,9 @@ set_target_properties(unicycle_ugv_controller_nmpc_generated PROPERTIES POSITION
 # reference cache, the NMPC solver, tracking backend and execution, the
 # flatness law and the core log. It takes plain types and explicit time; ROS
 # stays in the node (input producers, output consumers, rosconsole sink). The
-# core is one vehicle: its Reset state executes a target and a clearance it is
-# given, and has no part in the station's coordination.
+# core is one vehicle: its Reset state runs the vehicle's own Reset executor
+# (ugv_reset_client, header-only and ROS-free) on the grants it is given, and has
+# no part in the station's coordination.
 #
 # The directory-level include path (catkin, which puts the ROS headers on it)
 # is reset to the core's real dependencies: this package's headers, the
@@ -178,7 +179,8 @@ target_include_directories(unicycle_ugv_controller_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${UGV_NMPC_GENERATED_DIR}
   ${UGV_ACADOS_INCLUDE_DIRS}
-  ${EIGEN3_INCLUDE_DIRS})
+  ${EIGEN3_INCLUDE_DIRS}
+  ${ugv_reset_client_INCLUDE_DIRS})
 add_dependencies(unicycle_ugv_controller_core unicycle_ugv_controller_nmpc_generated)
 target_link_libraries(unicycle_ugv_controller_core
   unicycle_ugv_controller_nmpc_generated

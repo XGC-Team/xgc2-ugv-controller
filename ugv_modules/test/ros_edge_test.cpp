@@ -9,8 +9,9 @@
 #include <ros/ros.h>
 #include <std_msgs/Empty.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_msgs/ResetRequest.h>
-#include <ugv_reset_msgs/ResetResponse.h>
+#include <ugv_reset_msgs/ResetGrant.h>
+#include <ugv_reset_msgs/ResetResult.h>
+#include <ugv_reset_msgs/ResetSession.h>
 #include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
 #include <unicycle_reference_trajectory_msgs/PlanarPvaReference.h>
 #include <unicycle_reference_trajectory_msgs/SampledReference.h>
@@ -133,28 +134,30 @@ TEST_F(EdgeTest, DescribesItsPortsForTheHost) {
     const xgc2_module_desc* d = library().desc();
     EXPECT_EQ(d->abi_major, XGC2_MODULE_ABI_MAJOR);
     EXPECT_STREQ(d->name, "ugv_ros_edge");
-    ASSERT_EQ(d->port_count, 17u);
+    ASSERT_EQ(d->port_count, 18u);
     const char* inputs[] = {"cmd_vel",          "controller_status", "reset_session",
-                            "reference_status", "active_analytic",   "active_polynomial",
-                            "active_sampled"};
+                            "reset_result",     "reference_status",  "active_analytic",
+                            "active_polynomial", "active_sampled"};
     const char* outputs[] = {"state",
                              "command",
                              "reset_target",
-                             "reset_clearance",
+                             "reset_grant",
                              "pva",
                              "analytic_request",
                              "sampled_request",
                              "waypoint_request",
                              "reference_reset",
                              "clock"};
-    for (uint32_t i = 0; i < 7; ++i) {
+    for (uint32_t i = 0; i < 8; ++i) {
         EXPECT_STREQ(d->ports[i].name, inputs[i]);
         EXPECT_EQ(d->ports[i].direction, static_cast<uint32_t>(XGC2_PORT_IN));
-        EXPECT_EQ(d->ports[i].kind, static_cast<uint32_t>(XGC2_PORT_STATE));
+        EXPECT_EQ(d->ports[i].kind, std::string(inputs[i]) == "reset_result"
+                                        ? static_cast<uint32_t>(XGC2_PORT_EVENT)
+                                        : static_cast<uint32_t>(XGC2_PORT_STATE));
         EXPECT_EQ(d->ports[i].flags, 0u);
     }
     for (uint32_t i = 0; i < 10; ++i) {
-        const xgc2_port_desc& p = d->ports[7 + i];
+        const xgc2_port_desc& p = d->ports[8 + i];
         EXPECT_STREQ(p.name, outputs[i]);
         EXPECT_EQ(p.direction, static_cast<uint32_t>(XGC2_PORT_OUT));
         // Everything the edge writes, ROS threads write.
@@ -162,15 +165,19 @@ TEST_F(EdgeTest, DescribesItsPortsForTheHost) {
         EXPECT_EQ(p.align, 8u) << p.name;
         EXPECT_EQ(p.kind, std::string(p.name).find("request") != std::string::npos ||
                                   std::string(p.name) == "command" ||
+                                  std::string(p.name) == "reset_grant" ||
                                   std::string(p.name) == "reference_reset"
                               ? static_cast<uint32_t>(XGC2_PORT_EVENT)
                               : static_cast<uint32_t>(XGC2_PORT_STATE))
             << p.name;
     }
-    EXPECT_STREQ(d->ports[16].schema_id, "xgc2.clock.v1");
-    EXPECT_EQ(d->ports[16].size, 8u);
-    EXPECT_STREQ(d->ports[7].schema_id, "xgc2.ugv.planar_state.v1");
-    EXPECT_STREQ(d->ports[12].schema_id, "xgc2.ugv.unicycle_reference.analytic.v1");
+    EXPECT_STREQ(d->ports[17].schema_id, "xgc2.clock.v1");
+    EXPECT_EQ(d->ports[17].size, 8u);
+    EXPECT_STREQ(d->ports[8].schema_id, "xgc2.ugv.planar_state.v1");
+    EXPECT_STREQ(d->ports[13].schema_id, "xgc2.ugv.unicycle_reference.analytic.v1");
+    EXPECT_STREQ(d->ports[11].schema_id, "xgc2.ugv.reset_grant.v1");
+    EXPECT_STREQ(d->ports[2].schema_id, "xgc2.ugv.reset_session.v2");
+    EXPECT_STREQ(d->ports[3].schema_id, "xgc2.ugv.reset_result.v1");
 }
 
 TEST_F(EdgeTest, TheConfigurationIsStrict) {
@@ -660,136 +667,126 @@ TEST_F(EdgeTest, TheGeneratorsOutputsAreTheReferenceTopicsInRosTime) {
     EXPECT_TRUE(late.waitFor(1));
 }
 
-TEST_F(EdgeTest, TheResetLeaseRunsBetweenTheControllerAndTheCoordinator) {
+TEST_F(EdgeTest, TheResetSessionResultAndGrantsPassThroughTheEdge) {
     startEdge(
-        "{\"namespace\": \"ugv1\", \"reset_request_topic\": \"station/ask\", "
-        "\"reset_response_topic\": \"/coordinator/answers\"}");
-    ros::Publisher states = nh_.advertise<rigid_state_estimator_msgs::RigidStateEstimate>(
-        "ugv1/alg/state_estimator/state", 5);
-    Probe<ugv_reset_msgs::ResetRequest> requests(nh_, "ugv1/station/ask");
-    ros::Publisher responses =
-        nh_.advertise<ugv_reset_msgs::ResetResponse>("/coordinator/answers", 5);
-    Probe<geometry_msgs::Twist> twists(nh_, "ugv1/cmd_vel");
-    ASSERT_TRUE(connected(states));
-    ASSERT_TRUE(connected(responses));
-    ASSERT_TRUE(waitUntil([&] { return requests.count() == 0; }));
+        "{\"namespace\": \"ugv1\", \"reset_session_topic\": \"station/session\", "
+        "\"reset_grant_topic\": \"/coordinator/grants\", \"reset_result_topic\": \"station/result\"}");
+    Probe<ugv_reset_msgs::ResetSession> sessions(nh_, "ugv1/station/session");
+    Probe<ugv_reset_msgs::ResetResult> results(nh_, "ugv1/station/result");
+    ros::Publisher grants = nh_.advertise<ugv_reset_msgs::ResetGrant>("/coordinator/grants", 5);
+    ASSERT_TRUE(connected(grants));
 
-    const ros::Time pose_stamp = ros::Time::now();
-    states.publish(estimate(pose_stamp));
-    ASSERT_TRUE(waitUntil([&] { return host_.outputs("state").size() == 1; }));
-
-    // Not active: no request.
+    // The controller's session reaches the coordinator as a message, in the world frame.
     xgc2_ugv_reset_session session;
     std::memset(&session, 0, sizeof session);
-    host_.push("reset_session", session, host_.now());
-    for (int k = 0; k < 5; ++k) {
-        step();
-        std::this_thread::sleep_for(std::chrono::milliseconds(25));
-    }
-    EXPECT_EQ(requests.count(), 0u);
-
-    // Active but not healthy: no request either.
+    session.stamp_ns = host_.now();
+    session.pose_stamp_ns = host_.now();
+    session.pose_x = 1.0;
+    session.pose_y = 2.0;
+    session.pose_yaw = 0.6;
     session.target_x = 2.0;
     session.target_y = 0.5;
-    session.generation = 7;
-    session.flags = XGC2_UGV_RESET_SESSION_ACTIVE;
-    host_.push("reset_session", session, host_.now());
-    for (int k = 0; k < 5; ++k) {
-        step();
-        std::this_thread::sleep_for(std::chrono::milliseconds(25));
-    }
-    EXPECT_EQ(requests.count(), 0u);
-
-    // Active and healthy: a request per about 20 ms, with the pose of the latest state.
-    session.flags = XGC2_UGV_RESET_SESSION_ACTIVE | XGC2_UGV_RESET_SESSION_HEALTHY;
+    session.half_length = 0.45;
+    session.half_width = 0.40;
+    session.max_v = 0.35;
+    session.max_w = 0.5;
+    session.acc_v = 0.35;
+    session.acc_w = 0.6;
+    session.ell_hat = -0.2;
+    session.ell_spread = 0.05;
+    session.ell_bound = 0.25;
+    session.session = 7;
+    session.phase = XGC2_UGV_RESET_PHASE_MOVING;
+    session.model = XGC2_UGV_RESET_MODEL_UNICYCLE;
+    session.healthy = 1;
     host_.push("reset_session", session, host_.now());
     ASSERT_TRUE(waitUntil([&] {
         step();
-        return requests.count() >= 2;
+        return sessions.count() >= 1;
     }));
-    const auto request = requests.at(0);
-    EXPECT_EQ(request.generation, 7u);
-    EXPECT_EQ(request.header.frame_id, "world");
-    EXPECT_DOUBLE_EQ(request.pose.x, 1.0);
-    EXPECT_DOUBLE_EQ(request.pose.y, 2.0);
-    EXPECT_NEAR(request.pose.theta, 0.6, 1e-12);
-    EXPECT_DOUBLE_EQ(request.target.x, 2.0);
-    EXPECT_DOUBLE_EQ(request.target.y, 0.5);
-    EXPECT_EQ(request.pose_stamp, pose_stamp);
-    EXPECT_LT((ros::Time::now() - request.header.stamp).toSec(), 1.0);
-    EXPECT_GT(requests.at(1).header.stamp, request.header.stamp);
+    const auto m = sessions.at(0);
+    EXPECT_EQ(m.header.frame_id, "world");
+    EXPECT_EQ(m.session, 7u);
+    EXPECT_EQ(m.phase, ugv_reset_msgs::ResetSession::PHASE_MOVING);
+    EXPECT_DOUBLE_EQ(m.pose.x, 1.0);
+    EXPECT_DOUBLE_EQ(m.pose.theta, 0.6);
+    EXPECT_DOUBLE_EQ(m.target.x, 2.0);
+    EXPECT_DOUBLE_EQ(m.half_length, 0.45);
+    EXPECT_DOUBLE_EQ(m.ell_hat, -0.2);
+    EXPECT_DOUBLE_EQ(m.ell_spread, 0.05);
+    EXPECT_DOUBLE_EQ(m.ell_bound, 0.25);
+    EXPECT_EQ(m.model, ugv_reset_msgs::ResetSession::MODEL_UNICYCLE);
+    EXPECT_TRUE(m.healthy);
 
-    // The coordinator answers the second request: the controller gets it in its clock, with the
-    // wall time the request was issued at.
-    const auto answered = requests.at(1);
-    ugv_reset_msgs::ResetResponse response;
-    response.header.stamp = answered.header.stamp;
-    response.header.frame_id = "world";
-    response.generation = 7;
-    response.status = 0;
-    response.command.linear.x = 0.2;
-    response.command.angular.z = 0.1;
-    const double wall_before = wallSeconds();
-    const int64_t host_before = host_.now();
-    responses.publish(response);
-    const auto clearances = waitOutputs<xgc2_ugv_reset_clearance>("reset_clearance", 1);
-    EXPECT_EQ(clearances[0].generation, 7u);
-    EXPECT_EQ(clearances[0].status, XGC2_UGV_RESET_RUNNING);
-    EXPECT_DOUBLE_EQ(clearances[0].linear_x, 0.2);
-    EXPECT_DOUBLE_EQ(clearances[0].linear_y, 0.0);
-    EXPECT_DOUBLE_EQ(clearances[0].yaw_rate, 0.1);
-    EXPECT_DOUBLE_EQ(clearances[0].lease_seconds, 0.15);
-    // The request was stamped in ROS time; the clearance carries that instant in the host clock.
-    const double age = (ros::Time::now() - answered.header.stamp).toSec();
-    EXPECT_NEAR(static_cast<double>(host_.now() - clearances[0].stamp_ns) * 1e-9, age, 0.02);
-    EXPECT_LT(clearances[0].issue_wall, wall_before);
-    EXPECT_GT(clearances[0].issue_wall, wall_before - 0.15);
-    EXPECT_LE(clearances[0].stamp_ns, host_before);
+    // The outcome is latched: a late subscriber gets it.
+    xgc2_ugv_reset_result result;
+    std::memset(&result, 0, sizeof result);
+    result.stamp_ns = host_.now();
+    result.session = 7;
+    result.outcome = 20;
+    result.reason = 20;
+    result.final_planar_error = 1.5;
+    result.duration = 12.0;
+    std::strcpy(result.detail, "the target is occupied by ugv3");
+    host_.push("reset_result", result, host_.now());
+    ASSERT_TRUE(waitUntil([&] {
+        step();
+        return results.count() >= 1;
+    }));
+    Probe<ugv_reset_msgs::ResetResult> late(nh_, "ugv1/station/result");
+    ASSERT_TRUE(late.waitFor(1));
+    EXPECT_EQ(late.at(0).session, 7u);
+    EXPECT_EQ(late.at(0).outcome, ugv_reset_msgs::ResetResult::OUTCOME_INFEASIBLE);
+    EXPECT_EQ(late.at(0).detail, "the target is occupied by ugv3");
+    EXPECT_DOUBLE_EQ(late.at(0).final_planar_error, 1.5);
 
-    // Answers the lease does not know are not forwarded: another generation, a stamp that was never
-    // issued, a response that is not in the world frame.
-    ugv_reset_msgs::ResetResponse wrong = response;
-    wrong.generation = 8;
-    responses.publish(wrong);
-    wrong = response;
-    wrong.header.stamp = ros::Time::now();
-    responses.publish(wrong);
-    wrong = response;
-    wrong.header.frame_id = "map";
-    responses.publish(wrong);
+    // Grants reach the controller in order, with the blockers' names in the text.
+    ugv_reset_msgs::ResetGrant brake;
+    brake.header.stamp = ros::Time::now();
+    brake.session = 7;
+    brake.state = ugv_reset_msgs::ResetGrant::STATE_BRAKE;
+    brake.reason = ugv_reset_msgs::ResetGrant::REASON_REPLAN;
+    brake.detail = "the rest of the route is blocked";
+    brake.blockers = {"ugv2"};
+    ugv_reset_msgs::ResetGrant go;
+    go.header.stamp = ros::Time::now();
+    go.session = 7;
+    go.state = ugv_reset_msgs::ResetGrant::STATE_GO;
+    go.grant_id = 12;
+    go.start.x = 1.0;
+    go.goal.x = 2.0;
+    go.goal.y = 0.5;
+    go.final_move = true;
+    go.ell_plan = -0.2;
+    go.s_limit = 3.5;
+    go.ttl = 1.0;
+    geometry_msgs::Point via;
+    via.x = 1.5;
+    via.y = 1.0;
+    go.via.push_back(via);
+    grants.publish(brake);
+    grants.publish(go);
+    const auto received = waitOutputs<xgc2_ugv_reset_grant>("reset_grant", 2);
+    EXPECT_EQ(received[0].state, XGC2_UGV_RESET_GRANT_BRAKE);
+    EXPECT_EQ(received[0].reason, 3u);
+    EXPECT_STREQ(received[0].detail, "the rest of the route is blocked [ugv2]");
+    EXPECT_EQ(received[1].state, XGC2_UGV_RESET_GRANT_GO);
+    EXPECT_EQ(received[1].grant_id, 12u);
+    EXPECT_EQ(received[1].via_count, 1u);
+    EXPECT_DOUBLE_EQ(received[1].via[0][0], 1.5);
+    EXPECT_DOUBLE_EQ(received[1].s_limit, 3.5);
+    EXPECT_DOUBLE_EQ(received[1].ttl, 1.0);
+    EXPECT_EQ(received[1].final_move, 1u);
+    EXPECT_GT(received[1].stamp_ns, 0);
+
+    // A route with more via points than the payload holds is refused and said so, not truncated.
+    ugv_reset_msgs::ResetGrant long_route = go;
+    long_route.grant_id = 13;
+    long_route.via.assign(XGC2_UGV_MAX_RESET_VIA + 1, via);
+    grants.publish(long_route);
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    EXPECT_EQ(host_.outputs("reset_clearance").size(), 1u);
-
-    // The command the chassis was really given is what the next request reports.
-    xgc2_ugv_cmd_vel cmd;
-    std::memset(&cmd, 0, sizeof cmd);
-    cmd.stamp_ns = host_.now();
-    cmd.linear_x = 0.2;
-    cmd.angular_z = 0.1;
-    host_.push("cmd_vel", cmd, cmd.stamp_ns);
-    step();
-    const size_t seen = requests.count();
-    ASSERT_TRUE(waitUntil([&] {
-        step();
-        return requests.count() >= seen + 2;
-    }));
-    const auto latest = requests.last();
-    EXPECT_DOUBLE_EQ(latest.applied_command.linear.x, 0.2);
-    EXPECT_DOUBLE_EQ(latest.applied_command.angular.z, 0.1);
-    EXPECT_FALSE(latest.applied_stamp.isZero());
-    EXPECT_TRUE(twists.waitFor(1));
-
-    // The session ends: the requests stop.
-    session.flags = 0;
-    host_.push("reset_session", session, host_.now());
-    step();
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    const size_t after_end = requests.count();
-    for (int k = 0; k < 5; ++k) {
-        step();
-        std::this_thread::sleep_for(std::chrono::milliseconds(25));
-    }
-    EXPECT_EQ(requests.count(), after_end);
+    EXPECT_EQ(host_.outputs("reset_grant").size(), 2u);
+    EXPECT_TRUE(host_.logged(2, "Refused a reset grant"));
 }
 
 TEST_F(EdgeTest, ALiveConfigureReconnectsToTheNewTopicsAndStopCutsTheRosSide) {

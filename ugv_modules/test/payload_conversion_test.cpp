@@ -22,7 +22,7 @@ namespace ref = unicycle_reference_trajectory::reference;
 TEST(Payloads, CAndCppSeeTheSameLayout) {
     size_t c[64];
     const size_t count = ugv_payload_layout_in_c(c, 64);
-    ASSERT_EQ(count, 48u);
+    ASSERT_EQ(count, 51u);
     const size_t cpp[] = {
         sizeof(xgc2_ugv_planar_state),
         alignof(xgc2_ugv_planar_state),
@@ -33,12 +33,15 @@ TEST(Payloads, CAndCppSeeTheSameLayout) {
         sizeof(xgc2_ugv_reset_target),
         alignof(xgc2_ugv_reset_target),
         offsetof(xgc2_ugv_reset_target, yaw),
-        sizeof(xgc2_ugv_reset_clearance),
-        alignof(xgc2_ugv_reset_clearance),
-        offsetof(xgc2_ugv_reset_clearance, status),
+        sizeof(xgc2_ugv_reset_grant),
+        alignof(xgc2_ugv_reset_grant),
+        offsetof(xgc2_ugv_reset_grant, detail),
         sizeof(xgc2_ugv_reset_session),
         alignof(xgc2_ugv_reset_session),
-        offsetof(xgc2_ugv_reset_session, flags),
+        offsetof(xgc2_ugv_reset_session, healthy),
+        sizeof(xgc2_ugv_reset_result),
+        alignof(xgc2_ugv_reset_result),
+        offsetof(xgc2_ugv_reset_result, detail),
         sizeof(xgc2_ugv_cmd_vel),
         alignof(xgc2_ugv_cmd_vel),
         offsetof(xgc2_ugv_cmd_vel, reserved),
@@ -83,15 +86,16 @@ TEST(Payloads, EveryPayloadIsAMultipleOfItsAlignmentAndPlainData) {
     // the static asserts of the header fix the numbers; the schema ids are unique
     const char* schemas[] = {
         XGC2_UGV_SCHEMA_PLANAR_STATE,         XGC2_UGV_SCHEMA_COMMAND,
-        XGC2_UGV_SCHEMA_RESET_TARGET,         XGC2_UGV_SCHEMA_RESET_CLEARANCE,
-        XGC2_UGV_SCHEMA_RESET_SESSION,        XGC2_UGV_SCHEMA_CMD_VEL,
+        XGC2_UGV_SCHEMA_RESET_TARGET,         XGC2_UGV_SCHEMA_RESET_GRANT,
+        XGC2_UGV_SCHEMA_RESET_SESSION,        XGC2_UGV_SCHEMA_RESET_RESULT,
+        XGC2_UGV_SCHEMA_CMD_VEL,
         XGC2_UGV_SCHEMA_CONTROLLER_STATUS,    XGC2_UGV_SCHEMA_PLANAR_PVA,
         XGC2_UGV_SCHEMA_ANALYTIC_REFERENCE,   XGC2_UGV_SCHEMA_SAMPLED_REFERENCE,
         XGC2_UGV_SCHEMA_POLYNOMIAL_REFERENCE, XGC2_UGV_SCHEMA_WAYPOINT_REQUEST,
         XGC2_UGV_SCHEMA_REFERENCE_STATUS,     XGC2_UGV_SCHEMA_REFERENCE_RESET};
     for (size_t i = 0; i < sizeof schemas / sizeof schemas[0]; ++i) {
         EXPECT_EQ(std::strncmp(schemas[i], "xgc2.ugv.", 9), 0) << schemas[i];
-        EXPECT_NE(std::strstr(schemas[i], ".v1"), nullptr) << schemas[i];
+        EXPECT_NE(std::strstr(schemas[i], ".v"), nullptr) << schemas[i];
         for (size_t j = i + 1; j < sizeof schemas / sizeof schemas[0]; ++j) {
             EXPECT_STRNE(schemas[i], schemas[j]);
         }

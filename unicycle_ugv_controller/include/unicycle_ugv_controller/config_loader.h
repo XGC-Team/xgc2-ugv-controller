@@ -93,6 +93,15 @@ void loadControllerConfig(const Source& source, ControllerConfig& config) {
     source.get("idle_cmd_rate_hz", config.idle_cmd_rate_hz);
     source.get("auto_start_tracking", config.auto_start_tracking);
     source.get("reset/timeout", config.reset_timeout);
+    source.get("reset/footprint/length", config.reset_footprint_length);
+    source.get("reset/footprint/width", config.reset_footprint_width);
+    source.get("reset/footprint/offset_x", config.reset_footprint_offset_x);
+    source.get("reset/footprint/offset_y", config.reset_footprint_offset_y);
+    source.get("reset/limits/max_linear_speed", config.reset_max_linear_speed);
+    source.get("reset/limits/max_yaw_rate", config.reset_max_yaw_rate);
+    source.get("reset/limits/linear_acceleration", config.reset_linear_acceleration);
+    source.get("reset/limits/angular_acceleration", config.reset_angular_acceleration);
+    source.get("reset/lateral_offset_bound", config.reset_lateral_offset_bound);
     source.get("nmpc/request_rate_hz", config.nmpc_request_rate_hz);
     source.get("limits/max_linear_speed", config.max_linear_speed);
     source.get("limits/min_linear_speed", config.min_linear_speed);
@@ -175,6 +184,21 @@ void loadControllerConfig(const Source& source, ControllerConfig& config) {
     config.nmpc_weights.terminal_yaw = finitePositiveOr(config.nmpc_weights.terminal_yaw, 20.0);
     config.nmpc_weights.terminal_speed = finitePositiveOr(config.nmpc_weights.terminal_speed, 10.0);
     config.reset_timeout = finitePositiveOr(config.reset_timeout, 90.0);
+    // The vehicle declares these to the coordinator, which plans with them: a bad value is a
+    // configuration error, not something to default silently.
+    for (const double* value :
+         {&config.reset_footprint_length, &config.reset_footprint_width,
+          &config.reset_max_linear_speed, &config.reset_max_yaw_rate,
+          &config.reset_linear_acceleration, &config.reset_angular_acceleration}) {
+        if (!std::isfinite(*value) || *value <= 0.0) {
+            throw std::invalid_argument("reset footprint and limits must be positive and finite");
+        }
+    }
+    if (!std::isfinite(config.reset_footprint_offset_x) ||
+        !std::isfinite(config.reset_footprint_offset_y) ||
+        !std::isfinite(config.reset_lateral_offset_bound) || config.reset_lateral_offset_bound < 0.0) {
+        throw std::invalid_argument("reset footprint offset and lateral offset bound must be finite");
+    }
 }
 
 // The Reset target a configuration seeds (reset_initial_x/y/yaw), valid when all three are finite.

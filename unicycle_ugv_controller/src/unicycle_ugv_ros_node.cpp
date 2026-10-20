@@ -56,41 +56,14 @@ class RosParamSource {
     const ros::NodeHandle& nh_;
 };
 
-// The protocol's status values are the controller's.
-static_assert(static_cast<int>(ResetClearance::RUNNING) ==
-                  static_cast<int>(ugv_reset_client::ResetLease::RUNNING),
-              "");
-static_assert(static_cast<int>(ResetClearance::ARRIVED) ==
-                  static_cast<int>(ugv_reset_client::ResetLease::ARRIVED),
-              "");
-static_assert(static_cast<int>(ResetClearance::REJECTED) ==
-                  static_cast<int>(ugv_reset_client::ResetLease::REJECTED),
-              "");
-
-ResetClearance toResetClearance(const ugv_reset_client::ResetLease::Clearance& clearance) {
-    ResetClearance out;
-    out.generation = clearance.generation;
-    out.stamp_ns = clearance.stamp;
-    out.issue_wall = clearance.issue_wall;
-    out.status = static_cast<ResetClearance::Status>(clearance.status);
-    out.linear_x = clearance.command.x;
-    out.linear_y = clearance.command.y;
-    out.yaw_rate = clearance.command.yaw;
-    out.lease_seconds = clearance.lease_seconds;
-    out.reason = clearance.reason;
-    return out;
-}
-
 }  // namespace
 
 UnicycleUgvRosNode::UnicycleUgvRosNode(ros::NodeHandle& nh)
     : nh_(nh),
       private_nh_("~"),
       controller_(state_),
-      reset_client_(nh_,
-                    [this](const ugv_reset_client::ResetLease::Clearance& clearance) {
-                        controller_.setResetClearance(toResetClearance(clearance));
-                    }),
+      reset_edge_(nh_,
+                  [this](const ugv_reset_client::Grant& grant) { controller_.onResetGrant(grant); }),
       output_executor_(nh_) {
     loadParams();
     controller_.setConfig(config_);
@@ -101,7 +74,7 @@ UnicycleUgvRosNode::UnicycleUgvRosNode(ros::NodeHandle& nh)
     };
 
     output_dispatcher_.addConsumer(std::make_unique<CmdVelOutputConsumer>(
-        nh_, output_executor_, controller_, reset_client_, cmd_vel_topic_, queue_size_));
+        nh_, output_executor_, controller_, cmd_vel_topic_, queue_size_));
     if (config_.tracking_strategy == TrackingStrategy::NMPC) {
         output_dispatcher_.addConsumer(
             std::make_unique<NmpcOutputConsumer>(nh_, controller_, post_input_event, queue_size_));
@@ -181,10 +154,14 @@ void UnicycleUgvRosNode::updateOnce() {
         ROS_ERROR("[UnicycleUgvRosNode] %s", last_logged_reset_miss_.c_str());
     }
     dispatchOutputEvents(controller_.stateMachine().currentOutputEvents());
-    const ResetSession reset = controller_.resetSession();
-    reset_client_.update(
-        reset.active, reset.generation, {reset.target.x, reset.target.y, reset.target.yaw},
-        {state_.x, state_.y, state_.yaw}, toRosTime(state_.stamp), controller_.healthReady());
+    ugv_reset_client::Session session;
+    if (controller_.takeResetSession(&session)) {
+        reset_edge_.publish(session);
+    }
+    ugv_reset_client::Result result;
+    if (controller_.takeResetResult(&result)) {
+        reset_edge_.publish(result);
+    }
     const auto control_state = controller_.stateMachine().currentState(region_type::CONTROL);
     const auto health_state = controller_.stateMachine().currentState(region_type::HEALTH);
     logStateChanges(control_state, health_state);

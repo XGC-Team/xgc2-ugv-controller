@@ -4,8 +4,8 @@
 #include <gtest/gtest.h>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_msgs/ResetRequest.h>
-#include <ugv_reset_msgs/ResetResponse.h>
+#include <ugv_reset_msgs/ResetGrant.h>
+#include <ugv_reset_msgs/ResetSession.h>
 
 #include <cmath>
 #include <functional>
@@ -44,20 +44,28 @@ TEST(MecanumRosSandbox, PoseCommandFenceAndDrop) {
     ros::Publisher command_pub = nh.advertise<std_msgs::String>("/ugv_test/command", 10);
     ros::Publisher reset_pub = nh.advertise<geometry_msgs::Pose2D>("/ugv_test/reset_pose", 10);
 
-    ros::Publisher safe_pub =
-        nh.advertise<ugv_reset_msgs::ResetResponse>("/ugv_test/reset/response", 1);
+    // A minimal coordinator: while enabled it grants every session its whole straight route (the
+    // heartbeat is the repetition on each 5 Hz session message).
+    ros::Publisher grant_pub = nh.advertise<ugv_reset_msgs::ResetGrant>("/ugv_test/reset/grant", 5);
     bool grant_response = false;
-    ros::Subscriber request_sub = nh.subscribe<ugv_reset_msgs::ResetRequest>(
-        "/ugv_test/reset/request", 1, [&](const ugv_reset_msgs::ResetRequest::ConstPtr& request) {
-            if (!grant_response) {
+    ros::Subscriber session_sub = nh.subscribe<ugv_reset_msgs::ResetSession>(
+        "/ugv_test/reset/session", 5, [&](const ugv_reset_msgs::ResetSession::ConstPtr& session) {
+            if (!grant_response || session->phase == ugv_reset_msgs::ResetSession::PHASE_IDLE ||
+                session->phase == ugv_reset_msgs::ResetSession::PHASE_DONE) {
                 return;
             }
-            ugv_reset_msgs::ResetResponse reply;
-            reply.header = request->header;
-            reply.generation = request->generation;
-            reply.status = ugv_reset_msgs::ResetResponse::RUNNING;
-            reply.command.linear.x = 0.1;
-            safe_pub.publish(reply);
+            ugv_reset_msgs::ResetGrant grant;
+            grant.header.stamp = ros::Time::now();
+            grant.header.frame_id = "world";
+            grant.session = session->session;
+            grant.state = ugv_reset_msgs::ResetGrant::STATE_GO;
+            grant.grant_id = 1;
+            grant.start = session->pose;
+            grant.goal = session->target;
+            grant.final_move = true;
+            grant.s_limit = 1.0e9;
+            grant.ttl = 1.0;
+            grant_pub.publish(grant);
         });
     std::string control_state;
     geometry_msgs::Twist last_cmd;
@@ -102,7 +110,7 @@ TEST(MecanumRosSandbox, PoseCommandFenceAndDrop) {
         },
         2.0))
         << "expected Reset";
-    EXPECT_DOUBLE_EQ(last_cmd.linear.x, 0.0) << "missing coordinator must never drive";
+    EXPECT_DOUBLE_EQ(last_cmd.linear.x, 0.0) << "a vehicle without a grant must never drive";
     grant_response = true;
     ASSERT_TRUE(waitFor(
         [&]() {
@@ -116,8 +124,10 @@ TEST(MecanumRosSandbox, PoseCommandFenceAndDrop) {
             pose_pub.publish(makePose(0.0, 0.0, 0.0, ros::Time::now()));
             return last_cmd.linear.x == 0.0;
         },
-        1.0))
-        << "expired coordinator lease must stop";
+        2.0))
+        << "a lapsed grant heartbeat must stop";
+    EXPECT_TRUE(waitFor([&]() { return control_state == "Ready"; }, 3.0))
+        << "the vehicle ends its own session when the heartbeat lapses";
 
     ASSERT_TRUE(waitFor(
         [&]() {

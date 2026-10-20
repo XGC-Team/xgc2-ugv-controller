@@ -4,7 +4,7 @@
 #include <geometry_msgs/TwistStamped.h>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_client/reset_client.h>
+#include <ugv_reset_client/reset_ros.h>
 
 #include <algorithm>
 #include <cctype>
@@ -41,31 +41,6 @@ double finitePositiveOr(double value, double fallback) {
     return std::isfinite(value) && value > 0.0 ? value : fallback;
 }
 
-// The protocol's status values are the controller's.
-static_assert(static_cast<int>(ResetClearance::RUNNING) ==
-                  static_cast<int>(ugv_reset_client::ResetLease::RUNNING),
-              "");
-static_assert(static_cast<int>(ResetClearance::ARRIVED) ==
-                  static_cast<int>(ugv_reset_client::ResetLease::ARRIVED),
-              "");
-static_assert(static_cast<int>(ResetClearance::REJECTED) ==
-                  static_cast<int>(ugv_reset_client::ResetLease::REJECTED),
-              "");
-
-ResetClearance toResetClearance(const ugv_reset_client::ResetLease::Clearance& clearance) {
-    ResetClearance out;
-    out.generation = clearance.generation;
-    out.stamp_ns = clearance.stamp;
-    out.issue_wall = clearance.issue_wall;
-    out.status = static_cast<ResetClearance::Status>(clearance.status);
-    out.linear_x = clearance.command.x;
-    out.linear_y = clearance.command.y;
-    out.yaw_rate = clearance.command.yaw;
-    out.lease_seconds = clearance.lease_seconds;
-    out.reason = clearance.reason;
-    return out;
-}
-
 std::string normalize(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -80,8 +55,8 @@ class MecanumUgvRosNode {
         : nh_(nh),
           private_nh_("~"),
           controller_(state_),
-          reset_client_(nh_, [this](const ugv_reset_client::ResetLease::Clearance& clearance) {
-              controller_.setResetClearance(toResetClearance(clearance));
+          reset_edge_(nh_, [this](const ugv_reset_client::Grant& grant) {
+              controller_.onResetGrant(grant);
           }) {
         loadParams();
         controller_.setConfig(config_);
@@ -117,18 +92,18 @@ class MecanumUgvRosNode {
                 if (event.id == output_event_type::PUBLISH_CMD_VEL) {
                     const auto command = makeTwist(controller_.command());
                     cmd_vel_pub_.publish(command);
-                    reset_client_.noteApplied(
-                        {command.linear.x, command.linear.y, command.angular.z});
                 } else if (event.id == output_event_type::PUBLISH_ZERO_CMD_VEL) {
                     cmd_vel_pub_.publish(geometry_msgs::Twist{});
-                    reset_client_.noteApplied({});
                 }
             }
-            const ResetSession reset = controller_.resetSession();
-            reset_client_.update(reset.active, reset.generation,
-                                 {reset.target.x, reset.target.y, reset.target.yaw},
-                                 {state_.x, state_.y, state_.yaw}, toRosTime(state_.stamp),
-                                 controller_.healthReady());
+            ugv_reset_client::Session session;
+            if (controller_.takeResetSession(&session)) {
+                reset_edge_.publish(session);
+            }
+            ugv_reset_client::Result result;
+            if (controller_.takeResetResult(&result)) {
+                reset_edge_.publish(result);
+            }
             if (status_gate_.due(now, 1.0 / config_.status_publish_rate_hz)) {
                 std_msgs::String status;
                 status.data = controller_.stateMachine().currentStateName(region_type::CONTROL);
@@ -164,6 +139,22 @@ class MecanumUgvRosNode {
                           config_.heading_target_yaw);
         private_nh_.param("track/kp_yaw", config_.track_kp_yaw, config_.track_kp_yaw);
         private_nh_.param("reset/timeout", config_.reset_timeout, config_.reset_timeout);
+        private_nh_.param("reset/footprint/length", config_.reset_footprint_length,
+                          config_.reset_footprint_length);
+        private_nh_.param("reset/footprint/width", config_.reset_footprint_width,
+                          config_.reset_footprint_width);
+        private_nh_.param("reset/footprint/offset_x", config_.reset_footprint_offset_x,
+                          config_.reset_footprint_offset_x);
+        private_nh_.param("reset/footprint/offset_y", config_.reset_footprint_offset_y,
+                          config_.reset_footprint_offset_y);
+        private_nh_.param("reset/limits/max_linear_speed", config_.reset_max_linear_speed,
+                          config_.reset_max_linear_speed);
+        private_nh_.param("reset/limits/max_yaw_rate", config_.reset_max_yaw_rate,
+                          config_.reset_max_yaw_rate);
+        private_nh_.param("reset/limits/linear_acceleration", config_.reset_linear_acceleration,
+                          config_.reset_linear_acceleration);
+        private_nh_.param("reset/limits/angular_acceleration", config_.reset_angular_acceleration,
+                          config_.reset_angular_acceleration);
         private_nh_.param("max_linear_speed", config_.max_linear_speed, config_.max_linear_speed);
         private_nh_.param("max_yaw_rate", config_.max_yaw_rate, config_.max_yaw_rate);
         private_nh_.param("fence/x_min", config_.fence_x_min, config_.fence_x_min);
@@ -180,6 +171,12 @@ class MecanumUgvRosNode {
         config_.idle_cmd_rate_hz = finitePositiveOr(config_.idle_cmd_rate_hz, 5.0);
         config_.status_publish_rate_hz = finitePositiveOr(config_.status_publish_rate_hz, 5.0);
         config_.reset_timeout = finitePositiveOr(config_.reset_timeout, 90.0);
+        config_.reset_footprint_length = finitePositiveOr(config_.reset_footprint_length, 0.69);
+        config_.reset_footprint_width = finitePositiveOr(config_.reset_footprint_width, 0.64);
+        config_.reset_max_linear_speed = finitePositiveOr(config_.reset_max_linear_speed, 0.35);
+        config_.reset_max_yaw_rate = finitePositiveOr(config_.reset_max_yaw_rate, 0.5);
+        config_.reset_linear_acceleration = finitePositiveOr(config_.reset_linear_acceleration, 0.35);
+        config_.reset_angular_acceleration = finitePositiveOr(config_.reset_angular_acceleration, 0.6);
         config_.track_kp_yaw = finitePositiveOr(config_.track_kp_yaw, 1.2);
         config_.max_linear_speed = finitePositiveOr(config_.max_linear_speed, 1.0);
         config_.max_yaw_rate = finitePositiveOr(config_.max_yaw_rate, 1.0);
@@ -299,20 +296,6 @@ class MecanumUgvRosNode {
 
     geometry_msgs::Twist makeTwist(const ControlCommand& command) {
         geometry_msgs::Twist msg;
-        if (controller_.stateMachine().currentState(region_type::CONTROL) == state_type::Reset) {
-            const auto feedback =
-                controller_.resetFeedback(ros::Time::now().toNSec(), monotonicSeconds());
-            if (!feedback.valid || feedback.status != ResetClearance::RUNNING ||
-                std::abs(feedback.linear_x) > config_.max_linear_speed ||
-                std::abs(feedback.linear_y) > config_.max_linear_speed ||
-                std::abs(feedback.yaw_rate) > config_.max_yaw_rate) {
-                return msg;
-            }
-            msg.linear.x = feedback.linear_x;
-            msg.linear.y = feedback.linear_y;
-            msg.angular.z = feedback.yaw_rate;
-            return msg;
-        }
         if (!command.valid) {
             return msg;
         }
@@ -326,7 +309,7 @@ class MecanumUgvRosNode {
     ros::NodeHandle private_nh_;
     UgvState state_;
     MecanumUgvController controller_;
-    ugv_reset_client::ResetClient reset_client_;
+    ugv_reset_client::ResetRosEdge reset_edge_;
     ControllerConfig config_{};
     uint32_t queue_size_{10U};
     std::string pose_topic_{"pose"};

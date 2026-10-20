@@ -1,5 +1,6 @@
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <random>
@@ -30,7 +31,8 @@ void requireOk(const sm::Status& status, const char* operation) {
 }  // namespace
 
 UnicycleUgvController::UnicycleUgvController(const UgvState& state)
-    : state_(state), reset_generation_(std::random_device{}() & 0x7fffffffU) {
+    : state_(state), reset_session_counter_(std::random_device{}() & 0x7fffffffU) {
+    applyResetSpec();
     setupMachine();
 }
 
@@ -38,10 +40,16 @@ void UnicycleUgvController::update(double now_sec) {
     current_time_sec_ = now_sec;
     setCoreTime(now_sec);
     maybeUpdatePoseVelocity();
+    // The rotation-centre estimator and the measured velocity run in every CONTROL state: the
+    // turns of Custom1 teach the offset before a Reset starts.
+    if (state_.received) {
+        reset_executor_.observe(resetMeasurement());
+    }
     maybeAutoStartCustom1();
     if (machine_) {
         (void)machine_->update();
         noteResetAdmissionAfterUpdate();
+        logResetHold();
     }
 }
 
@@ -105,8 +113,27 @@ ControllerConfig UnicycleUgvController::config() const {
 }
 
 void UnicycleUgvController::setConfig(const ControllerConfig& config) {
-    std::lock_guard<std::mutex> lock(config_mutex_);
-    config_ = config;
+    {
+        std::lock_guard<std::mutex> lock(config_mutex_);
+        config_ = config;
+    }
+    applyResetSpec();
+}
+
+void UnicycleUgvController::applyResetSpec() {
+    const ControllerConfig cfg = config();
+    ugv_reset_client::VehicleSpec spec;
+    spec.model = ugv_reset_client::Model::Unicycle;
+    spec.footprint = {0.5 * cfg.reset_footprint_length, 0.5 * cfg.reset_footprint_width,
+                      cfg.reset_footprint_offset_x, cfg.reset_footprint_offset_y};
+    spec.max_v = std::min(cfg.reset_max_linear_speed, cfg.chassis_max_linear_speed);
+    spec.max_vy = 0.0;
+    spec.max_w = std::min(cfg.reset_max_yaw_rate, cfg.chassis_max_yaw_rate);
+    spec.acc_v = cfg.reset_linear_acceleration;
+    spec.acc_w = cfg.reset_angular_acceleration;
+    spec.ell_bound = cfg.reset_lateral_offset_bound;
+    reset_executor_.setSpec(spec);
+    reset_executor_.setTimeout(cfg.reset_timeout);
 }
 
 bool UnicycleUgvController::healthReady() const {
@@ -170,46 +197,63 @@ ResetTarget UnicycleUgvController::resetTarget() const {
     return reset_target_;
 }
 
-ResetSession UnicycleUgvController::resetSession() const {
-    std::lock_guard<std::mutex> lock(reset_mutex_);
-    return reset_session_;
+ugv_reset_client::Measurement UnicycleUgvController::resetMeasurement() const {
+    ugv_reset_client::Measurement m;
+    m.ros_now = current_time_sec_;
+    m.wall_now = monotonicSeconds();
+    m.pose = {state_.x, state_.y, state_.yaw};
+    m.pose_stamp = state_.stamp.toSec();
+    m.healthy = healthReady();
+    return m;
 }
 
 void UnicycleUgvController::beginResetSession(const ResetTarget& target) {
-    std::lock_guard<std::mutex> lock(reset_mutex_);
-    reset_session_ = ResetSession{};
-    reset_clearance_ = ResetClearance{};
-    // Refuse wraparound, which could admit a response of an older session.
-    if (reset_generation_ == std::numeric_limits<uint32_t>::max() || !std::isfinite(target.x) ||
-        !std::isfinite(target.y) || !std::isfinite(target.yaw)) {
+    // Refuse wraparound, which could confuse a grant of an older session with this one.
+    if (reset_session_counter_ == std::numeric_limits<uint32_t>::max()) {
+        reset_session_counter_ = 0U;
+    }
+    reset_executor_.begin(++reset_session_counter_, {target.x, target.y, target.yaw},
+                          target.valid && std::isfinite(target.x) && std::isfinite(target.y) &&
+                              std::isfinite(target.yaw),
+                          resetMeasurement());
+}
+
+void UnicycleUgvController::onResetGrant(const ugv_reset_client::Grant& grant) {
+    reset_executor_.onGrant(grant, resetMeasurement());
+}
+
+bool UnicycleUgvController::takeResetSession(ugv_reset_client::Session* session) {
+    const ugv_reset_client::Measurement m = resetMeasurement();
+    if (!reset_executor_.sessionDue(m)) {
+        return false;
+    }
+    *session = reset_executor_.makeSession(m);
+    return true;
+}
+
+bool UnicycleUgvController::takeResetResult(ugv_reset_client::Result* result) {
+    return reset_executor_.takeResult(result);
+}
+
+// What the coordinator says while it holds the vehicle, once per change.
+void UnicycleUgvController::logResetHold() {
+    if (!reset_executor_.active()) {
+        last_hold_logged_.clear();
         return;
     }
-    reset_session_ = ResetSession{true, ++reset_generation_, target};
-}
-
-void UnicycleUgvController::cancelResetSession() {
-    std::lock_guard<std::mutex> lock(reset_mutex_);
-    reset_session_ = ResetSession{};
-    reset_clearance_ = ResetClearance{};
-}
-
-void UnicycleUgvController::setResetClearance(const ResetClearance& clearance) {
-    std::lock_guard<std::mutex> lock(reset_mutex_);
-    reset_clearance_ = clearance;
-    reset_clearance_.valid = true;
-}
-
-ResetClearance UnicycleUgvController::resetFeedback(uint64_t now_ns, double wall) const {
-    std::lock_guard<std::mutex> lock(reset_mutex_);
-    const ResetClearance& c = reset_clearance_;
-    const uint64_t lease_ns = static_cast<uint64_t>(std::llround(c.lease_seconds * 1.0e9));
-    // A paused or rewound clock must not renew a moving command: both clocks must hold.
-    if (!reset_session_.active || !c.valid || c.generation != reset_session_.generation ||
-        c.stamp_ns == 0U || now_ns < c.stamp_ns || now_ns - c.stamp_ns > lease_ns ||
-        !std::isfinite(wall) || wall < c.issue_wall || wall - c.issue_wall > c.lease_seconds) {
-        return ResetClearance{};
+    std::string text = ugv_reset_client::name(reset_executor_.holdReason());
+    if (text.empty()) {
+        last_hold_logged_.clear();
+        return;
     }
-    return c;
+    text += ": " + reset_executor_.holdDetail();
+    for (const std::string& who : reset_executor_.holdBlockers()) {
+        text += " [" + who + "]";
+    }
+    if (text != last_hold_logged_) {
+        last_hold_logged_ = text;
+        UGV_LOG_INFO("[UnicycleUgvController] Reset held by the coordinator: %s", text.c_str());
+    }
 }
 
 CmdVel UnicycleUgvController::cmdVel() const {
@@ -221,18 +265,6 @@ CmdVel UnicycleUgvController::cmdVel() const {
         return out;
     }
     const auto control = machine_->currentState(region_type::CONTROL);
-    if (control == state_type::Reset) {
-        const ResetClearance feedback =
-            resetFeedback(Time(current_time_sec_).toNSec(), monotonicSeconds());
-        if (!feedback.valid || feedback.status != ResetClearance::RUNNING ||
-            std::abs(feedback.linear_x) > cfg.chassis_max_linear_speed ||
-            feedback.linear_y != 0.0 || std::abs(feedback.yaw_rate) > cfg.chassis_max_yaw_rate) {
-            return out;
-        }
-        out.linear_x = feedback.linear_x;
-        out.angular_z = feedback.yaw_rate;
-        return out;
-    }
     if (control == state_type::Custom1 && cfg.tracking_strategy == TrackingStrategy::NMPC) {
         out.linear_x = clamp(current.linear_speed, cfg.min_linear_speed, cfg.max_linear_speed);
         out.angular_z = clamp(current.angular_speed, -cfg.max_angular_speed, cfg.max_angular_speed);

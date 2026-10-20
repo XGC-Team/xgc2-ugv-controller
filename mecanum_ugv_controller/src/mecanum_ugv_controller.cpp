@@ -1,5 +1,6 @@
 #include "mecanum_ugv_controller/mecanum_ugv_controller.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <random>
@@ -30,17 +31,23 @@ void requireOk(const sm::Status& status, const char* operation) {
 }  // namespace
 
 MecanumUgvController::MecanumUgvController(const UgvState& state)
-    : state_(state), reset_generation_(std::random_device{}() & 0x7fffffffU) {
+    : state_(state), reset_session_counter_(std::random_device{}() & 0x7fffffffU) {
+    applyResetSpec();
     setupMachine();
 }
 
 void MecanumUgvController::update(double now_sec) {
     current_time_sec_ = now_sec;
     setCoreTime(now_sec);
+    // The measured velocity runs in every CONTROL state (the arrival gate needs it).
+    if (state_.received) {
+        reset_executor_.observe(resetMeasurement());
+    }
     maybeAutoStartCustom1();
     if (machine_) {
         (void)machine_->update();
         noteResetAdmissionAfterUpdate();
+        logResetHold();
     }
 }
 
@@ -104,8 +111,27 @@ ControllerConfig MecanumUgvController::config() const {
 }
 
 void MecanumUgvController::setConfig(const ControllerConfig& config) {
-    std::lock_guard<std::mutex> lock(config_mutex_);
-    config_ = config;
+    {
+        std::lock_guard<std::mutex> lock(config_mutex_);
+        config_ = config;
+    }
+    applyResetSpec();
+}
+
+void MecanumUgvController::applyResetSpec() {
+    const ControllerConfig cfg = config();
+    ugv_reset_client::VehicleSpec spec;
+    spec.model = ugv_reset_client::Model::Omni;
+    spec.footprint = {0.5 * cfg.reset_footprint_length, 0.5 * cfg.reset_footprint_width,
+                      cfg.reset_footprint_offset_x, cfg.reset_footprint_offset_y};
+    spec.max_v = std::min(cfg.reset_max_linear_speed, cfg.max_linear_speed);
+    spec.max_vy = spec.max_v;
+    spec.max_w = std::min(cfg.reset_max_yaw_rate, cfg.max_yaw_rate);
+    spec.acc_v = cfg.reset_linear_acceleration;
+    spec.acc_w = cfg.reset_angular_acceleration;
+    spec.ell_bound = 0.0;
+    reset_executor_.setSpec(spec);
+    reset_executor_.setTimeout(cfg.reset_timeout);
 }
 
 bool MecanumUgvController::healthReady() const {
@@ -130,46 +156,63 @@ ResetTarget MecanumUgvController::resetTarget() const {
     return reset_target_;
 }
 
-ResetSession MecanumUgvController::resetSession() const {
-    std::lock_guard<std::mutex> lock(reset_mutex_);
-    return reset_session_;
+ugv_reset_client::Measurement MecanumUgvController::resetMeasurement() const {
+    ugv_reset_client::Measurement m;
+    m.ros_now = current_time_sec_;
+    m.wall_now = monotonicSeconds();
+    m.pose = {state_.x, state_.y, state_.yaw};
+    m.pose_stamp = state_.stamp.toSec();
+    m.healthy = healthReady();
+    return m;
 }
 
 void MecanumUgvController::beginResetSession(const ResetTarget& target) {
-    std::lock_guard<std::mutex> lock(reset_mutex_);
-    reset_session_ = ResetSession{};
-    reset_clearance_ = ResetClearance{};
-    // Refuse wraparound, which could admit a response of an older session.
-    if (reset_generation_ == std::numeric_limits<uint32_t>::max() || !std::isfinite(target.x) ||
-        !std::isfinite(target.y) || !std::isfinite(target.yaw)) {
+    // Refuse wraparound, which could confuse a grant of an older session with this one.
+    if (reset_session_counter_ == std::numeric_limits<uint32_t>::max()) {
+        reset_session_counter_ = 0U;
+    }
+    reset_executor_.begin(++reset_session_counter_, {target.x, target.y, target.yaw},
+                          target.valid && std::isfinite(target.x) && std::isfinite(target.y) &&
+                              std::isfinite(target.yaw),
+                          resetMeasurement());
+}
+
+void MecanumUgvController::onResetGrant(const ugv_reset_client::Grant& grant) {
+    reset_executor_.onGrant(grant, resetMeasurement());
+}
+
+bool MecanumUgvController::takeResetSession(ugv_reset_client::Session* session) {
+    const ugv_reset_client::Measurement m = resetMeasurement();
+    if (!reset_executor_.sessionDue(m)) {
+        return false;
+    }
+    *session = reset_executor_.makeSession(m);
+    return true;
+}
+
+bool MecanumUgvController::takeResetResult(ugv_reset_client::Result* result) {
+    return reset_executor_.takeResult(result);
+}
+
+// What the coordinator says while it holds the vehicle, once per change.
+void MecanumUgvController::logResetHold() {
+    if (!reset_executor_.active()) {
+        last_hold_logged_.clear();
         return;
     }
-    reset_session_ = ResetSession{true, ++reset_generation_, target};
-}
-
-void MecanumUgvController::cancelResetSession() {
-    std::lock_guard<std::mutex> lock(reset_mutex_);
-    reset_session_ = ResetSession{};
-    reset_clearance_ = ResetClearance{};
-}
-
-void MecanumUgvController::setResetClearance(const ResetClearance& clearance) {
-    std::lock_guard<std::mutex> lock(reset_mutex_);
-    reset_clearance_ = clearance;
-    reset_clearance_.valid = true;
-}
-
-ResetClearance MecanumUgvController::resetFeedback(uint64_t now_ns, double wall) const {
-    std::lock_guard<std::mutex> lock(reset_mutex_);
-    const ResetClearance& c = reset_clearance_;
-    const uint64_t lease_ns = static_cast<uint64_t>(std::llround(c.lease_seconds * 1.0e9));
-    // A paused or rewound clock must not renew a moving command: both clocks must hold.
-    if (!reset_session_.active || !c.valid || c.generation != reset_session_.generation ||
-        c.stamp_ns == 0U || now_ns < c.stamp_ns || now_ns - c.stamp_ns > lease_ns ||
-        !std::isfinite(wall) || wall < c.issue_wall || wall - c.issue_wall > c.lease_seconds) {
-        return ResetClearance{};
+    std::string text = ugv_reset_client::name(reset_executor_.holdReason());
+    if (text.empty()) {
+        last_hold_logged_.clear();
+        return;
     }
-    return c;
+    text += ": " + reset_executor_.holdDetail();
+    for (const std::string& who : reset_executor_.holdBlockers()) {
+        text += " [" + who + "]";
+    }
+    if (text != last_hold_logged_) {
+        last_hold_logged_ = text;
+        MECANUM_LOG_INFO("[MecanumUgvController] Reset held by the coordinator: %s", text.c_str());
+    }
 }
 
 bool MecanumUgvController::worldReferenceReady() const {

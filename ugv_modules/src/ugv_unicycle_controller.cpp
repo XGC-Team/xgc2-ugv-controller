@@ -11,14 +11,15 @@
 //   in  state            state  xgc2.ugv.planar_state.v1                      required
 //   in  command          event  xgc2.ugv.command.v1
 //   in  reset_target     state  xgc2.ugv.reset_target.v1
-//   in  reset_clearance  state  xgc2.ugv.reset_clearance.v1
+//   in  reset_grant      event  xgc2.ugv.reset_grant.v1, 16     (the coordinator's messages, in order)
 //   in  active_analytic  state  xgc2.ugv.unicycle_reference.analytic.v1       (NMPC)
 //   in  active_polynomial state xgc2.ugv.unicycle_reference.polynomial.v1     (NMPC)
 //   in  active_sampled   state  xgc2.ugv.unicycle_reference.sampled.v1        (NMPC)
 //   in  pva              state  xgc2.ugv.planar_pva.v1                        (flatness)
 //   out cmd_vel          state  xgc2.ugv.cmd_vel.v1
 //   out status           state  xgc2.ugv.controller_status.v1
-//   out reset_session    state  xgc2.ugv.reset_session.v1
+//   out reset_session    state  xgc2.ugv.reset_session.v2      (the executor decides when it is due)
+//   out reset_result     event  xgc2.ugv.reset_result.v1, 4    (the one outcome of a session)
 //
 // The configuration is a JSON object with the keys of config/unicycle_ugv_controller.yaml
 // (state_source, tracking_strategy, limits/*, nmpc/*, flatness/*, fence/*, reset/*, chassis/*,
@@ -40,6 +41,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
@@ -60,13 +62,14 @@ namespace {
 
 using namespace ugv_modules;
 namespace ugv = unicycle_ugv_controller;
+namespace rc = ugv_reset_client;
 namespace sm = ::state_machine;
 
 enum Port : uint32_t {
     kState = 0,
     kCommand,
     kResetTarget,
-    kResetClearance,
+    kResetGrant,
     kActiveAnalytic,
     kActivePolynomial,
     kActiveSampled,
@@ -74,6 +77,7 @@ enum Port : uint32_t {
     kCmdVel,
     kStatus,
     kResetSession,
+    kResetResult,
     kPortCount
 };
 constexpr uint32_t kInputCount = kCmdVel;
@@ -84,8 +88,8 @@ const xgc2_port_desc kPorts[kPortCount] = {
     port<xgc2_ugv_command>("command", XGC2_PORT_IN, XGC2_PORT_EVENT, XGC2_UGV_SCHEMA_COMMAND, 8U),
     port<xgc2_ugv_reset_target>("reset_target", XGC2_PORT_IN, XGC2_PORT_STATE,
                                 XGC2_UGV_SCHEMA_RESET_TARGET),
-    port<xgc2_ugv_reset_clearance>("reset_clearance", XGC2_PORT_IN, XGC2_PORT_STATE,
-                                   XGC2_UGV_SCHEMA_RESET_CLEARANCE),
+    port<xgc2_ugv_reset_grant>("reset_grant", XGC2_PORT_IN, XGC2_PORT_EVENT,
+                               XGC2_UGV_SCHEMA_RESET_GRANT, 16U),
     port<xgc2_ugv_analytic_reference>("active_analytic", XGC2_PORT_IN, XGC2_PORT_STATE,
                                       XGC2_UGV_SCHEMA_ANALYTIC_REFERENCE),
     port<xgc2_ugv_polynomial_reference>("active_polynomial", XGC2_PORT_IN, XGC2_PORT_STATE,
@@ -98,6 +102,8 @@ const xgc2_port_desc kPorts[kPortCount] = {
                                      XGC2_UGV_SCHEMA_CONTROLLER_STATUS),
     port<xgc2_ugv_reset_session>("reset_session", XGC2_PORT_OUT, XGC2_PORT_STATE,
                                  XGC2_UGV_SCHEMA_RESET_SESSION),
+    port<xgc2_ugv_reset_result>("reset_result", XGC2_PORT_OUT, XGC2_PORT_EVENT,
+                                XGC2_UGV_SCHEMA_RESET_RESULT, 4U),
 };
 
 // The payload constants are the core's.
@@ -105,9 +111,19 @@ static_assert(XGC2_UGV_CONTROL_SELF_CHECK == ugv::state_type::SelfCheck, "");
 static_assert(XGC2_UGV_CONTROL_READY == ugv::state_type::Ready, "");
 static_assert(XGC2_UGV_CONTROL_CUSTOM1 == ugv::state_type::Custom1, "");
 static_assert(XGC2_UGV_CONTROL_RESET == ugv::state_type::Reset, "");
-static_assert(XGC2_UGV_RESET_RUNNING == ugv::ResetClearance::RUNNING, "");
-static_assert(XGC2_UGV_RESET_ARRIVED == ugv::ResetClearance::ARRIVED, "");
-static_assert(XGC2_UGV_RESET_REJECTED == ugv::ResetClearance::REJECTED, "");
+static_assert(XGC2_UGV_RESET_PHASE_IDLE == static_cast<uint32_t>(rc::Phase::Idle), "");
+static_assert(XGC2_UGV_RESET_PHASE_REQUESTING == static_cast<uint32_t>(rc::Phase::Requesting), "");
+static_assert(XGC2_UGV_RESET_PHASE_WAITING == static_cast<uint32_t>(rc::Phase::Waiting), "");
+static_assert(XGC2_UGV_RESET_PHASE_MOVING == static_cast<uint32_t>(rc::Phase::Moving), "");
+static_assert(XGC2_UGV_RESET_PHASE_SETTLING == static_cast<uint32_t>(rc::Phase::Settling), "");
+static_assert(XGC2_UGV_RESET_PHASE_DONE == static_cast<uint32_t>(rc::Phase::Done), "");
+static_assert(XGC2_UGV_RESET_MODEL_UNICYCLE == static_cast<uint32_t>(rc::Model::Unicycle), "");
+static_assert(XGC2_UGV_RESET_MODEL_OMNI == static_cast<uint32_t>(rc::Model::Omni), "");
+static_assert(XGC2_UGV_RESET_GRANT_HOLD == static_cast<uint32_t>(rc::GrantState::Hold), "");
+static_assert(XGC2_UGV_RESET_GRANT_GO == static_cast<uint32_t>(rc::GrantState::Go), "");
+static_assert(XGC2_UGV_RESET_GRANT_BRAKE == static_cast<uint32_t>(rc::GrantState::Brake), "");
+static_assert(XGC2_UGV_RESET_GRANT_REJECT == static_cast<uint32_t>(rc::GrantState::Reject), "");
+static_assert(XGC2_UGV_MAX_RESET_VIA == rc::kMaxVia, "");
 static_assert(XGC2_UGV_ANALYTIC_HOLD == ugv::reference::AnalyticReference::ANALYTIC_HOLD, "");
 static_assert(XGC2_UGV_ANALYTIC_CIRCLE == ugv::reference::AnalyticReference::ANALYTIC_CIRCLE, "");
 static_assert(XGC2_UGV_ANALYTIC_CIRCLE_ENTRY ==
@@ -264,7 +280,7 @@ class Instance {
         readState(now);
         readResetTarget(now);
         readReferences(now);
-        readClearance();
+        readGrants();
         readCommands(ctx.now_ns, now);
 
         controller_.update(now);
@@ -278,6 +294,7 @@ class Instance {
         // Commit last: the consumers run right after this step.
         dispatchOutputs(controller_.stateMachine().currentOutputEvents(), now);
         publishResetSession(ctx.now_ns);
+        publishResetResult(ctx.now_ns);
         publishStatusIfDue(ctx.now_ns);
         publishCmdVel(ctx.now_ns);
     }
@@ -446,26 +463,36 @@ class Instance {
         post(ugv::event_type::INPUT_REFERENCE_UPDATED, reference.stamp.toSec(), "reference_pva");
     }
 
-    void readClearance() {
-        const auto sample = host_.latest<xgc2_ugv_reset_clearance>(kResetClearance);
-        if (!seen_.fresh(kResetClearance, sample)) {
-            return;
+    // The coordinator's messages for the vehicle's session, in order (a brake and a new route can
+    // arrive in the same step). The controller's executor drops what answers another session.
+    void readGrants() {
+        for (;;) {
+            const auto sample = host_.next<xgc2_ugv_reset_grant>(kResetGrant);
+            if (!sample) {
+                return;
+            }
+            const xgc2_ugv_reset_grant& p = *sample;
+            if (p.state > XGC2_UGV_RESET_GRANT_REJECT || p.via_count > XGC2_UGV_MAX_RESET_VIA) {
+                host_.log(kLogWarn, "Ignoring a malformed reset grant");
+                continue;
+            }
+            rc::Grant grant;
+            grant.session = p.session;
+            grant.state = static_cast<rc::GrantState>(p.state);
+            grant.grant_id = p.grant_id;
+            grant.start = {p.start_x, p.start_y, p.start_yaw};
+            grant.goal = {p.goal_x, p.goal_y, p.goal_yaw};
+            grant.final_move = p.final_move != 0U;
+            grant.ell_plan = p.ell_plan;
+            grant.s_limit = p.s_limit;
+            grant.ttl = p.ttl;
+            grant.reason = static_cast<rc::Reason>(p.reason);
+            grant.detail.assign(p.detail, strnlen(p.detail, sizeof(p.detail)));
+            for (uint32_t i = 0; i < p.via_count; ++i) {
+                grant.via.push_back({p.via[i][0], p.via[i][1]});
+            }
+            controller_.onResetGrant(grant);
         }
-        const xgc2_ugv_reset_clearance& p = *sample;
-        if (p.status > XGC2_UGV_RESET_REJECTED || p.stamp_ns <= 0) {
-            host_.log(kLogWarn, "Ignoring a malformed reset clearance");
-            return;
-        }
-        ugv::ResetClearance clearance;
-        clearance.generation = p.generation;
-        clearance.stamp_ns = static_cast<uint64_t>(p.stamp_ns);
-        clearance.issue_wall = p.issue_wall;
-        clearance.status = static_cast<ugv::ResetClearance::Status>(p.status);
-        clearance.linear_x = p.linear_x;
-        clearance.linear_y = p.linear_y;
-        clearance.yaw_rate = p.yaw_rate;
-        clearance.lease_seconds = p.lease_seconds;
-        controller_.setResetClearance(clearance);
     }
 
     void readCommands(int64_t now_ns, double now) {
@@ -532,37 +559,65 @@ class Instance {
         slot.commit(now_ns);
     }
 
-    // The Reset session and the health the vehicle's requests are issued under; it is written when
-    // one of them changes, and the edge keeps requesting for as long as it holds.
+    // The vehicle's Session for the coordinator: the executor says when one is due (every 0.2 s and
+    // on every change of phase or session).
     void publishResetSession(int64_t now_ns) {
-        const ugv::ResetSession session = controller_.resetSession();
-        const bool healthy = controller_.healthReady();
-        const uint32_t flags = (session.active ? XGC2_UGV_RESET_SESSION_ACTIVE : 0U) |
-                               (healthy ? XGC2_UGV_RESET_SESSION_HEALTHY : 0U);
-        const bool same =
-            session_published_ && flags == session_flags_ &&
-            session.generation == session_generation_ && session.target.x == session_target_[0] &&
-            session.target.y == session_target_[1] && session.target.yaw == session_target_[2];
-        if (same) {
+        rc::Session session;
+        if (!controller_.takeResetSession(&session)) {
             return;
         }
         auto slot = host_.write<xgc2_ugv_reset_session>(kResetSession);
         if (!slot) {
             return;
         }
+        slot->stamp_ns = now_ns;
+        slot->pose_stamp_ns = static_cast<int64_t>(std::llround(session.pose_stamp * 1.0e9));
+        slot->pose_x = session.pose.x;
+        slot->pose_y = session.pose.y;
+        slot->pose_yaw = session.pose.yaw;
         slot->target_x = session.target.x;
         slot->target_y = session.target.y;
         slot->target_yaw = session.target.yaw;
-        slot->generation = session.generation;
-        slot->flags = flags;
-        if (slot.commit(now_ns)) {
-            session_published_ = true;
-            session_flags_ = flags;
-            session_generation_ = session.generation;
-            session_target_[0] = session.target.x;
-            session_target_[1] = session.target.y;
-            session_target_[2] = session.target.yaw;
+        slot->progress = session.progress;
+        slot->cross_track = session.cross_track;
+        slot->half_length = session.spec.footprint.half_length;
+        slot->half_width = session.spec.footprint.half_width;
+        slot->offset_x = session.spec.footprint.offset_x;
+        slot->offset_y = session.spec.footprint.offset_y;
+        slot->max_v = session.spec.max_v;
+        slot->max_vy = session.spec.max_vy;
+        slot->max_w = session.spec.max_w;
+        slot->acc_v = session.spec.acc_v;
+        slot->acc_w = session.spec.acc_w;
+        slot->ell_hat = session.ell_hat;
+        slot->ell_spread = session.ell_spread;
+        slot->ell_bound = session.spec.ell_bound;
+        slot->session = session.session;
+        slot->phase = static_cast<uint32_t>(session.phase);
+        slot->model = static_cast<uint32_t>(session.spec.model);
+        slot->healthy = session.healthy ? 1U : 0U;
+        slot.commit(now_ns);
+    }
+
+    void publishResetResult(int64_t now_ns) {
+        rc::Result result;
+        if (!controller_.resetExecutor().resultPending()) {
+            return;
         }
+        auto slot = host_.write<xgc2_ugv_reset_result>(kResetResult);
+        if (!slot) {
+            return;  // the queue is full: the result stays pending for the next step
+        }
+        controller_.takeResetResult(&result);
+        slot->stamp_ns = now_ns;
+        slot->final_planar_error = result.final_planar_error;
+        slot->final_yaw_error = result.final_yaw_error;
+        slot->duration = result.duration;
+        slot->session = result.session;
+        slot->outcome = static_cast<uint32_t>(result.outcome);
+        slot->reason = static_cast<uint32_t>(result.reason);
+        std::strncpy(slot->detail, result.detail.c_str(), sizeof(slot->detail) - 1U);
+        slot.commit(now_ns);
     }
 
     void publishStatusIfDue(int64_t now_ns) {
@@ -626,10 +681,6 @@ class Instance {
     sm::StateId last_control_state_{0U};
     sm::StateId last_health_state_{0U};
     int64_t last_status_ns_{0};
-    bool session_published_{false};
-    uint32_t session_flags_{0U};
-    uint32_t session_generation_{0U};
-    double session_target_[3]{0.0, 0.0, 0.0};
 };
 
 const xgc2_module_desc kDescriptor = {XGC2_MODULE_ABI_MAJOR,

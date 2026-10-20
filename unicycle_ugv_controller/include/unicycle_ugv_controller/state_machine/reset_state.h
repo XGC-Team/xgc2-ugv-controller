@@ -2,6 +2,7 @@
 
 #include <state_machine/state_machine.hpp>
 #include <string>
+#include <ugv_reset_client/reset_protocol.h>
 
 #include "unicycle_ugv_controller/common/types.h"
 #include "unicycle_ugv_controller/state_machine/periodic_gate.h"
@@ -24,12 +25,11 @@ class ResetState final : public ::state_machine::State {
     void emitCommand(::state_machine::StateContext& ctx, const ControlCommand& command);
     void emitZero(::state_machine::StateContext& ctx, bool force = false);
     void postDone(::state_machine::StateContext& ctx, ::state_machine::EventId id,
-                  const std::string& detail = std::string());
+                  const ugv_reset_client::Result& result);
 
     UnicycleUgvController& controller_;
     PeriodicGate command_gate_;
     double enter_time_{0.0};
-    double enter_wall_{0.0};
     bool ended_{false};  // the session already ended with a logged outcome
 };
 

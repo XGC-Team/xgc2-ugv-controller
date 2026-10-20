@@ -259,7 +259,7 @@ TEST(ResetExecutor, EveryFailsafeEndsTheSessionWithItsOwnTypedResult) {
         g.blockers = {"ugv3"};
         rig.exec().onGrant(g, rig.measurement());
         const rc::StepOutput out = rig.exec().step(rig.measurement());
-        (void)out;
+        EXPECT_TRUE(out.ended) << "the controller hears of a rejection at its next step";
         rc::Result result;
         ASSERT_TRUE(rig.exec().takeResult(&result));
         EXPECT_EQ(result.outcome, rc::Outcome::Infeasible);
