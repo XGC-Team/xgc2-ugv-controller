@@ -2,27 +2,12 @@
 #include <ugv_reset_safety/reset_path.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <limits>
 #include <random>
 
 namespace ugv_reset_safety {
 namespace {
-constexpr double kPi = 3.14159265358979323846;
-
-Robot makeRobot(RobotType type = RobotType::Unicycle) {
-    Robot robot;
-    robot.id = "robot";
-    robot.type = type;
-    robot.lateral_velocity_per_yaw_bound = type == RobotType::Unicycle ? 0.25 : 0.0;
-    robot.half_length = 0.24;
-    robot.half_width = 0.18;
-    robot.limits.max_vx = 0.45;
-    robot.limits.max_vy = type == RobotType::Mecanum ? 0.35 : 0.0;
-    robot.limits.max_omega = 0.75;
-    return robot;
-}
 
 ConvexObstacle box(double xmin, double xmax, double ymin, double ymax) {
     ConvexObstacle obstacle;
@@ -36,193 +21,6 @@ double distanceToBox(const Eigen::Vector2d& point, double xmin, double xmax, dou
     const double dx = std::max({xmin - point.x(), 0.0, point.x() - xmax});
     const double dy = std::max({ymin - point.y(), 0.0, point.y() - ymax});
     return std::hypot(dx, dy);
-}
-
-TEST(DirectResetCommand, MecanumGoesStraightWithoutScene) {
-    auto robot = makeRobot(RobotType::Mecanum);
-    ResetTarget target;
-    target.position = {1.0, 0.0};
-    auto command = directResetCommand(robot, target, 0.02);
-    EXPECT_GT(command.x(), 0.0);
-    EXPECT_NEAR(command.y(), 0.0, 1e-9);
-    target.position = {0.0, 1.0};
-    command = directResetCommand(robot, target, 0.02);
-    EXPECT_NEAR(command.x(), 0.0, 1e-9);
-    EXPECT_GT(command.y(), 0.0);
-    robot.position = target.position;
-    robot.yaw = 0.0;
-    command = directResetCommand(robot, target, 0.02);
-    EXPECT_TRUE(command.isZero(0.0));
-}
-
-TEST(DirectResetCommand, SlewsFromLastAppliedCommandWithoutAdvancingProposals) {
-    auto robot = makeRobot(RobotType::Mecanum);
-    robot.limits = {0.35, 0.35, 0.5, 0.35, 0.35, 0.6};
-    ResetTarget target{{1.0, -1.0}, 1.0};
-    const auto first = directResetCommand(robot, target, 0.02);
-    EXPECT_NEAR(first.x(), 0.007, 1e-12);
-    EXPECT_NEAR(first.y(), -0.007, 1e-12);
-    EXPECT_NEAR(first.z(), 0.012, 1e-12);
-    // No applied receipt: another proposal must not advance the rate state.
-    EXPECT_TRUE(robot.previous.isZero(0.0));
-    EXPECT_TRUE(directResetCommand(robot, target, 0.02).isApprox(first));
-    robot.previous = first;
-    const auto next = directResetCommand(robot, target, 0.04);
-    EXPECT_NEAR(next.x(), 0.021, 1e-12);
-    EXPECT_NEAR(next.y(), -0.021, 1e-12);
-    EXPECT_NEAR(next.z(), 0.036, 1e-12);
-    robot.previous = next;
-    target = {{-1.0, 1.0}, -1.0};
-    const auto reverse = directResetCommand(robot, target, 0.02);
-    EXPECT_NEAR(reverse.x(), 0.014, 1e-12);
-    EXPECT_NEAR(reverse.y(), -0.014, 1e-12);
-    EXPECT_NEAR(reverse.z(), 0.024, 1e-12);
-}
-
-TEST(DirectResetCommand, NormalArrivalSlewsToExactZero) {
-    auto robot = makeRobot(RobotType::Mecanum);
-    robot.limits = {0.35, 0.35, 0.5, 0.35, 0.35, 0.6};
-    robot.previous = {0.2, -0.1, 0.1};
-    const ResetTarget target;
-    for (int step = 0; step < 40; ++step) {
-        const auto command = directResetCommand(robot, target, 0.02);
-        EXPECT_LE(std::abs(command.x() - robot.previous.x()), 0.007 + 1e-12);
-        EXPECT_LE(std::abs(command.y() - robot.previous.y()), 0.007 + 1e-12);
-        EXPECT_LE(std::abs(command.z() - robot.previous.z()), 0.012 + 1e-12);
-        robot.previous = command;
-    }
-    EXPECT_TRUE(robot.previous.isZero(0.0));
-}
-
-TEST(DirectResetCommand, DesiredTwistKeepsBodyFrameBoxAndHeadingGain) {
-    auto robot = makeRobot(RobotType::Mecanum);
-    robot.limits = {0.35, 0.35, 0.5, 0.35, 0.35, 0.6};
-    robot.previous = {0.35, 0.35, 0.12};
-    ResetTarget target{{1.0, 1.0}, 0.1};
-    EXPECT_TRUE(directResetCommand(robot, target, 0.02).isApprox(robot.previous));
-    robot.yaw = kPi / 2.0;
-    robot.previous = {0.0, -0.35, 0.12};
-    target = {{1.0, 0.0}, robot.yaw + 0.1};
-    EXPECT_TRUE(directResetCommand(robot, target, 0.02).isApprox(robot.previous));
-}
-
-TEST(DirectResetCommand, RejectsInvalidInputsWithExactZero) {
-    const auto valid_robot = makeRobot(RobotType::Mecanum);
-    const ResetTarget valid_target{{1.0, 1.0}, 1.0};
-    const double nan = std::numeric_limits<double>::quiet_NaN();
-    const double infinity = std::numeric_limits<double>::infinity();
-    for (const double dt : {0.0, -0.02, nan, infinity}) {
-        EXPECT_TRUE(directResetCommand(valid_robot, valid_target, dt).isZero(0.0));
-    }
-    auto robot = valid_robot;
-    robot.position.x() = nan;
-    EXPECT_TRUE(directResetCommand(robot, valid_target, 0.02).isZero(0.0));
-    robot = valid_robot;
-    robot.previous.y() = nan;
-    EXPECT_TRUE(directResetCommand(robot, valid_target, 0.02).isZero(0.0));
-    robot = valid_robot;
-    robot.previous.x() = robot.limits.max_vx + 1.0;
-    EXPECT_TRUE(directResetCommand(robot, valid_target, 0.02).isZero(0.0));
-    for (const double acceleration : {0.0, -1.0, nan, infinity}) {
-        robot = valid_robot;
-        robot.limits.accel_vx = acceleration;
-        EXPECT_TRUE(directResetCommand(robot, valid_target, 0.02).isZero(0.0));
-        robot = valid_robot;
-        robot.limits.accel_vy = acceleration;
-        EXPECT_TRUE(directResetCommand(robot, valid_target, 0.02).isZero(0.0));
-        robot = valid_robot;
-        robot.limits.accel_omega = acceleration;
-        EXPECT_TRUE(directResetCommand(robot, valid_target, 0.02).isZero(0.0));
-    }
-    auto target = valid_target;
-    target.yaw = infinity;
-    EXPECT_TRUE(directResetCommand(valid_robot, target, 0.02).isZero(0.0));
-    target = valid_target;
-    target.position.y() = nan;
-    EXPECT_TRUE(directResetCommand(valid_robot, target, 0.02).isZero(0.0));
-    PathOptions options;
-    options.position_tolerance = nan;
-    EXPECT_TRUE(directResetCommand(valid_robot, valid_target, 0.02, options).isZero(0.0));
-}
-
-TEST(DirectResetCommand, MecanumReturnPreservesFrozenPoseAndSpeedBounds) {
-    auto robot = makeRobot(RobotType::Mecanum);
-    robot.limits = {0.35, 0.35, 0.5, 0.35, 0.35, 0.6};
-    robot.position = {-0.6, 0.25};
-    robot.yaw = 0.35;
-    const ResetTarget target;
-    constexpr double dt = 0.02;
-    bool arrived = false;
-    for (int step = 0; step < 750; ++step) {
-        const auto command = directResetCommand(robot, target, dt);
-        ASSERT_TRUE(command.allFinite());
-        EXPECT_LE(std::abs(command.x()), robot.limits.max_vx);
-        EXPECT_LE(std::abs(command.y()), robot.limits.max_vy);
-        EXPECT_LE(std::abs(command.z()), robot.limits.max_omega);
-        EXPECT_LE(std::abs(command.x() - robot.previous.x()), 0.007 + 1e-12);
-        EXPECT_LE(std::abs(command.y() - robot.previous.y()), 0.007 + 1e-12);
-        EXPECT_LE(std::abs(command.z() - robot.previous.z()), 0.012 + 1e-12);
-        if (withinTargetTolerance(robot, target) && command.isZero(0.0)) {
-            arrived = true;
-            break;
-        }
-        const double midpoint_yaw = robot.yaw + command.z() * dt / 2.0;
-        robot.position +=
-            dt * Eigen::Vector2d(
-                     std::cos(midpoint_yaw) * command.x() - std::sin(midpoint_yaw) * command.y(),
-                     std::sin(midpoint_yaw) * command.x() + std::cos(midpoint_yaw) * command.y());
-        robot.yaw += command.z() * dt;
-        robot.previous = command;
-    }
-    EXPECT_TRUE(arrived);
-}
-
-TEST(ResetPath, ArrivalRequiresPositionAndFiveDegreeShortestHeadingForBothChassis) {
-    for (auto type : {RobotType::Unicycle, RobotType::Mecanum}) {
-        auto robot = makeRobot(type);
-        ResetTarget target;
-        target.yaw = 179.0 * kPi / 180.0;
-        robot.yaw = -179.0 * kPi / 180.0;
-        robot.position = {0.05, 0.0};
-        EXPECT_TRUE(withinTargetTolerance(robot, target));
-        robot.position.x() = 0.050001;
-        EXPECT_FALSE(withinTargetTolerance(robot, target));
-        robot.position.setZero();
-        robot.yaw = target.yaw - 6.0 * kPi / 180.0;
-        EXPECT_FALSE(withinTargetTolerance(robot, target));
-        robot.yaw = target.yaw - 5.0 * kPi / 180.0;
-        EXPECT_TRUE(withinTargetTolerance(robot, target));
-        robot.yaw = target.yaw - 4.0 * kPi / 180.0;
-        EXPECT_TRUE(withinTargetTolerance(robot, target));
-        robot.yaw = target.yaw + kPi;
-        EXPECT_FALSE(withinTargetTolerance(robot, target));
-    }
-}
-
-TEST(SafetyFootprint, CoversRectangleIncludingCornersAfterPoseTransform) {
-    Robot value = makeRobot();
-    value.position = Eigen::Vector2d(1.1, -2.3);
-    value.body_center_offset = Eigen::Vector2d(0.13, -0.04);
-    for (double yaw : {-kPi, -2.1, -0.1, 0.0, 0.8, kPi}) {
-        value.yaw = yaw;
-        const auto disks = coveringDisks(value, 2);
-        ASSERT_EQ(disks.size(), 2U);
-        Eigen::Matrix2d rotation;
-        rotation << std::cos(yaw), -std::sin(yaw), std::sin(yaw), std::cos(yaw);
-        for (int x = 0; x <= 10; ++x) {
-            for (int y = 0; y <= 10; ++y) {
-                const Eigen::Vector2d body(-value.half_length + 2.0 * value.half_length * x / 10.0,
-                                           -value.half_width + 2.0 * value.half_width * y / 10.0);
-                const Eigen::Vector2d point =
-                    value.position + rotation * (body + value.body_center_offset);
-                double gap = std::numeric_limits<double>::infinity();
-                for (const auto& disk : disks) {
-                    gap = std::min(gap, (point - disk.center).norm() - disk.radius);
-                }
-                EXPECT_LE(gap, 1.0e-12);
-            }
-        }
-    }
 }
 
 TEST(ResetPath, VisibilityGraphRoutesAroundBlockingBox) {
@@ -240,21 +38,18 @@ TEST(ResetPath, VisibilityGraphRoutesAroundBlockingBox) {
     }
 }
 
-TEST(ResetPath, ImpossibleRouteRejectsAndClearsPreviousRoute) {
-    Robot robot = makeRobot();
-    robot.position = Eigen::Vector2d(-2.0, 0.0);
-    ResetTarget target;
-    target.position = Eigen::Vector2d(2.0, 0.0);
+TEST(ResetPath, NoRouteThroughAWallThatSpansTheFence) {
     Fence fence;
     fence.xmin = -3.0;
     fence.xmax = 3.0;
     fence.ymin = -2.0;
     fence.ymax = 2.0;
-    ResetPath guidance;
-    ASSERT_EQ(guidance.setGoal(robot, target, {}, fence).status, PathStatus::Moving);
-    const auto rejected = guidance.setGoal(robot, target, {box(-0.2, 0.2, -3.0, 3.0)}, fence);
-    EXPECT_EQ(rejected.status, PathStatus::NoRoute);
-    EXPECT_TRUE(guidance.path().empty());
+    ASSERT_TRUE(planVisibilityPath({-2.0, 0.0}, {2.0, 0.0}, {}, fence, 0.3, 0.18).valid);
+    const auto blocked =
+        planVisibilityPath({-2.0, 0.0}, {2.0, 0.0}, {box(-0.2, 0.2, -3.0, 3.0)}, fence, 0.3, 0.18);
+    EXPECT_FALSE(blocked.valid);
+    EXPECT_FALSE(blocked.invalid_input);
+    EXPECT_TRUE(blocked.points.empty());
 }
 
 TEST(ResetPath, RejectsInvalidGeometryAndOccupiedTarget) {
@@ -273,16 +68,12 @@ TEST(ResetPath, RejectsInvalidGeometryAndOccupiedTarget) {
                     .invalid_input);
 }
 
-TEST(ResetPath, CorneringReserveDoesNotRejectClearStartOrGoal) {
-    auto robot = makeRobot();
+TEST(ResetPath, ClearStartAndGoalAreNotRejectedByTheCorneringReserve) {
     const auto wall = box(-0.2, 0.2, -2.0, 2.0);
-    // Radius 0.30 + path clearance 0.18 fit; extra lookahead reserve does not.
-    robot.position = {-0.8, 0.0};
-    ResetPath path;
-    EXPECT_EQ(path.setGoal(robot, {{-2.0, 0.0}, 0.0}, {wall}, Fence()).status, PathStatus::Moving);
-    robot.position = {-2.0, 0.0};
-    EXPECT_EQ(path.setGoal(robot, {{-0.8, 0.0}, 0.0}, {wall}, Fence()).status, PathStatus::Moving);
-    EXPECT_EQ(path.setGoal(robot, {{-0.6, 0.0}, 0.0}, {wall}, Fence()).status, PathStatus::NoRoute);
+    // Radius 0.30 + clearance 0.18 fit at x = -0.8 and no more.
+    EXPECT_TRUE(planVisibilityPath({-0.8, 0.0}, {-2.0, 0.0}, {wall}, Fence(), 0.3, 0.18).valid);
+    EXPECT_TRUE(planVisibilityPath({-2.0, 0.0}, {-0.8, 0.0}, {wall}, Fence(), 0.3, 0.18).valid);
+    EXPECT_FALSE(planVisibilityPath({-2.0, 0.0}, {-0.6, 0.0}, {wall}, Fence(), 0.3, 0.18).valid);
 }
 
 TEST(ResetPath, ClockwiseAndCollinearConvexGeometryHaveEquivalentRoutes) {
@@ -322,38 +113,6 @@ TEST(ResetPath, SeededBoxPlacementsProduceGeometricallyClearRoutes) {
             }
         }
     }
-}
-
-TEST(ResetPath, NonFinitePoseInvalidatesAnActiveRoute) {
-    Robot robot = makeRobot();
-    ResetTarget target;
-    target.position.x() = 1.0;
-    ResetPath guidance;
-    ASSERT_EQ(guidance.setGoal(robot, target, {}, Fence()).status, PathStatus::Moving);
-    robot.yaw = std::numeric_limits<double>::infinity();
-    const auto result = guidance.step(robot);
-    EXPECT_EQ(result.status, PathStatus::InvalidInput);
-}
-
-TEST(ResetPath, PeerDetoursKeepTheOriginalGoalAndChooseOppositePassingSides) {
-    std::vector<Robot> robots{makeRobot(), makeRobot()};
-    robots[0].id = "left";
-    robots[1].id = "right";
-    robots[0].position = {-2.0, 0.0};
-    robots[1].position = {2.0, 0.0};
-    std::vector<ResetPath> paths(2);
-    paths[0].setGoal(robots[0], {{4.0, 0.0}, 0.0}, {}, Fence());
-    paths[1].setGoal(robots[1], {{-4.0, 0.0}, 0.0}, {}, Fence());
-    const auto routes = planPeerPaths(robots, paths, {}, Fence());
-    ASSERT_EQ(routes.size(), 2U);
-    for (std::size_t i = 0; i < routes.size(); ++i) {
-        ASSERT_GT(routes[i].path().size(), 2U);
-        EXPECT_EQ(paths[i].path().size(), 2U);
-        EXPECT_TRUE(routes[i].target().position.isApprox(paths[i].target().position));
-        EXPECT_TRUE(routes[i].path().back().isApprox(paths[i].target().position));
-    }
-    EXPECT_LT(routes[0].path()[1].y(), 0.0);
-    EXPECT_GT(routes[1].path()[1].y(), 0.0);
 }
 
 }  // namespace

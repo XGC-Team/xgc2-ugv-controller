@@ -28,7 +28,7 @@
           "sceneNamespace": {
             "type": "string",
             "default": "",
-            "description": "ROS namespace of the Scene adapter (for example /xgc/scene) when the Experiment authors a Scene; empty: no Scene, routes are only kept clear of the vehicles and the fence."
+            "description": "ROS namespace of the Scene adapter (for example /xgc_scene) when the Experiment authors a Scene; empty: no Scene, routes are only kept clear of the vehicles and the fence."
           },
           "rosInstallPath": {
             "type": "string",
