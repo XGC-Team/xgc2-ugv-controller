@@ -12,7 +12,8 @@ The cores are the ones the ROS nodes run: `unicycle_reference_trajectory_core` a
   state estimate / pose  ->  edge --state-->      controller --cmd_vel------>  edge  -> cmd_vel
   /command, command      ->       --command-->    (NMPC on its own thread)      |    -> custom/statustext
   reset_pose             ->       --reset_target->     |  \---status----------->  |
-  reset/response         ->       --reset_clearance->  |  \---reset_session---->  |--> reset/request
+  reset/grant            ->       --reset_grant---->   |  \---reset_session---->  |--> reset/session
+                                                       \---reset_result------->  |--> reset/result
   alg/reference/pva      ->       --pva------------>   ^
   .../request/{analytic,sampled,waypoint}, .../reset                              |
                          ->       --*_request, reference_reset--> reference --active_*, status--> controller, edge
@@ -75,24 +76,26 @@ the instance when it has a result)
 |---|---|---|---|
 | `state` (required) | in | state | planar state: estimate (`state_source: state_estimator`) or pose |
 | `command` | in | event, 8 | start tracking / stop / reset |
-| `reset_target`, `reset_clearance` | in | state | the Reset target; the coordinator's response after the lease validated it |
+| `reset_target` | in | state | the Reset target |
+| `reset_grant` | in | event, 16 | the coordinator's grants (HOLD, GO, BRAKE, REJECT), executed by the vehicle's Reset executor for its current session |
 | `active_analytic`, `active_polynomial`, `active_sampled` | in | state | the NMPC strategy's reference |
 | `pva` | in | state | the flatness strategy's world PVA reference |
 | `cmd_vel` | out | state | the twist for the chassis, after saturation; two decisions of one step are one commit, the later one |
 | `status` | out | state | control state name and id (at `status_publish_rate_hz`) |
-| `reset_session` | out | state | the Reset session: generation, frozen target, active, healthy |
+| `reset_session` | out | state | the vehicle's side of the Reset protocol: session counter, phase, pose, frozen target, declared footprint, limits and rotation-centre offset, health (5 Hz and on change) |
+| `reset_result` | out | event, 4 | the one typed result of a session (outcome, reason, final error, duration, detail) |
 
 The state of a pose source carries no velocities; the controller's own pose filter makes them. A state of
 the other source than the configured one is refused with a warning, not silently ignored.
 
-**`ugv_ros_edge`** (period 10 ms: the Reset lease asks for a request about every 20 ms). The one module
+**`ugv_ros_edge`** (period 10 ms). The one module
 that links ROS. ROS callbacks run on one thread of the module and are the only writers of its output
 ports (all are `ASYNC_WRITER`); the step reads the input ports and publishes. Stamps are taken from the
 receipt time of the message (`ros::MessageEvent`) and converted between ROS time and the host clock; a
 time that is zero stays zero. With `sim_time` they are the same clock and nothing is converted, and the
 module refuses to start when `sim_time` and `/use_sim_time` disagree. The edge takes the topics of the
 nodes, a `namespace` (the vehicle's, as the launch files' `ns`) and the configuration keys listed in
-`src/ugv_ros_edge.cpp`; `reset_request_topic` and `reset_response_topic` replace the launch file's remap.
+`src/ugv_ros_edge.cpp`; `reset_session_topic`, `reset_grant_topic` and `reset_result_topic` replace the launch file's remap.
 
 ## Configuration
 
@@ -128,10 +131,10 @@ unloading or replacing it leaves ROS running. Without a reachable master `start`
 
 | | |
 |---|---|
-| `reference_module_test`, `controller_module_test` | the modules as shared libraries, loaded the way the host loads them, in an in-test host (`test/test_host.h`): ports, strict configuration, health, the Reset session and lease, NMPC and flatness tracking against a kinematic unicycle, whole outputs, refused writes, one calling thread and loud failure when a step moves to another thread |
+| `reference_module_test`, `controller_module_test` | the modules as shared libraries, loaded the way the host loads them, in an in-test host (`test/test_host.h`): ports, strict configuration, health, the Reset session, grants and results, NMPC and flatness tracking against a kinematic unicycle, whole outputs, refused writes, one calling thread and loud failure when a step moves to another thread |
 | `core_thread_ownership_test` | the cores refuse updates from a thread that did not build them and resume on their original thread |
 | `chain_parity_test` | the module chain against the two nodes' chain without ROS, on the replay scenario of the generator: every output of the generator, every twist of the controller and the vehicle's path equal bit for bit |
-| `ros_edge_test`, `ros_edge_sim_test`, `ros_edge_no_master_test` | the edge against the master that rostest starts: wall-clock and simulation-time masters, the Reset lease, stamps, refused requests, reconnects |
+| `ros_edge_test`, `ros_edge_sim_test`, `ros_edge_no_master_test` | the edge against the master that rostest starts: wall-clock and simulation-time masters, the Reset messages, stamps, refused requests, reconnects |
 | `payload_conversion_test`, `ugv_modules_manifests`, `ugv_modules_linkage` | the payload layout in C and C++, the conversions, the manifests against the node configurations (and the host's `--check`), what the libraries export and link |
 | `ugv_integration_tests` | the real `xgc2-module-host`: the Reset coordinator test with the module entity as the Scout, the chain against a kinematic Scout over ROS and the control socket, the simulation-time manifest at twice real time |
 
