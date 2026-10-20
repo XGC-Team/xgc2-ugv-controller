@@ -17,4 +17,12 @@ if(CATKIN_ENABLE_TESTING)
       ${GTEST_INCLUDE_DIRS})
     target_link_libraries(reset_lease_test gtest_main)
   endif()
+  # The executor, the tracker and the route: header-only, no ROS anywhere.
+  catkin_add_gtest(reset_executor_test test/reset_executor_test.cpp)
+  if(TARGET reset_executor_test)
+    set_property(TARGET reset_executor_test PROPERTY INCLUDE_DIRECTORIES "")
+    target_include_directories(reset_executor_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/test ${GTEST_INCLUDE_DIRS})
+    target_link_libraries(reset_executor_test gtest_main)
+  endif()
 endif()
