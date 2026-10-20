@@ -1,20 +1,19 @@
 <launch>
-  <!-- Run only under rostest's isolated master; never attach this fake plant
-       to a vehicle namespace or to the local-fleet experiment master. -->
-  <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node"
-        name="reset_fixture_coordinator" output="screen" required="true">
-    <rosparam command="load" file="$(find ugv_integration_tests)/test/reset_coordinator_fixture.yaml"/>
-  </node>
-  <group ns="reset_fixture_robot">
+  <!-- Isolated rostest master only: the test program publishes synthetic poses and must never run on
+       an experiment or vehicle master. One coordinator without a Scene, one Wheeltec-like vehicle. -->
+  <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node" name="xgc_reset_coordinator" output="screen"/>
+  <group ns="ugv1">
     <node pkg="mecanum_ugv_controller" type="mecanum_ugv_controller_node"
           name="mecanum_ugv_controller" output="screen" required="true">
       <rosparam command="load" file="$(find mecanum_ugv_controller)/config/mecanum_ugv_controller.yaml"/>
-      <param name="max_linear_speed" value="0.4"/>
-      <param name="max_yaw_rate" value="0.5"/>
-      <param name="reset/timeout" value="20.0"/>
-      <remap from="reset/response" to="/reset_fixture/controller_response"/>
+      <param name="fence/x_min" value="-6.0"/>
+      <param name="fence/x_max" value="6.0"/>
+      <param name="fence/y_min" value="-6.0"/>
+      <param name="fence/y_max" value="6.0"/>
     </node>
   </group>
-  <test test-name="reset_coordinator_kinematic_transport"
-        pkg="ugv_integration_tests" type="reset_coordinator_rostest.py" time-limit="60.0"/>
+  <test test-name="reset_protocol_mecanum_open" pkg="ugv_integration_tests" type="reset_rostest.py"
+        time-limit="240.0">
+    <param name="scenario" value="mecanum_open"/>
+  </test>
 </launch>

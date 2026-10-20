@@ -1,26 +1,25 @@
 <launch>
-  <!-- Isolated rostest master only. The same coordinator, plant and test program as
-       reset_coordinator_scout.test, with the Scout as the module entity of ugv_modules (the
-       generator, the controller and the ROS edge in one xgc2-module-host process) in place of the
-       controller node. The overrides are what that launch file sets on the node. -->
+  <!-- Isolated rostest master only. The Scout of reset_coordinator_scout.test as the module entity of
+       ugv_modules (the generator, the controller and the ROS edge in one xgc2-module-host process)
+       in place of the controller node. -->
   <arg name="host" default="$(optenv XGC2_MODULE_HOST)"/>
   <env name="XGC2_MODULE_HOST" value="$(arg host)"/>
-  <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node"
-        name="reset_fixture_coordinator" output="screen" required="true">
-    <rosparam command="load" file="$(find ugv_integration_tests)/test/reset_coordinator_scout_fixture.yaml"/>
+  <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node" name="xgc_reset_coordinator" output="screen"
+        required="true">
+    <env name="XGC_RESET_SCENE_NAMESPACE" value="/reset_fixture/scene"/>
   </node>
   <node pkg="ugv_integration_tests" type="module_host_node.py" name="scout_entity"
         output="screen" required="true"
         args="$(find ugv_modules)/manifests/scout_unicycle.toml
-              edge.config.namespace=reset_fixture_robot
+              edge.config.namespace=ugv1
               edge.config.state_source=platform_pose
-              edge.config.reset_response_topic=/reset_fixture/controller_response
               controller.config.state_source=platform_pose
-              controller.config.chassis.max_linear_speed=0.35
-              controller.config.chassis.max_yaw_rate=0.5
-              controller.config.reset.timeout=60.0"/>
-  <test test-name="reset_coordinator_scout_module_transport"
-        pkg="ugv_integration_tests" type="reset_coordinator_rostest.py" time-limit="120.0">
-    <param name="robot_type" value="scout"/>
+              controller.config.fence.x_min=-6.0
+              controller.config.fence.x_max=6.0
+              controller.config.fence.y_min=-6.0
+              controller.config.fence.y_max=6.0"/>
+  <test test-name="reset_protocol_scout_module" pkg="ugv_integration_tests" type="reset_rostest.py"
+        time-limit="260.0">
+    <param name="scenario" value="scout_scene"/>
   </test>
 </launch>

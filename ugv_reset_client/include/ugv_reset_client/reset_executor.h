@@ -426,9 +426,12 @@ class ResetExecutor {
         }
     }
 
+    // Commanding motion, or measured moving. (A command of a few mm/s is not motion.)
     bool moving(const Measurement&) const {
-        return !command_.zero() || (velocity_.valid() && (velocity_.speed() > cfg_.stop_speed * 1.5 ||
-                                                          std::abs(velocity_.yawRate()) > cfg_.stop_yaw_rate * 1.5));
+        const bool commanded = std::abs(command_.vx) > 0.005 || std::abs(command_.vy) > 0.005 ||
+                               std::abs(command_.wz) > 0.005;
+        return commanded || (velocity_.valid() && (velocity_.speed() > cfg_.stop_speed * 1.5 ||
+                                                   std::abs(velocity_.yawRate()) > cfg_.stop_yaw_rate * 1.5));
     }
 
     Phase reportPhase(const Measurement& m) const {

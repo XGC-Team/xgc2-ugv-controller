@@ -5,10 +5,12 @@
 // finds the vehicles by their `<ns>/reset/session` topics on the master and answers each on
 // `<ns>/reset/grant`. It never subscribes /command and never publishes cmd_vel.
 //
-// Parameters (private, all optional): scene_namespace (empty: no Scene was authored for this
-// Experiment, and a missing Scene is not an error), fence_x_min / fence_x_max / fence_y_min /
-// fence_y_max (all four or none; the Session's frozen world boundary), world_frame, the planner
-// margins pair_margin / static_margin / hold_margin, and fleet_topic.
+// Configuration (all optional): the environment of the process, because a Session-managed process
+// definition fills every argument and an empty argument is not a parameter. XGC_RESET_SCENE_NAMESPACE
+// (empty: no Scene was authored for this Experiment, and a missing Scene is not an error),
+// XGC_RESET_FENCE (the Session's frozen world boundary as "x_min,x_max,y_min,y_max", empty: no fence);
+// private parameters world_frame, fleet_topic and the planner margins pair_margin / static_margin /
+// hold_margin only tune it.
 //
 // A startup error is the node's own non-zero exit, so a Session-managed instance that is
 // misconfigured fails its Run instead of idling.
@@ -25,6 +27,8 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <set>
@@ -41,27 +45,6 @@ namespace msgs = ugv_reset_msgs;
 
 double wallSeconds() {
     return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-
-// A private parameter that may be absent, an empty string (unset by a process definition that
-// passes every argument) or a number.
-bool optionalNumber(ros::NodeHandle& nh, const std::string& key, double* value) {
-    XmlRpc::XmlRpcValue v;
-    if (!nh.getParam(key, v)) {
-        return false;
-    }
-    if (v.getType() == XmlRpc::XmlRpcValue::TypeDouble) {
-        *value = static_cast<double>(v);
-        return true;
-    }
-    if (v.getType() == XmlRpc::XmlRpcValue::TypeInt) {
-        *value = static_cast<int>(v);
-        return true;
-    }
-    if (v.getType() == XmlRpc::XmlRpcValue::TypeString && static_cast<std::string>(v).empty()) {
-        return false;
-    }
-    throw std::invalid_argument("numeric parameter required: " + key);
 }
 
 rc::Session toSession(const msgs::ResetSession& m) {
@@ -124,7 +107,8 @@ class CoordinatorNode {
     CoordinatorNode() : private_("~") {
         nh_.setCallbackQueue(&queue_);
         private_.param("world_frame", world_frame_, std::string("world"));
-        private_.param("scene_namespace", scene_namespace_, std::string());
+        const char* scene_text = std::getenv("XGC_RESET_SCENE_NAMESPACE");
+        scene_namespace_ = scene_text != nullptr ? scene_text : "";
         private_.param("fleet_topic", fleet_topic_, std::string("/ugv/reset/fleet"));
         CoordinatorConfig config;
         private_.param("pair_margin", config.planner.pair_margin, config.planner.pair_margin);
@@ -132,17 +116,17 @@ class CoordinatorNode {
         private_.param("hold_margin", config.planner.hold_margin, config.planner.hold_margin);
         core_ = std::make_unique<ResetCoordinator>(config);
 
-        double bounds[4] = {0, 0, 0, 0};
-        const char* keys[4] = {"fence_x_min", "fence_x_max", "fence_y_min", "fence_y_max"};
-        int given = 0;
-        for (int i = 0; i < 4; ++i) {
-            given += optionalNumber(private_, keys[i], &bounds[i]) ? 1 : 0;
-        }
-        if (given != 0 && given != 4) {
-            throw std::invalid_argument("the fence needs all four bounds or none");
-        }
-        fence_.enabled = given == 4;
+        const char* fence_text = std::getenv("XGC_RESET_FENCE");
+        fence_.enabled = fence_text != nullptr && fence_text[0] != '\0';
         if (fence_.enabled) {
+            double bounds[4];
+            char tail = 0;
+            if (std::sscanf(fence_text, "%lf,%lf,%lf,%lf%c", &bounds[0], &bounds[1], &bounds[2], &bounds[3],
+                            &tail) != 4 ||
+                !std::isfinite(bounds[0] + bounds[1] + bounds[2] + bounds[3])) {
+                throw std::invalid_argument(
+                    std::string("XGC_RESET_FENCE must be \"x_min,x_max,y_min,y_max\", got: ") + fence_text);
+            }
             fence_.xmin = bounds[0];
             fence_.xmax = bounds[1];
             fence_.ymin = bounds[2];

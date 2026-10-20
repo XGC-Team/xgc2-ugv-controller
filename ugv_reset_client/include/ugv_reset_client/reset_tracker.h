@@ -310,7 +310,7 @@ class RouteTracker {
                 bool must_stop = last;
                 if (!last) {
                     const Point next = vertex(segment_ + 2);
-                    must_stop = std::abs(wrapAngle(std::atan2(next.y - target.y, next.x - target.x) - psi)) > 0.35;
+                    must_stop = std::abs(wrapAngle(std::atan2(next.y - target.y, next.x - target.x) - psi)) > 0.10;
                 }
                 double vcap = must_stop ? stopSpeed(d - 0.015) : spec_.max_v;
                 vcap = std::min(vcap, spec_.max_v);
@@ -318,15 +318,18 @@ class RouteTracker {
                     vcap = std::max(vcap, std::min(0.04, 4.0 * d));
                 }
                 vcap = std::min(vcap, stopSpeed(allowed - 0.05));
+                const bool near_vertex = segment_ > 0 && progress_ - cum[segment_] < 0.12;
                 const bool vertex_ungranted =
                     segment_ > 0 && segment_ < cum.size() && cum[segment_] > s_limit + 1e-6;
                 if (vertex_ungranted && progress_ >= cum[segment_] - 0.08) {
                     vdes = 0.0;  // at a vertex whose turn is not reserved yet: hold
                     wdes = 0.0;
-                } else if (std::abs(e_use) > 0.45 || (rotating_ && std::abs(e_use) > 0.15)) {
-                    // Large heading error: stop and rotate in place about c, until the heading is
-                    // within 0.15 rad of the segment (the sweep the planner verified turns to the
-                    // segment heading before it translates).
+                } else if (std::abs(e_use) > 0.45 || (near_vertex && std::abs(e_use) > 0.10) ||
+                           (rotating_ && std::abs(e_use) > (near_vertex ? 0.04 : 0.15))) {
+                    // Large heading error, or any turn at a vertex: stop and rotate in place about c
+                    // until the heading is on the segment (the sweep the planner verified turns to
+                    // the segment heading before it translates; steering through a corner while
+                    // driving would cut it).
                     rotating_ = true;
                     vdes = 0.0;
                     wdes = rotateTo(body_target);
@@ -359,7 +362,7 @@ class RouteTracker {
         if (!last) {
             const Point next = vertex(segment_ + 2);
             const double psi = std::atan2(sy, sx);
-            must_stop = std::abs(wrapAngle(std::atan2(next.y - target.y, next.x - target.x) - psi)) > 0.35;
+            must_stop = std::abs(wrapAngle(std::atan2(next.y - target.y, next.x - target.x) - psi)) > 0.10;
         }
         double sp = must_stop ? stopSpeed(dist - 0.01) + (dist > 0.02 ? 0.03 : 0.0) : spec_.max_v;
         sp = std::min({sp, spec_.max_v, stopSpeed(allowed - 0.05)});
@@ -370,7 +373,8 @@ class RouteTracker {
         const bool servo = segl <= 0.05 || (last && dist < 0.25);
         double wx = servo ? (dist > 1e-9 ? gx / dist * sp : 0.0) : ux * sp;
         double wy = servo ? (dist > 1e-9 ? gy / dist * sp : 0.0) : uy * sp;
-        if (!servo) {
+        if (!servo && sp > 0.0) {
+            // Cross-track correction while it may move: a held vehicle commands exact zero.
             const double k = std::clamp(1.5 * std::abs(ect), 0.0, 0.15);
             wx += (ect > 0.0 ? 1.0 : -1.0) * k * uy;  // toward the line: against the left normal
             wy -= (ect > 0.0 ? 1.0 : -1.0) * k * ux;
