@@ -1,149 +1,100 @@
 # Coordinated UGV Reset
 
-This package coordinates Reset for Scout and Mecanum. It does not change UAV
-control or Custom1 tracking. Run one coordinator for the ground-vehicle roster;
-each chassis controller remains the sole publisher of native `cmd_vel`.
+This package is the station side of Reset for Scout and Wheeltec. It does not change UAV control or Custom1 tracking.
+One coordinator per Session grants vehicles permission to move; each chassis controller remains the sole publisher of
+native `cmd_vel` and owns its motion, its 90 s deadline and its fail-stop (`ugv_reset_client`).
 
-## The station and the vehicles
+## Who decides what
 
-This package is the station: `ugv_reset_coordinator_node`, the path and DWA
-mathematics, the fleet schedule and the scene projection. The shared
-`ugv_reset_msgs/ResetRequest` and `ugv_reset_msgs/ResetResponse` messages come
-from the ros1-msgs product. It contains no vehicle controller code and is not a
-dependency of any vehicle package's code.
+* A **vehicle** declares itself in its `reset/session` message (5 Hz, also while idle, and at once on every change):
+  footprint, limits, target, pose, health and, for a unicycle, the rotation-centre offset and the spread it still
+  needs covered. There is no roster file and no fleet configuration. A vehicle that never sends a session does not
+  exist for the coordinator; one that falls silent stays a parked body at its last pose.
+* The **coordinator** (`ugv_reset_coordinator_node`) turns the sessions into **grants**: a frozen, exactly verified
+  route and the prefix of it that is free (`reset/grant`, HOLD / GO / BRAKE / REJECT with a reason and the names of the
+  blockers). It repeats an unchanged grant every 0.4 s as the vehicles' heartbeat (ttl 1 s). It never publishes
+  `cmd_vel` and never subscribes `/command`.
+* Every session ends with exactly one typed `ResetResult` from the vehicle (`reset/result`, latched): Arrived, Timeout,
+  Stopped, a rejection (no target, no coordinator, by the coordinator), Infeasible (with the reason), or a vehicle
+  abort (route tube, stalled, coordinator lost, unhealthy). The coordinator also publishes the fleet's state at 5 Hz on
+  `/ugv/reset/fleet` (`ResetFleet`).
+* **Fault isolation:** a fault is the faulty vehicle's alone. An invalid declaration, a lost vehicle, a vehicle without
+  target or pose refuses only that vehicle; the others keep their grants and treat it as a parked body. There is no
+  fleet-wide rejection.
 
-A vehicle runs its own side of the protocol. Its controller owns the Reset
-session (the generation and the frozen target) and executes the clearance it is
-given: the command of the coordinator's response, only while the response's
-lease holds on both the ROS clock and the wall clock, and until the response
-says arrived or rejected. The lease itself (the ledger of the requests the
-vehicle issued, the freshness of a response, the applied command it reports) is
-the package `ugv_reset_client`. The controller nodes (`unicycle_ugv_controller`,
-`mecanum_ugv_controller`) and the ROS edge of the module entity (`ugv_modules`)
-use it. A per-vehicle package knows one vehicle and nothing of the others.
+The coordinator is a Session-managed process (`xgc.system.ground-control`, process definition
+`xgc2-ugv-reset-coordinator-ros1` 2.x). Configuration is the environment of the process, because a Session-managed
+definition fills every argument and an empty argument is not a parameter:
 
-Launch compositions of several vehicles with their algorithms (`xgc_mixed_*`,
-`xgc_ugv4_planning`, `xgc_sce1_*`, `ugv_four_scout_controllers`,
-`ugv_two_mecanum_controllers`) belong to the experiment workspace that owns the
-algorithms (`formation_generator`, `sce1_central_controller`), not to a vehicle
-or station package. The ROS tests that run the coordinator against vehicle
-controllers, one or two vehicles and the module entity, are in
-`ugv_integration_tests`.
+| variable | meaning |
+|---|---|
+| `XGC_RESET_FENCE` | the Session's frozen world control bounds as `x_min,x_max,y_min,y_max`; empty: no fence |
+| `XGC_RESET_SCENE_NAMESPACE` | the Scene adapter's ROS namespace (for example `/xgc_scene`); empty: no Scene authored |
 
-## Targets and execution
+A misconfigured value is the node's own non-zero exit, so a Session-managed instance fails its Run instead of idling.
+`ugv_reset_coordinator.launch` starts the same node for launches that still compose it (it accepts and ignores
+`config_file`; takes `scene_namespace` and `fence`).
 
-Supply a world-frame `geometry_msgs/Pose2D` on `/<namespace>/reset_pose`, or all
-three `reset_initial_x/y/yaw` parameters in the controller YAML. The product
-launcher freezes each Experiment slot's `initialPose` into a complete per-slot
-YAML before launch, and publishes its contents in the Session manifest. Missing targets never
-default to the origin. Updating a target only caches it; `reset` enters Reset,
-and the session freezes that target and its generation.
+## The planner
 
-Arrival requires XY error at most 0.05 m, shortest yaw error at most 5 degrees,
-measured low speed, and an exact zero command for both chassis. Stop and timeout
-also return Ready: Ready alone is not arrival. The chassis Reset timeout is 90 s.
+`ResetPlanner` (ROS-free; `reset_planner.h`) plans a route, verifies it exactly, and grants the free prefix of it.
 
-```bash
-roslaunch ugv_reset_safety ugv_reset_coordinator.launch \
-  config_file:=/absolute/path/to/swarm.yaml
-```
-
-The installed `four_scout.yaml`, `two_mecanum.yaml`, and `mixed_pair.yaml` provide
-simulation profiles: 0.35 m/s on available translation axes, 0.5 rad/s yaw,
-0.35 m/s² linear acceleration, and 0.6 rad/s² angular acceleration. These are
-configuration limits, not physical-robot certifications.
-
-`obstacle_avoidance` is read once at coordinator start (default `true`).
-`two_mecanum.yaml` sets it `false`: no Scene input requirement, no peer/VRPN occupancy,
-straight holonomic return to the frozen target. `four_scout.yaml` and
-`mixed_pair.yaml` omit the key and keep Scene + DWA.
-
-A 150 ms admission interval collects the requesting roster. The cohort starts
-together once all members enter Reset. Overlapping targets and a target occupied
-by a nonparticipant reject admission. Nonparticipants and completed vehicles
-remain stationary collision obstacles.
-
-## Path planning and DWA
-
-`ResetPath` owns only geometry, the frozen original target, and arrival tests.
-Visibility-graph Dijkstra plans around inflated convex polygons. Inflation covers
-the circumscribed robot footprint, path clearance, and half the path lookahead
-for preferred corner tracking room. If that extra lookahead reserve prevents a
-route, planning retries with the full footprint and path clearance; the hard
-DWA margins stay unchanged. A path lookahead point is a geometric scoring reference;
-it produces no nominal velocity or extra control phase.
-
-`ResetDwa` samples body velocities from the intersection of chassis speed limits
-and the previous command's acceleration window. Scout samples both positive and
-negative `vx`, with `vy = 0`; Mecanum samples `vx`, `vy`, and yaw independently.
-The candidate trajectories are scored directly against the path, heading, and
-stopping objective. When the path lookahead reaches the original target, Scout
-uses Reeds-Shepp distance to that complete pose as its terminal score. Both the
-candidate and target are expressed at the estimated rotation center. The metric
-accounts for forward/reverse nonholonomic maneuvers; DWA still selects each body
-velocity and checks its footprint rollout. No Reeds-Shepp segments are executed.
-The distance formulas are adapted from OMPL 1.4.2; see `THIRD_PARTY_NOTICES`.
-
-Scout trajectory scoring uses successive existing poses to estimate the bounded
-signed lateral/yaw coupling, without a new twist subscription or lateral
-actuator. Ill-conditioned small turns are excluded. This calibrates the scoring
-prediction; collision checks include zero and both signed coupling endpoints
-for each Scout. Candidates are ranked by trajectory score before the full
-collision rollout; the selected trajectory retains every safety check.
-
-Native Reset has a fixed 90 s timeout, including the production Scout launch.
-The per-cycle solve deadline is separate. The 45 s mathematical regression
-scenarios remain a stricter convergence check, not the runtime timeout.
-
-`planPeerPaths` recomputes complete routes around current fleet footprints
-to the unchanged original targets. Transient target occupancy and close poses
-that cannot fit the conservative planning inflation remain DWA constraints.
-If no extra peer detour fits, the valid scene route remains the geometric
-reference; DWA must still find an admissible command. Equal-length detours
-prefer the robot's right. Relative-velocity heading scoring in DWA supports
-crossing traffic without storing passage targets. Arrival only stops that owner:
-the frozen cohort, other routes, and learned motion stay intact. Arrived peers
-keep the same body collision checks at zero velocity. There is no polar velocity
-law, common time scaling, CBF-QP, or Reset OSQP dependency.
+* **Route:** a visibility graph around the statics and the parked bodies (`planVisibilityPath`), as the polyline of the
+  vehicle's rotation centre, with in-place turns at the vertices and forward or reverse travel per segment. A
+  unicycle's route is verified for the three offsets `{ell - spread, ell, ell + spread}` (the declared bound when the
+  offset is not yet known); an omnidirectional footprint is the circumscribed polygon of its rectangle, which is sound
+  for any heading schedule.
+* **Exact verification:** the swept footprint is sampled (2 cm, 1.5 degrees) and checked with a separating-axis test
+  against every static, the fence and every other body: parked bodies and the pose of movers, and the remaining
+  reserved sweep of movers. Each margin (pair 0.10 m, static 0.12 m, fence 0.05 m) carries the sampling error of both
+  bodies explicitly, so the numbers hold between the samples as well. Margins are between the declared envelopes, which
+  already include 0.14 m a side around the chassis.
+* **Rolling prefix:** a vehicle is granted the part of its route that is free, less a hold margin (0.45 m) for braking
+  and tracking slack; the prefix is extended every 0.2 s as the movers ahead pass. A parked body that blocks a held
+  mover's remaining route (or a Scene change under it) revokes the grant (BRAKE) and re-plans from where the vehicle
+  stands. Reservation is of space, not of time, so it is insensitive to transport delay and plant lag.
+* **Ordering:** a waiting vehicle yields to another whose static route passes its goal ("that one passes first") or
+  whose route runs through its start. A cycle of such deferrals is broken in id order, at once if the route gets 2 m of
+  free prefix, else when nobody moves; if nobody can move, one parking move that makes progress is granted; else the
+  vehicles are refused with the blockers' names (Deadlock) and a stall of 10 s of the whole fleet rejects the held
+  movers (Stalled). A route that needs more than 1.5 times the limit is refused before any motion (TooSlow).
+* **Not complete:** coordinating rectangles is PSPACE-hard; an instance the planner cannot solve is reported with
+  reasons, never held silently. A body outside any session that moves is a parked body at its pose and no new route is
+  granted while it moves.
 
 ## Scene and admissibility
 
-The coordinator consumes `xgc2_geometry_msgs/SceneSnapshot` and `SceneState`
-under `scene_namespace` (default `/xgc/scene`). An explicit empty snapshot is
-valid; absent or stale scene data is not an empty scene. Epoch/revision changes
-reject an active Reset. Live geometry motion invalidates cached paths.
+The coordinator consumes `xgc2_geometry_msgs/SceneSnapshot` and `SceneState` under the Scene namespace. An explicit
+empty snapshot is valid; absent or stale scene data is not an empty scene: with a Scene authored and not live, nobody
+is granted a new route and each waiting vehicle is told why (SceneUnavailable). Epoch/revision changes under a held
+route revoke it. Each compound part projects independently into 32 supporting XY halfspaces; curves and oriented
+meshes use conservative planar outer approximations; compound openings are not filled by a shared hull. With no height
+envelope, overhead geometry also occupies XY. This does not certify 3D passage. Live Scene occupancy includes the
+configured 2 s translational and rotational motion envelope; unsupported motion or geometry reports a capability gap.
 
-Each compound part projects independently into 32 supporting XY halfspaces.
-Curves and oriented meshes use conservative planar outer approximations;
-compound openings are not filled by a shared hull. With no height envelope,
-overhead geometry also occupies XY. This does not certify 3D passage.
+## Limits
 
-Live scene occupancy includes the configured 2 s translational/rotational motion
-envelope. Pause uses the live pose with zero twist. Unsupported motion or
-geometry reports a capability gap. Stale, unordered, or mismatched state is
-rejected. Consumer status distinguishes applied documents from operational
-capability; `success` is an alias of `applied`.
-
-Every candidate undergoes a 1 s chassis rollout in 0.1 s increments followed by
-an acceleration-limited braking tail. Scene/fence checks use covering disks;
-peer checks use predicted full rectangles. This is a discrete kinematic check,
-not a hardware braking or continuous-time safety certificate. Future moving peer
-predictions retain a 2 cm contact reserve. Actual rectangle penetration remains inadmissible, including for stationary vehicles.
-
-No admissible sample means exact zero and `local_plan_feasible = false`; an
-unrolled brake or shorter horizon cannot be substituted as a safe candidate.
-Invalid inputs also fail closed. The owners enforce request generations, response
-leases, measured arrival, and timeouts.
+* The rotation-centre offset of a skid-steer unicycle is learned from its own turns. Until it is known (three samples
+  and half a radian of turning) the planner covers the declared bound, which makes tight layouts slower; after that the
+  estimate and its spread are covered. A wrong estimate shifts the true centre of a turn away from the planned vertex
+  by the error; the margins and the route tube (0.10 m plus twice the covered spread) absorb it, and a larger
+  deviation aborts the vehicle (AbortedDeviation) instead of continuing.
+* The tracker's deviation from the route consumes part of the 0.10 m design margin; in the closed-loop harness it stays
+  within 0.14 m and the physical chassis (0.14 m a side smaller than the envelope) never touched anything.
+* Footprint, rotation-centre bound and lag are simulation values; they must be measured on the real Scout and Wheeltec.
+* Hardware safety is not certified by these tests.
 
 ## Verification
 
-The mathematical tests cover path validity, speed and acceleration limits,
-forward/reverse choice, bounded-time straight return, blocked motion, obstacle
-layouts, complete target poses, and Scout lateral coupling with actuator lag. Scenario
-collision audits independently check physical rectangle footprints every 2 ms.
-The four-Scout crossing/return regression uses a stricter 45 s convergence bound.
-Production close-goal sweeps and the ROS transport initial pose use the same
-45 s gate. Seeded-layout tests retain their arrival and collision assertions.
-These finite tests do not establish arbitrary-fleet convergence or hardware
-safety. ROS tests additionally exercise coordinator requests, leases, scene
-updates, and arrival responses.
+* `reset_planner_test`: soundness of every grant against an independent 2 ms separating-axis audit of the followed
+  routes, determinism, revocation, parking, early refusal, stall, scene change, the Scout family of 80 scenarios with
+  ideal followers (0 collisions) and the omnidirectional footprint.
+* `reset_coordinator_test`: sessions in, grants out, heartbeat, isolation of every kind of single-vehicle fault.
+* `reset_path_test`, `scene_projection_test`: the route and the Scene projection.
+* `ugv_integration_tests`: the closed-loop scenario harness (real coordinator, real executors, a plant with lag, offset,
+  delay, noise, bus loss and a coordinator outage, a 10 ms physical-chassis audit) on the 235 TASE scenarios
+  (`ResetScenarios.QuickFamily` with the package tests, `FullFamily` with `RESET_SCENARIOS_FULL=1`), and rostests with
+  the real nodes against synthetic vehicles.
+* The slot pose and world boundary launch tests cover the launch-time helpers of the controllers
+  (`launch_with_yaml_context.py`, `launch_control_with_slot_poses.py`), which are installed with this package for
+  historical reasons and are not part of the coordinator.

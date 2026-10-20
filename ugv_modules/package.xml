@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>ugv_modules</name>
-  <version>1.0.0</version>
+  <version>1.1.0</version>
   <description>The Scout unicycle chain as xgc2-module modules: the planar reference generator, the NMPC and flatness controller and the ROS1 edge of the vehicle, with the payload header they share and the entity manifests.</description>
   <maintainer email="apt@example.com">XGC2</maintainer>
   <license>MIT</license>

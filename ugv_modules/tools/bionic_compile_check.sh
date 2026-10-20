@@ -2,10 +2,10 @@
 # Compile-only check of the ROS-free sources of the Scout chain with the Ubuntu 18.04 g++ 7.5
 # (glibc 2.27 sysroot), the oldest compiler the modules have to build with.
 #
-# What it covers: the cores (reference trajectory, unicycle and Mecanum controller, the Reset path and
-# geometry mathematics), the two ROS-free modules, the replays and the module tests. What it cannot
+# What it covers: the cores (reference trajectory, unicycle and Mecanum controller, the Reset route,
+# planner and coordinator mathematics, the vehicle's Reset executor), the two ROS-free modules, the replays and the module tests. What it cannot
 # cover: the sources that include ROS (the nodes, the input producers and output consumers, the
-# conversions, the ROS client of the Reset lease, the ROS edge) because Melodic headers are not in the
+# conversions, the ROS edges) because Melodic headers are not in the
 # sysroot, and linking and running, because the sysroot has none of the libraries (acados, the XGC2
 # math and state machine libraries). The headers of Eigen, jsoncpp and googletest are the host's own;
 # they are text and compile with g++ 7.5.
@@ -76,13 +76,14 @@ sources=(
   mecanum_ugv_controller/src/core_log.cpp
   mecanum_ugv_controller/src/mecanum_ugv_controller.cpp
   mecanum_ugv_controller/src/state_machine/states.cpp
-  ugv_reset_safety/src/reset_geometry.cpp
   ugv_reset_safety/src/reset_path.cpp
+  ugv_reset_safety/src/reset_planner.cpp
+  ugv_reset_safety/src/reset_coordinator.cpp
   ugv_modules/src/ugv_unicycle_reference.cpp
   ugv_modules/src/ugv_unicycle_controller.cpp
   unicycle_reference_trajectory/test/replay/reference_replay.cpp
   unicycle_ugv_controller/test/replay/unicycle_replay.cpp
-  ugv_reset_client/test/reset_lease_test.cpp
+  ugv_reset_client/test/reset_executor_test.cpp
   ugv_modules/test/reference_module_test.cpp
   ugv_modules/test/controller_module_test.cpp
   ugv_modules/test/payload_conversion_test.cpp

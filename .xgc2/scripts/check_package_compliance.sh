@@ -57,14 +57,19 @@ required_files=(
   ugv_reset_safety/CMakeLists.txt
   ugv_reset_safety/package.xml
   ugv_reset_safety/launch/ugv_reset_coordinator.launch
-  ugv_reset_safety/config/mixed_pair.yaml
+  ugv_reset_safety/include/ugv_reset_safety/reset_planner.h
+  ugv_reset_safety/include/ugv_reset_safety/reset_coordinator.h
   mecanum_ugv_controller/CMakeLists.txt
   mecanum_ugv_controller/package.xml
   mecanum_ugv_controller/launch/ugv_mecanum_reset_controller.launch
   mecanum_ugv_controller/config/mecanum_ugv_controller.yaml
   ugv_reset_client/CMakeLists.txt
   ugv_reset_client/package.xml
-  ugv_reset_client/include/ugv_reset_client/reset_lease.h
+  ugv_reset_client/include/ugv_reset_client/reset_protocol.h
+  ugv_reset_client/include/ugv_reset_client/reset_executor.h
+  ugv_reset_client/include/ugv_reset_client/reset_tracker.h
+  ugv_reset_client/include/ugv_reset_client/reset_route.h
+  ugv_reset_client/include/ugv_reset_client/reset_ros.h
   ugv_modules/CMakeLists.txt
   ugv_modules/package.xml
   ugv_modules/include/xgc2_ugv/payloads.h
@@ -107,6 +112,26 @@ if grep -rn "ugv_reset_safety" unicycle_ugv_controller/include unicycle_ugv_cont
      mecanum_ugv_controller/include mecanum_ugv_controller/src unicycle_reference_trajectory/include \
      unicycle_reference_trajectory/src >/dev/null; then
   echo "A per-vehicle package refers to the station's coordinator package." >&2
+  exit 1
+fi
+# The Reset coordinator has no roster: no roster file ships, its process definition takes none, and its
+# ROS-free core (the math library) links no ROS and fails the link on an undefined symbol.
+if [[ -e ugv_reset_safety/config ]]; then
+  echo "ugv_reset_safety ships a roster configuration directory." >&2
+  exit 1
+fi
+if grep -q "swarmConfig\|rosterFile\|four_scout\|two_mecanum" process-definitions/xgc2-ugv-reset-coordinator-ros1.json; then
+  echo "The coordinator process definition still takes a roster." >&2
+  exit 1
+fi
+grep -q 'Wl,--no-undefined' ugv_reset_safety/CMakeLists.txt
+if grep -n "target_link_libraries(ugv_reset_safety_math" ugv_reset_safety/CMakeLists.txt | grep -q "catkin_LIBRARIES"; then
+  echo "The Reset math library links ROS." >&2
+  exit 1
+fi
+# A failure of one vehicle's session is that vehicle's alone: no helper may refuse the whole fleet.
+if grep -rnE "reject(All|Fleet|Everyone)|failAll" ugv_reset_safety/include ugv_reset_safety/src >/dev/null; then
+  echo "The coordinator has a fleet-wide rejection helper." >&2
   exit 1
 fi
 grep -q "run_tests_unicycle_reference_trajectory" .xgc2/scripts/run_source_tests.sh

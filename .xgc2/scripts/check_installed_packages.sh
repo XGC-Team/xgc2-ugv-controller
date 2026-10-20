@@ -107,10 +107,18 @@ else
 fi
 
 test -x "/opt/ros/${ROS_DISTRO}/lib/ugv_reset_safety/ugv_reset_coordinator_node"
-rosmsg show ugv_reset_msgs/ResetRequest | grep -q "^uint32 generation$"
-rosmsg show ugv_reset_msgs/ResetResponse | grep -q "^uint8 status$"
+rosmsg show ugv_reset_msgs/ResetSession | grep -q "^float64 half_length$"
+rosmsg show ugv_reset_msgs/ResetGrant | grep -q "^uint8 state$"
+rosmsg show ugv_reset_msgs/ResetResult | grep -q "^uint8 outcome$"
+rosmsg show ugv_reset_msgs/ResetFleet | grep -q "^ugv_reset_msgs/ResetFleetMember\[\] members$"
+if rosmsg show ugv_reset_msgs/ResetRequest >/dev/null 2>&1; then
+  echo "The retired lease message ResetRequest is still installed" >&2
+  exit 1
+fi
 test "$(rospack find ugv_reset_safety)" = "/opt/ros/${ROS_DISTRO}/share/ugv_reset_safety"
-roslaunch --files ugv_reset_safety ugv_reset_coordinator.launch config_file:="/opt/ros/${ROS_DISTRO}/share/ugv_reset_safety/config/mixed_pair.yaml" >/tmp/xgc2-reset-coordinator-files.txt
+roslaunch --files ugv_reset_safety ugv_reset_coordinator.launch >/tmp/xgc2-reset-coordinator-files.txt
+# No roster file ships any more: every vehicle declares itself in its Reset session.
+test ! -e "/opt/ros/${ROS_DISTRO}/share/ugv_reset_safety/config"
 
 # Resolve the installed Python launch entry without starting a ROS master or node.
 XGC_PRINT_LAUNCH_ARGS=1 rosrun ugv_reset_safety launch_with_yaml_context.py \
@@ -124,15 +132,17 @@ test "$(pkg-config --variable=prefix ugv_reset_safety)" = "/opt/ros/${ROS_DISTRO
 reset_public_cflags_text="$(pkg-config --cflags ugv_reset_safety)"
 read -r -a reset_public_cflags <<< "${reset_public_cflags_text}"
 "${CXX:-clang++-10}" -std=c++17 -fsyntax-only -x c++ "${reset_public_cflags[@]}" - <<'CPP'
-#include <ugv_reset_safety/reset_dwa.h>
-#include <ugv_reset_safety/fleet_schedule.h>
+#include <ugv_reset_safety/reset_coordinator.h>
+#include <ugv_reset_safety/reset_planner.h>
 #include <ugv_reset_safety/reset_path.h>
 #include <ugv_reset_safety/reset_geometry.h>
+#include <ugv_reset_client/reset_executor.h>
 int main() { return 0; }
 CPP
 
-for retired_header in safety_filter.h reset_guidance.h fleet_guidance.h reset_client.h reset_session.h; do
+for retired_header in safety_filter.h reset_guidance.h fleet_guidance.h reset_client.h reset_session.h reset_dwa.h fleet_schedule.h reset_lease.h; do
   test ! -e "/opt/ros/${ROS_DISTRO}/include/ugv_reset_safety/${retired_header}"
+  test ! -e "/opt/ros/${ROS_DISTRO}/include/ugv_reset_client/${retired_header}"
 done
 
 if ldd "/opt/ros/${ROS_DISTRO}/lib/libugv_reset_safety_math.so" | grep -q 'libosqp'; then

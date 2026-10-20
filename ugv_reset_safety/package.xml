@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>ugv_reset_safety</name>
-  <version>2.0.0</version>
+  <version>3.0.0</version>
   <description>Coordinated UGV reset: event-driven coordinator, reservation planning with exact swept-footprint verification, no roster.</description>
   <maintainer email="apt@example.com">XGC2</maintainer>
   <license>MIT</license>
@@ -17,4 +17,7 @@
   <build_depend>libxgc2-math-dev</build_depend>
   <build_export_depend>libxgc2-math-dev</build_export_depend>
   <exec_depend>roslaunch</exec_depend>
+  <exec_depend>python3-rospkg-modules</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>python3-defusedxml</exec_depend>
 </package>

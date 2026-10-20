@@ -7,18 +7,20 @@ Packages:
 - `unicycle_reference_trajectory`: planar reference trajectory messages,
   generation runtime, and ROS publishers.
 - `unicycle_ugv_controller`: unicycle chassis controller, unique `cmd_vel`
-  publisher. CONTROL states: SelfCheck / Ready / Reset / Custom1. Reset executes leased commands from `ugv_reset_safety`. Custom1 selects
+  publisher. CONTROL states: SelfCheck / Ready / Reset / Custom1. Reset runs the vehicle's own Reset executor (`ugv_reset_client`) on the grants of the station's coordinator. Custom1 selects
   `nmpc` or `flatness` by rosparam. Remote I/O is canonical `{ns}/pose` only.
 - `mecanum_ugv_controller`: reusable holonomic chassis modules. Health /
   SelfCheck, `Reset` to an Experiment `initialPose`, and first-order Custom1
   (world ENU velocity to body FLU, heading P to east). Algorithms publish
   `{ns}/alg/reference/twist` only; they do not publish `cmd_vel`.
-- `ugv_reset_client`: the vehicle's side of the Reset protocol, a request/response
-  lease for one vehicle using the shared `ugv_reset_msgs` messages from ros1-msgs;
-  no other vehicle, no coordination.
-- `ugv_reset_safety`: the station's Reset coordinator, geometric path planning,
-  DWA with obstacle/inter-vehicle footprint checks, command limits and slew limits.
-  The vehicle packages know one vehicle each and none of this package's code.
+- `ugv_reset_client`: the vehicle's side of the Reset protocol: the Reset executor
+  (route tracker, its own 90 s deadline and fail-stops) of one vehicle, using the shared
+  `ugv_reset_msgs` messages from ros1-msgs; no other vehicle, no coordination.
+- `ugv_reset_safety`: the station's Reset coordinator: event-driven, no roster, routes
+  verified exactly against the declared footprints, the Scene and the world boundary,
+  granted as a free prefix. It is started once per Session by the system workflow
+  `xgc.system.ground-control`. The vehicle packages know one vehicle each and none of
+  this package's code.
 - `ugv_modules`: the Scout unicycle chain (reference generator, controller and the
   vehicle's ROS edge) as xgc2-module modules, with the entity manifests; see
   [ugv_modules](ugv_modules/README.md).
@@ -28,9 +30,10 @@ Packages:
 Launch compositions of several vehicles belong to the experiment workspace that owns
 their algorithms, not to this repository.
 
-Reset requires an explicit target, a complete UGV roster, fresh canonical poses
-and controller states, and an authoritative static obstacle snapshot. Missing
-inputs refuse motion. See [Reset design and limits](ugv_reset_safety/README.md).
+Reset requires an explicit target, fresh canonical poses and controller states, a
+coordinator that answers, and (when an Experiment authors a Scene) an authoritative
+static obstacle snapshot. Each vehicle declares itself; there is no roster. Missing
+inputs refuse motion for that vehicle only. See [Reset design and limits](ugv_reset_safety/README.md).
 
 ## Install
 
