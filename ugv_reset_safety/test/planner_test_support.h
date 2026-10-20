@@ -181,6 +181,21 @@ class IdealFollower {
         }
     }
 
+    void onGrant(const rc::Grant& g) {
+        ugv_reset_safety::PlannerDecision d;
+        d.session = g.session;
+        d.state = g.state;
+        d.reason = g.reason;
+        d.grant_id = g.grant_id;
+        d.start = g.start;
+        d.goal = g.goal;
+        d.final_move = g.final_move;
+        d.ell_plan = g.ell_plan;
+        d.via = g.via;
+        d.s_limit = g.s_limit;
+        onDecision(d);
+    }
+
     // Advance by dt seconds.
     void step(double dt) {
         if (done_ || !have_route_) {

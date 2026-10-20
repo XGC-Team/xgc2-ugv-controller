@@ -1,6 +1,20 @@
 <launch>
-  <arg name="config_file"/>
-  <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node" name="ugv_reset_coordinator" output="screen" required="true">
-    <rosparam command="load" file="$(arg config_file)"/>
+  <!-- The Reset coordinator has no roster: it finds the vehicles by their reset/session topics and
+       takes everything else from what each vehicle declares. config_file is accepted and ignored
+       (for one release): launches written for the roster YAML still pass it. -->
+  <arg name="config_file" default=""/>
+  <!-- Empty: no Scene was authored for this Experiment. -->
+  <arg name="scene_namespace" default=""/>
+  <!-- All four or none. -->
+  <arg name="fence_x_min" default=""/>
+  <arg name="fence_x_max" default=""/>
+  <arg name="fence_y_min" default=""/>
+  <arg name="fence_y_max" default=""/>
+  <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node" name="xgc_reset_coordinator" output="screen">
+    <param name="scene_namespace" value="$(arg scene_namespace)"/>
+    <param name="fence_x_min" value="$(arg fence_x_min)" unless="$(eval arg('fence_x_min') == '')"/>
+    <param name="fence_x_max" value="$(arg fence_x_max)" unless="$(eval arg('fence_x_max') == '')"/>
+    <param name="fence_y_min" value="$(arg fence_y_min)" unless="$(eval arg('fence_y_min') == '')"/>
+    <param name="fence_y_max" value="$(arg fence_y_max)" unless="$(eval arg('fence_y_max') == '')"/>
   </node>
 </launch>

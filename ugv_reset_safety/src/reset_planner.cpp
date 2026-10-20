@@ -1331,8 +1331,11 @@ struct ResetPlanner::Impl {
 
     // ----------------------------------------------------------------- the step
 
-    void step() {
+    void step(bool admit_allowed) {
         updateMovers();
+        if (!admit_allowed) {
+            return;
+        }
         const bool periodic = now - last_replan >= cfg.replan_period;
         if (!dirty && !periodic) {
             return;
@@ -1420,13 +1423,14 @@ void ResetPlanner::setWorld(const std::vector<ConvexObstacle>& statics, const Fe
 }
 
 std::vector<PlannerDecision> ResetPlanner::update(double now,
-                                                  const std::vector<PlannerVehicle>& vehicles) {
+                                                  const std::vector<PlannerVehicle>& vehicles,
+                                                  bool admit) {
     const auto t0 = std::chrono::steady_clock::now();
     Impl& m = *impl_;
     m.now = now;
     m.out.clear();
     m.sync(vehicles);
-    m.step();
+    m.step(admit);
     const double ms =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     m.stats.plan_ms_max = std::max(m.stats.plan_ms_max, ms);

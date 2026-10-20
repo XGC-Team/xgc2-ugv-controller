@@ -131,8 +131,10 @@ class ResetPlanner {
     void setWorld(const std::vector<ConvexObstacle>& statics, const Fence& fence);
 
     // One planning step at time `now` (the coordinator's clock) for all vehicles it knows.
-    // Vehicles must be in id order.
-    std::vector<PlannerDecision> update(double now, const std::vector<PlannerVehicle>& vehicles);
+    // Vehicles must be in id order. Without `admit` (an authored Scene is not available) the
+    // movers are kept up (extensions, revocations) but nobody is granted a new route.
+    std::vector<PlannerDecision> update(double now, const std::vector<PlannerVehicle>& vehicles,
+                                        bool admit = true);
 
     std::vector<PlannerBodyReport> report() const;
     const PlannerStats& stats() const;

@@ -1,268 +1,321 @@
-#include <geometry_msgs/PoseStamped.h>
+// The Reset coordinator node: the ROS edge of ResetCoordinator.
+//
+// Event driven: it sleeps in the callback queue (idle CPU about zero) and wakes on a Session, a
+// Scene message or, while a vehicle is in a session or moving, every 100 ms. It has no roster: it
+// finds the vehicles by their `<ns>/reset/session` topics on the master and answers each on
+// `<ns>/reset/grant`. It never subscribes /command and never publishes cmd_vel.
+//
+// Parameters (private, all optional): scene_namespace (empty: no Scene was authored for this
+// Experiment, and a missing Scene is not an error), fence_x_min / fence_x_max / fence_y_min /
+// fence_y_max (all four or none; the Session's frozen world boundary), world_frame, the planner
+// margins pair_margin / static_margin / hold_margin, and fleet_topic.
+//
+// A startup error is the node's own non-zero exit, so a Session-managed instance that is
+// misconfigured fails its Run instead of idling.
+
+#include <ros/callback_queue.h>
+#include <ros/master.h>
 #include <ros/ros.h>
-#include <std_msgs/String.h>
-#include <ugv_reset_msgs/ResetRequest.h>
-#include <ugv_reset_msgs/ResetResponse.h>
-#include <ugv_reset_safety/fleet_schedule.h>
-#include <ugv_reset_safety/reset_dwa.h>
-#include <ugv_reset_safety/reset_path.h>
+#include <ugv_reset_msgs/ResetFleet.h>
+#include <ugv_reset_msgs/ResetGrant.h>
+#include <ugv_reset_msgs/ResetSession.h>
+#include <ugv_reset_safety/reset_coordinator.h>
 #include <ugv_reset_safety/scene_projection.h>
 #include <xgc2_geometry_msgs/SceneState.h>
 
-#include <Eigen/Geometry>
-#include <algorithm>
+#include <chrono>
 #include <cmath>
-#include <cstdint>
 #include <map>
 #include <memory>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace ugv_reset_safety {
 namespace {
-double number(const XmlRpc::XmlRpcValue& v, const std::string& key) {
-    if (!v.hasMember(key)) {
-        throw std::invalid_argument("missing fleet field: " + key);
-    }
-    const auto& a = v[key];
-    double result;
-    if (a.getType() == XmlRpc::XmlRpcValue::TypeDouble) {
-        result = static_cast<double>(a);
-    } else if (a.getType() == XmlRpc::XmlRpcValue::TypeInt) {
-        result = static_cast<int>(a);
-    } else {
-        throw std::invalid_argument("numeric fleet field required: " + key);
-    }
-    if (!std::isfinite(result)) {
-        throw std::invalid_argument("nonfinite fleet field: " + key);
-    }
-    return result;
+
+namespace rc = ugv_reset_client;
+namespace msgs = ugv_reset_msgs;
+
+double wallSeconds() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
-Eigen::Quaterniond quaternion(const geometry_msgs::Quaternion& q) {
-    Eigen::Quaterniond r(q.w, q.x, q.y, q.z);
-    if (!r.coeffs().allFinite() || !std::isfinite(r.norm()) || r.norm() < 1e-6) {
-        throw std::invalid_argument("invalid quaternion");
+
+// A private parameter that may be absent, an empty string (unset by a process definition that
+// passes every argument) or a number.
+bool optionalNumber(ros::NodeHandle& nh, const std::string& key, double* value) {
+    XmlRpc::XmlRpcValue v;
+    if (!nh.getParam(key, v)) {
+        return false;
     }
-    r.normalize();
-    return r;
+    if (v.getType() == XmlRpc::XmlRpcValue::TypeDouble) {
+        *value = static_cast<double>(v);
+        return true;
+    }
+    if (v.getType() == XmlRpc::XmlRpcValue::TypeInt) {
+        *value = static_cast<int>(v);
+        return true;
+    }
+    if (v.getType() == XmlRpc::XmlRpcValue::TypeString && static_cast<std::string>(v).empty()) {
+        return false;
+    }
+    throw std::invalid_argument("numeric parameter required: " + key);
 }
-double yaw(const Eigen::Quaterniond& q) {
-    const auto r = q.toRotationMatrix();
-    return std::atan2(r(1, 0), r(0, 0));
+
+rc::Session toSession(const msgs::ResetSession& m) {
+    rc::Session s;
+    s.stamp = m.header.stamp.toSec();
+    s.session = m.session;
+    s.pose_stamp = m.pose_stamp.toSec();
+    s.pose = {m.pose.x, m.pose.y, m.pose.theta};
+    s.target = {m.target.x, m.target.y, m.target.theta};
+    s.phase = m.phase <= msgs::ResetSession::PHASE_DONE ? static_cast<rc::Phase>(m.phase) : rc::Phase::Idle;
+    s.progress = m.progress;
+    s.cross_track = m.cross_track;
+    s.spec.model = m.model == msgs::ResetSession::MODEL_OMNI ? rc::Model::Omni : rc::Model::Unicycle;
+    s.spec.footprint = {m.half_length, m.half_width, m.offset_x, m.offset_y};
+    s.spec.max_v = m.max_v;
+    s.spec.max_vy = m.max_vy;
+    s.spec.max_w = m.max_w;
+    s.spec.acc_v = m.acc_v;
+    s.spec.acc_w = m.acc_w;
+    s.spec.ell_bound = m.ell_bound;
+    s.ell_hat = m.ell_hat;
+    s.ell_spread = m.ell_spread;
+    s.healthy = m.healthy;
+    return s;
 }
-bool finitePose(const geometry_msgs::Pose2D& p) {
-    return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.theta);
+
+msgs::ResetGrant toMessage(const rc::Grant& g, const std::string& frame) {
+    msgs::ResetGrant m;
+    m.header.stamp = ros::Time::now();
+    m.header.frame_id = frame;
+    m.session = g.session;
+    m.state = static_cast<uint8_t>(g.state);
+    m.grant_id = g.grant_id;
+    m.start.x = g.start.x;
+    m.start.y = g.start.y;
+    m.start.theta = g.start.yaw;
+    m.goal.x = g.goal.x;
+    m.goal.y = g.goal.y;
+    m.goal.theta = g.goal.yaw;
+    m.final_move = g.final_move;
+    m.ell_plan = g.ell_plan;
+    for (const rc::Point& p : g.via) {
+        geometry_msgs::Point q;
+        q.x = p.x;
+        q.y = p.y;
+        m.via.push_back(q);
+    }
+    m.s_limit = g.s_limit;
+    m.ttl = g.ttl;
+    m.reason = static_cast<uint8_t>(g.reason);
+    m.detail = g.detail;
+    m.blockers = g.blockers;
+    return m;
 }
+
 }  // namespace
 
-class Coordinator {
-    struct Entry {
-        Robot robot;
-        ResetPath path;
-        ros::Subscriber request_sub, pose_sub, state_sub;
-        ros::Publisher response_pub;
-        ugv_reset_msgs::ResetRequest request;
-        ros::WallTime request_wall, pose_wall, state_wall;
-        ros::Time pose_stamp;
-        Eigen::Vector2d measured_position = Eigen::Vector2d::Zero();
-        double measured_yaw = 0, measured_speed = 0, measured_omega = 0;
-        bool have_pose = false, have_request = false, have_generation = false, planned = false,
-             rejected = false;
-        uint32_t generation = 0;
-        std::string state;
-        geometry_msgs::Pose2D frozen_target;
-        std::string reason;
-    };
-
+class CoordinatorNode {
    public:
-    Coordinator() : private_("~") {
-        private_.param("frequency", frequency_, 50.0);
-        private_.param("input_timeout", timeout_, 0.15);
-        private_.param("state_timeout", state_timeout_, 1.0);
+    CoordinatorNode() : private_("~") {
+        nh_.setCallbackQueue(&queue_);
         private_.param("world_frame", world_frame_, std::string("world"));
-        private_.param("scene_namespace", scene_namespace_, std::string("/xgc/scene"));
-        private_.param("obstacle_avoidance", obstacle_avoidance_, true);
-        private_.param("clearance", dwa_config_.clearance, 0.08);
-        private_.param("uncertainty_margin", dwa_config_.uncertainty_margin, 0.03);
-        fence_.enabled = true;
-        if (!private_.getParam("fence/x_min", fence_.xmin) ||
-            !private_.getParam("fence/x_max", fence_.xmax) ||
-            !private_.getParam("fence/y_min", fence_.ymin) ||
-            !private_.getParam("fence/y_max", fence_.ymax)) {
-            throw std::invalid_argument("explicit fence required");
+        private_.param("scene_namespace", scene_namespace_, std::string());
+        private_.param("fleet_topic", fleet_topic_, std::string("/ugv/reset/fleet"));
+        CoordinatorConfig config;
+        private_.param("pair_margin", config.planner.pair_margin, config.planner.pair_margin);
+        private_.param("static_margin", config.planner.static_margin, config.planner.static_margin);
+        private_.param("hold_margin", config.planner.hold_margin, config.planner.hold_margin);
+        core_ = std::make_unique<ResetCoordinator>(config);
+
+        double bounds[4] = {0, 0, 0, 0};
+        const char* keys[4] = {"fence_x_min", "fence_x_max", "fence_y_min", "fence_y_max"};
+        int given = 0;
+        for (int i = 0; i < 4; ++i) {
+            given += optionalNumber(private_, keys[i], &bounds[i]) ? 1 : 0;
         }
-        if (!std::isfinite(frequency_) || frequency_ < 10 || !std::isfinite(timeout_) ||
-            timeout_ <= 0 || timeout_ > 0.5 || !std::isfinite(state_timeout_) ||
-            state_timeout_ < 0.5 || state_timeout_ > 2.0) {
-            throw std::invalid_argument("invalid timing configuration");
+        if (given != 0 && given != 4) {
+            throw std::invalid_argument("the fence needs all four bounds or none");
         }
-        XmlRpc::XmlRpcValue roster;
-        if (!private_.getParam("robots", roster) ||
-            roster.getType() != XmlRpc::XmlRpcValue::TypeArray || roster.size() < 1) {
-            throw std::invalid_argument("explicit complete robots roster required");
-        }
-        std::set<std::string> ids;
-        for (int i = 0; i < roster.size(); ++i) {
-            const auto& r = roster[i];
-            auto e = std::make_unique<Entry>();
-            e->robot.id = static_cast<std::string>(r["namespace"]);
-            if (e->robot.id.empty() || e->robot.id.find("..") != std::string::npos ||
-                !ids.insert(e->robot.id).second) {
-                throw std::invalid_argument("invalid or duplicate robot namespace");
+        fence_.enabled = given == 4;
+        if (fence_.enabled) {
+            fence_.xmin = bounds[0];
+            fence_.xmax = bounds[1];
+            fence_.ymin = bounds[2];
+            fence_.ymax = bounds[3];
+            if (!(fence_.xmin < fence_.xmax) || !(fence_.ymin < fence_.ymax)) {
+                throw std::invalid_argument("the fence bounds are empty");
             }
-            const std::string type = static_cast<std::string>(r["type"]);
-            if (type == "scout") {
-                e->robot.type = RobotType::Unicycle;
-            } else if (type == "mecanum") {
-                e->robot.type = RobotType::Mecanum;
-            } else {
-                throw std::invalid_argument("unknown robot type");
-            }
-            e->robot.lateral_velocity_per_yaw_bound = number(r, "lateral_velocity_per_yaw_bound");
-            e->robot.half_length = number(r, "length") / 2;
-            e->robot.half_width = number(r, "width") / 2;
-            e->robot.body_center_offset = {number(r, "body_offset_x"), number(r, "body_offset_y")};
-            e->robot.limits.max_vx = number(r, "max_vx");
-            e->robot.limits.max_vy = number(r, "max_vy");
-            e->robot.limits.max_omega = number(r, "max_omega");
-            e->robot.limits.accel_vx = number(r, "accel_vx");
-            e->robot.limits.accel_vy = number(r, "accel_vy");
-            e->robot.limits.accel_omega = number(r, "accel_omega");
-            if (e->robot.half_length <= 0 || e->robot.half_width <= 0) {
-                throw std::invalid_argument("nonpositive robot footprint");
-            }
-            const std::size_t n = entries_.size();
-            const std::string ns = "/" + e->robot.id;
-            e->response_pub =
-                nh_.advertise<ugv_reset_msgs::ResetResponse>(ns + "/reset/response", 1);
-            e->request_sub = nh_.subscribe<ugv_reset_msgs::ResetRequest>(
-                ns + "/reset/request", 1,
-                [this, n](const ugv_reset_msgs::ResetRequest::ConstPtr& m) { request(n, *m); });
-            e->pose_sub = nh_.subscribe<geometry_msgs::PoseStamped>(
-                ns + "/pose", 1,
-                [this, n](const geometry_msgs::PoseStamped::ConstPtr& m) { pose(n, *m); });
-            e->state_sub = nh_.subscribe<std_msgs::String>(
-                ns + "/custom/statustext", 1, [this, n](const std_msgs::String::ConstPtr& m) {
-                    entries_[n]->state = m->data;
-                    entries_[n]->state_wall = ros::WallTime::now();
-                });
-            entries_.push_back(std::move(e));
+        } else {
+            ROS_WARN("No fence given: routes are only kept clear of the statics and the bodies");
         }
-        scene_sub_ = nh_.subscribe(scene_namespace_ + "/snapshot", 1, &Coordinator::scene, this);
-        scene_state_sub_ =
-            nh_.subscribe(scene_namespace_ + "/state", 1, &Coordinator::sceneState, this);
+        scene_authored_ = !scene_namespace_.empty();
+        if (scene_authored_) {
+            scene_sub_ = nh_.subscribe(scene_namespace_ + "/snapshot", 1, &CoordinatorNode::scene, this);
+            scene_state_sub_ =
+                nh_.subscribe(scene_namespace_ + "/state", 1, &CoordinatorNode::sceneState, this);
+        }
+        fleet_pub_ = nh_.advertise<msgs::ResetFleet>(fleet_topic_, 1, true);
+        core_->setWorld({}, fence_);
+        core_->setScene(scene_authored_, !scene_authored_);
+        ROS_INFO("Reset coordinator ready: scene %s, fence %s",
+                 scene_authored_ ? scene_namespace_.c_str() : "none authored",
+                 fence_.enabled ? "set" : "none");
+        publishFleet(wallSeconds());
     }
+
     void run() {
-        ros::WallRate rate(frequency_);
-        last_tick_ = ros::WallTime::now();
-        last_ros_tick_ = ros::Time::now();
+        double next_discovery = 0.0;
+        double next_fleet = 0.0;
+        double last_step = 0.0;
         while (ros::ok()) {
-            ros::spinOnce();
-            tick();
-            rate.sleep();
+            const bool busy = core_->busy();
+            queue_.callAvailable(ros::WallDuration(busy ? 0.05 : 0.5));
+            const double now = wallSeconds();
+            if (now >= next_discovery) {
+                next_discovery = now + 1.0;
+                discover();
+            }
+            updateSceneAvailability(now);
+            // A message wakes the step at once; otherwise every 100 ms while there is work, and
+            // every 500 ms for the heartbeat of the lost-vehicle clock when there is none.
+            const double period = core_->busy() ? 0.1 : 0.5;
+            if (event_ || now - last_step >= period) {
+                if (!event_ || now - last_step >= 0.02) {
+                    last_step = now;
+                    event_ = false;
+                    for (const OutgoingGrant& g : core_->step(now)) {
+                        auto found = grant_pubs_.find(g.vehicle);
+                        if (found != grant_pubs_.end()) {
+                            found->second.publish(toMessage(g.grant, world_frame_));
+                        }
+                        logGrant(g);
+                    }
+                }
+            }
+            if (now >= next_fleet) {
+                next_fleet = now + (core_->busy() ? 0.2 : 1.0);
+                publishFleet(now);
+            }
         }
     }
 
    private:
-    void request(std::size_t n, const ugv_reset_msgs::ResetRequest& r) {
-        auto& e = *entries_[n];
-        const auto now = ros::Time::now();
-        if (r.header.stamp.isZero() || r.pose_stamp.isZero() || !finitePose(r.pose) ||
-            !finitePose(r.target) || (now - r.header.stamp).toSec() < 0 ||
-            (now - r.header.stamp).toSec() > timeout_ || (now - r.pose_stamp).toSec() < 0 ||
-            (now - r.pose_stamp).toSec() > timeout_) {
+    struct Vehicle {
+        ros::Subscriber sub;
+    };
+
+    void discover() {
+        ros::master::V_TopicInfo topics;
+        if (!ros::master::getTopics(topics)) {
             return;
         }
-        const auto& a = r.applied_command;
-        Eigen::Vector3d applied(a.linear.x, a.linear.y, a.angular.z);
-        if (!applied.allFinite() || a.linear.z != 0 || a.angular.x != 0 || a.angular.y != 0 ||
-            (e.robot.type == RobotType::Unicycle && a.linear.y != 0)) {
-            return;
-        }
-        if (r.header.frame_id != world_frame_ || r.applied_stamp.isZero() ||
-            r.applied_stamp > r.header.stamp || (now - r.applied_stamp).toSec() > timeout_) {
-            return;
-        }
-        if (std::abs(applied.x()) > e.robot.limits.max_vx + 1e-6 ||
-            std::abs(applied.y()) > e.robot.limits.max_vy + 1e-6 ||
-            std::abs(applied.z()) > e.robot.limits.max_omega + 1e-6) {
-            return;
-        }
-        if (e.have_request && r.header.stamp <= e.request.header.stamp) {
-            return;
-        }
-        if (!e.have_generation || r.generation != e.generation) {
-            // Session identifiers are monotonically increasing within an owner.
-            // Wall expiration alone never resets the command/rate state.
-            e.generation = r.generation;
-            e.have_generation = true;
-            e.planned = false;
-            e.rejected = false;
-            e.reason.clear();
-            e.frozen_target = r.target;
-            e.path.clear();
-            dwa_.clear();
-            schedule_ready_ = false;
-            schedule_.clear();
-            scheduled_requested_.clear();
-            completed_.assign(entries_.size(), false);
-            // Every new owner generation reopens admission. Stored requests
-            // from a previous Reset must not suppress the next batch window.
-            last_admission_ = ros::WallTime::now();
-            const auto wall = ros::WallTime::now();
-            if (!e.have_pose || (wall - e.pose_wall).toSec() > timeout_ ||
-                (now - e.pose_stamp).toSec() < 0 || (now - e.pose_stamp).toSec() > timeout_ ||
-                (wall - e.state_wall).toSec() > state_timeout_) {
-                e.rejected = true;
-                e.reason = "reset pose/state unavailable at request";
+        static const std::string suffix = "/reset/session";
+        for (const auto& t : topics) {
+            if (t.datatype != "ugv_reset_msgs/ResetSession" || t.name.size() <= suffix.size() ||
+                t.name.compare(t.name.size() - suffix.size(), suffix.size(), suffix) != 0) {
+                continue;
             }
-        }
-        if (r.target.x != e.frozen_target.x || r.target.y != e.frozen_target.y ||
-            r.target.theta != e.frozen_target.theta) {
-            e.rejected = true;
-            e.reason = "target changed inside reset session";
-        }
-        e.robot.previous = applied;
-        e.request = r;
-        e.have_request = true;
-        e.request_wall = ros::WallTime::now();
-    }
-    void pose(std::size_t n, const geometry_msgs::PoseStamped& p) {
-        auto& e = *entries_[n];
-        try {
-            if (p.header.frame_id != world_frame_ || p.header.stamp.isZero() ||
-                !std::isfinite(p.pose.position.x) || !std::isfinite(p.pose.position.y) ||
-                p.header.stamp > ros::Time::now()) {
-                return;
+            std::string vehicle = t.name.substr(0, t.name.size() - suffix.size());
+            if (!vehicle.empty() && vehicle.front() == '/') {
+                vehicle.erase(0, 1);
             }
-            const auto heading = yaw(quaternion(p.pose.orientation));
-            Eigen::Vector2d position(p.pose.position.x, p.pose.position.y);
-            if (e.have_pose) {
-                const double dt = (p.header.stamp - e.pose_stamp).toSec();
-                if (dt <= 0) {
-                    return;
-                }
-                e.measured_speed =
-                    dt <= timeout_ ? (position - e.measured_position).norm() / dt : 1e9;
-                e.measured_omega = dt > timeout_ ? 1e9
-                                                 : std::atan2(std::sin(heading - e.measured_yaw),
-                                                              std::cos(heading - e.measured_yaw)) /
-                                                       dt;
-            } else {
-                e.measured_speed = 1e9;
-                e.measured_omega = 1e9;
+            if (vehicle.empty() || vehicles_.count(vehicle) != 0) {
+                continue;
             }
-            e.measured_position = position;
-            e.measured_yaw = heading;
-            e.pose_stamp = p.header.stamp;
-            e.pose_wall = ros::WallTime::now();
-            e.have_pose = true;
-        } catch (const std::exception& ex) {
-            ROS_WARN_THROTTLE(2, "Reset pose rejected: %s", ex.what());
+            grant_pubs_[vehicle] = nh_.advertise<msgs::ResetGrant>("/" + vehicle + "/reset/grant", 5);
+            vehicles_[vehicle].sub = nh_.subscribe<msgs::ResetSession>(
+                t.name, 10, [this, vehicle](const msgs::ResetSession::ConstPtr& m) { session(vehicle, *m); });
+            ROS_INFO("Reset coordinator: vehicle %s joined", vehicle.c_str());
         }
     }
+
+    void session(const std::string& vehicle, const msgs::ResetSession& m) {
+        if (m.header.frame_id != world_frame_) {
+            ROS_WARN_THROTTLE(5, "Ignoring a Reset session of %s in frame '%s' (expected '%s')",
+                              vehicle.c_str(), m.header.frame_id.c_str(), world_frame_.c_str());
+            return;
+        }
+        core_->onSession(vehicle, toSession(m), wallSeconds());
+        event_ = true;
+    }
+
+    void logGrant(const OutgoingGrant& g) {
+        // Changes only: the heartbeat repeats grants and is not worth a log line.
+        auto& last = logged_[g.vehicle];
+        const auto key = std::make_tuple(g.grant.session, static_cast<int>(g.grant.state),
+                                         g.grant.grant_id, static_cast<int>(g.grant.reason));
+        if (last == key) {
+            return;
+        }
+        last = key;
+        switch (g.grant.state) {
+            case rc::GrantState::Go:
+                ROS_INFO("Reset %s session %u: GO %zu via point(s), prefix %.2f m%s", g.vehicle.c_str(),
+                         g.grant.session, g.grant.via.size(), g.grant.s_limit > 1e6 ? -1.0 : g.grant.s_limit,
+                         g.grant.final_move ? "" : " (parking move)");
+                break;
+            case rc::GrantState::Hold:
+                ROS_INFO("Reset %s session %u: HOLD %s %s", g.vehicle.c_str(), g.grant.session,
+                         rc::name(g.grant.reason), g.grant.detail.c_str());
+                break;
+            case rc::GrantState::Brake:
+                ROS_WARN("Reset %s session %u: BRAKE %s %s", g.vehicle.c_str(), g.grant.session,
+                         rc::name(g.grant.reason), g.grant.detail.c_str());
+                break;
+            case rc::GrantState::Reject:
+                ROS_ERROR("Reset %s session %u: REJECT %s: %s", g.vehicle.c_str(), g.grant.session,
+                          rc::name(g.grant.reason), g.grant.detail.c_str());
+                break;
+        }
+    }
+
+    void publishFleet(double now) {
+        const FleetSummary summary = core_->fleet(now);
+        msgs::ResetFleet m;
+        m.header.stamp = ros::Time::now();
+        m.header.frame_id = world_frame_;
+        m.scene_available = summary.scene_available;
+        for (const FleetMember& f : summary.members) {
+            msgs::ResetFleetMember member;
+            member.vehicle = f.vehicle;
+            member.session = f.session;
+            member.phase = static_cast<uint8_t>(f.phase);
+            member.grant_state = static_cast<uint8_t>(f.grant_state);
+            member.reason = static_cast<uint8_t>(f.reason);
+            member.progress = f.progress;
+            member.remaining = f.remaining;
+            member.lost = f.lost;
+            member.blockers = f.blockers;
+            m.members.push_back(std::move(member));
+        }
+        fleet_pub_.publish(m);
+    }
+
+    // ---- the Scene (kept as it was: scene_projection.h is correct and tested) --------------------
+
+    void pushWorld() {
+        core_->setWorld(occupancy_.empty() ? obstacles_ : occupancy_, fence_);
+    }
+
+    void updateSceneAvailability(double now) {
+        if (!scene_authored_) {
+            return;
+        }
+        const bool live = scene_parsed_ && scene_valid_ && scene_state_wall_ > 0.0 &&
+                          now - scene_state_wall_ <= 1.0;
+        if (live != scene_live_) {
+            scene_live_ = live;
+            ROS_INFO("Reset coordinator: the Scene is %s", live ? "available" : "unavailable");
+            event_ = true;
+        }
+        core_->setScene(true, live);
+    }
+
     void sceneState(const xgc2_geometry_msgs::SceneState::ConstPtr& state) {
         if (snapshot_.epoch.empty() || !scene_parsed_) {
             return;
@@ -278,370 +331,92 @@ class Coordinator {
             auto geometry = scene_projection::live(prepared_scene_, *state, world_frame_);
             bool moved = geometry.live.size() != obstacles_.size();
             if (!moved) {
-                for (std::size_t i = 0; i < geometry.live.size(); ++i) {
-                    if (geometry.live[i].id != obstacles_[i].id ||
-                        geometry.live[i].vertices.size() != obstacles_[i].vertices.size()) {
-                        moved = true;
-                        break;
-                    }
-                    for (std::size_t j = 0; j < geometry.live[i].vertices.size(); ++j) {
-                        if ((geometry.live[i].vertices[j] - obstacles_[i].vertices[j]).norm() >
-                            1e-3) {
-                            moved = true;
-                            break;
-                        }
+                for (std::size_t i = 0; i < geometry.live.size() && !moved; ++i) {
+                    moved = geometry.live[i].id != obstacles_[i].id ||
+                            geometry.live[i].vertices.size() != obstacles_[i].vertices.size();
+                    for (std::size_t j = 0; !moved && j < geometry.live[i].vertices.size(); ++j) {
+                        moved = (geometry.live[i].vertices[j] - obstacles_[i].vertices[j]).norm() > 1e-3;
                     }
                 }
             }
             obstacles_ = std::move(geometry.live);
             occupancy_ = std::move(geometry.occupancy);
-            scene_state_ = *state;
             last_state_stamp_ = state->header.stamp;
-            scene_state_wall_ = ros::WallTime::now();
+            scene_state_wall_ = wallSeconds();
             scene_valid_ = true;
-            scene_error_.clear();
-            if (moved) {
-                for (auto& e : entries_) {
-                    e->planned = false;
-                }
+            if (moved || !world_pushed_) {
+                world_pushed_ = true;
+                pushWorld();
+                event_ = true;
             }
         } catch (const std::exception& e) {
             scene_valid_ = false;
-            scene_error_ = e.what();
             ROS_WARN_THROTTLE(2, "Reset live scene rejected: %s", e.what());
         }
     }
+
     void scene(const xgc2_geometry_msgs::SceneSnapshot::ConstPtr& snapshot) {
         if (snapshot->epoch == snapshot_.epoch && snapshot->revision < snapshot_.revision) {
             return;
         }
         if (scene_parsed_ && snapshot->epoch == snapshot_.epoch &&
             snapshot->revision == snapshot_.revision) {
-            if (snapshot->obstacles == snapshot_.obstacles &&
-                snapshot->scene_id == snapshot_.scene_id &&
+            if (snapshot->obstacles == snapshot_.obstacles && snapshot->scene_id == snapshot_.scene_id &&
                 snapshot->header.frame_id == snapshot_.header.frame_id) {
                 return;
             }
             scene_valid_ = false;
-            scene_error_ = "scene definition changed at the same revision";
+            ROS_WARN("Reset scene rejected: the scene definition changed at the same revision");
             return;
         }
-        const bool definition_changed =
-            !snapshot_.epoch.empty() &&
-            (snapshot->epoch != snapshot_.epoch || snapshot->revision != snapshot_.revision);
         snapshot_ = *snapshot;
         scene_parsed_ = false;
         scene_valid_ = false;
-        scene_error_.clear();
         obstacles_.clear();
         occupancy_.clear();
+        world_pushed_ = false;
         last_state_stamp_ = ros::Time();
-        scene_state_wall_ = ros::WallTime();
+        scene_state_wall_ = 0.0;
         try {
             prepared_scene_ = scene_projection::prepare(snapshot_, world_frame_, geometry_cache_);
             scene_parsed_ = true;
-            if (definition_changed) {
-                for (auto& e : entries_) {
-                    if (e->have_request) {
-                        e->rejected = true;
-                        e->reason = "scene changed; request a new reset after stopping";
-                    }
-                }
-            }
         } catch (const std::exception& e) {
-            scene_error_ = e.what();
             ROS_WARN("Reset scene rejected: %s", e.what());
         }
+        event_ = true;
     }
-    void reply(Entry& e, uint8_t status, const Eigen::Vector3d& command,
-               const std::string& reason) {
-        ugv_reset_msgs::ResetResponse r;
-        r.header = e.request.header;
-        r.generation = e.request.generation;
-        r.status = status;
-        r.reason = reason;
-        r.command.linear.x = command.x();
-        r.command.linear.y = command.y();
-        r.command.angular.z = command.z();
-        e.response_pub.publish(r);
-    }
-    void commandDirect(const std::vector<Robot>& robots, const std::vector<ResetTarget>& targets,
-                       double dt) {
-        for (std::size_t i = 0; i < entries_.size(); ++i) {
-            auto& e = *entries_[i];
-            if (!e.robot.active) {
-                continue;
-            }
-            if (fence_.enabled &&
-                (targets[i].position.x() < fence_.xmin || targets[i].position.x() > fence_.xmax ||
-                 targets[i].position.y() < fence_.ymin || targets[i].position.y() > fence_.ymax)) {
-                rejectActive("reset target outside fence");
-                return;
-            }
-            const auto command = directResetCommand(robots[i], targets[i], dt);
-            const bool arrived =
-                withinTargetTolerance(robots[i], targets[i]) && command.isZero(0.0) &&
-                e.robot.previous.cwiseAbs().maxCoeff() <= dwa_config_.feasibility_tolerance &&
-                e.measured_speed <= 0.03 && std::abs(e.measured_omega) <= 0.05;
-            if (arrived) {
-                reply(e, ugv_reset_msgs::ResetResponse::ARRIVED, Eigen::Vector3d::Zero(), "");
-            } else {
-                reply(e, ugv_reset_msgs::ResetResponse::RUNNING, command, "");
-            }
-        }
-    }
-    void rejectActive(const std::string& reason) {
-        for (auto& e : entries_) {
-            if (e->have_request && e->robot.active) {
-                e->rejected = true;
-                e->reason = reason;
-                reply(*e, ugv_reset_msgs::ResetResponse::REJECTED, Eigen::Vector3d::Zero(), reason);
-            }
-        }
-    }
-    void tick() {
-        const auto wall = ros::WallTime::now();
-        const auto now = ros::Time::now();
-        const double wall_dt = (wall - last_tick_).toSec();
-        last_tick_ = wall;
-        const double dt = (now - last_ros_tick_).toSec();
-        last_ros_tick_ = now;
-        bool active = false;
-        for (auto& e : entries_) {
-            e->robot.active = e->have_request && (wall - e->request_wall).toSec() <= timeout_ &&
-                              e->state == "Reset";
-            active = active || e->robot.active;
-        }
-        if (!active) {
-            return;
-        }
-        if (obstacle_avoidance_ && !scene_parsed_) {
-            rejectActive("scene unavailable: " + scene_error_);
-            return;
-        }
-        // Requests and the 5 Hz public state do not arrive atomically.
-        // Hold zero until new generations have finished joining, before
-        // consulting any previous generation's rejection or freezing members.
-        const bool awaiting_state =
-            std::any_of(entries_.begin(), entries_.end(), [&](const auto& e) {
-                const bool fresh_request =
-                    e->have_request && (wall - e->request_wall).toSec() <= timeout_;
-                return fresh_request != (e->state == "Reset");
-            });
-        if (!schedule_ready_ &&
-            ((wall - last_admission_).toSec() < timeout_ ||
-             (awaiting_state && (wall - last_admission_).toSec() < state_timeout_))) {
-            for (auto& e : entries_) {
-                if (e->robot.active) {
-                    reply(*e, ugv_reset_msgs::ResetResponse::RUNNING, Eigen::Vector3d::Zero(),
-                          "collecting reset batch");
-                }
-            }
-            return;
-        }
-        for (auto& e : entries_) {
-            if (e->robot.active && e->rejected) {
-                rejectActive(e->reason);
-                return;
-            }
-        }
-        if (obstacle_avoidance_ &&
-            (scene_state_wall_.isZero() || (wall - scene_state_wall_).toSec() > 0.5)) {
-            rejectActive("shared scene heartbeat expired");
-            return;
-        }
-        if (obstacle_avoidance_ && !scene_valid_) {
-            rejectActive("scene unavailable: " + scene_error_);
-            return;
-        }
-        if (dt <= 0 || dt > timeout_ || wall_dt <= 0 || wall_dt > timeout_) {
-            rejectActive("coordinator deadline missed");
-            return;
-        }
-        for (auto& e : entries_) {
-            if (!e->have_pose || (wall - e->pose_wall).toSec() > timeout_ ||
-                (now - e->pose_stamp).toSec() < 0 || (now - e->pose_stamp).toSec() > timeout_ ||
-                (wall - e->state_wall).toSec() > state_timeout_) {
-                rejectActive("fleet pose/state unavailable");
-                return;
-            }
-            if (e->state != "SelfCheck" && e->state != "Ready" && e->state != "Reset") {
-                rejectActive("fleet member is outside reset/stop states");
-                return;
-            }
-            if (!e->robot.active &&
-                (e->measured_speed > 0.03 || std::abs(e->measured_omega) > 0.05)) {
-                rejectActive("uncontrolled moving fleet member");
-                return;
-            }
-            e->robot.position = e->measured_position;
-            e->robot.yaw = e->measured_yaw;
-            if (!e->robot.active) {
-                e->robot.previous.setZero();
-            }
-            if (e->robot.active && e->rejected) {
-                rejectActive(e->reason);
-                return;
-            }
-        }
-        std::vector<Robot> robots;
-        std::vector<ResetTarget> targets;
-        std::vector<bool> requested;
-        for (const auto& e : entries_) {
-            robots.push_back(e->robot);
-            ResetTarget target;
-            target.position = {e->frozen_target.x, e->frozen_target.y};
-            target.yaw = e->frozen_target.theta;
-            targets.push_back(target);
-            requested.push_back(e->robot.active);
-        }
-        if (!obstacle_avoidance_) {
-            commandDirect(robots, targets, dt);
-            return;
-        }
-        if (!schedule_ready_) {
-            schedule_ = FleetSchedule(dwa_config_.clearance + dwa_config_.uncertainty_margin);
-            const auto initialized = schedule_.initialize(robots, targets);
-            if (!initialized.ok()) {
-                rejectActive("reset schedule: " + initialized.detail);
-                return;
-            }
-            scheduled_requested_ = requested;
-            completed_.assign(robots.size(), false);
-            schedule_ready_ = true;
-        }
-        for (std::size_t i = 0; i < robots.size(); ++i) {
-            if (scheduled_requested_[i] != requested[i] && !completed_[i]) {
-                rejectActive("Reset batch membership changed before arrival");
-                return;
-            }
-        }
-        const auto group = schedule_.select(completed_);
-        if (!group.ok()) {
-            rejectActive("reset schedule: " + group.detail);
-            return;
-        }
-        std::vector<bool> selected(robots.size(), false);
-        for (const auto i : group.selected) {
-            selected[i] = true;
-        }
-        // Completion changes a peer's command to zero, not its geometry or
-        // anyone else's admission. All fleet bodies remain DWA constraints.
-        // Static scene routes and learned motion survive another owner arriving.
-        const auto& path_obstacles = occupancy_.empty() ? obstacles_ : occupancy_;
-        std::vector<ResetPath> paths(robots.size());
-        for (std::size_t i = 0; i < robots.size(); ++i) {
-            auto& e = *entries_[i];
-            // Nonselected owners remain in Reset but receive an exact zero.
-            // They are stationary obstacles, not free actuators.
-            if (!selected[i] &&
-                (e.measured_speed > 0.03 || std::abs(e.measured_omega) > 0.05 ||
-                 robots[i].previous.cwiseAbs().maxCoeff() > dwa_config_.feasibility_tolerance)) {
-                rejectActive("parked Reset member is moving");
-                return;
-            }
-            robots[i].active = selected[i];
-            robots[i].stop_requested = false;
-            robots[i].brake_requested = false;
-            robots[i].command.setZero();
-            if (!selected[i]) {
-                continue;
-            }
-            if (!e.planned) {
-                const auto planned = e.path.setGoal(robots[i], targets[i], path_obstacles, fence_);
-                if (planned.status == PathStatus::InvalidInput ||
-                    planned.status == PathStatus::NoRoute) {
-                    rejectActive(planned.message);
-                    return;
-                }
-                e.planned = true;
-            }
-            const auto g = e.path.step(robots[i]);
-            if (g.status == PathStatus::InvalidInput || g.status == PathStatus::NoRoute) {
-                rejectActive(g.message);
-                return;
-            }
-            paths[i] = e.path;
-            // An inward instantaneous velocity must not cancel pose error at
-            // release: the chassis can still settle outward after zero is
-            // acknowledged. Reserve the observed motion magnitude over DWA's
-            // horizon in either direction, using the unchanged goal tolerance.
-            Robot coast = robots[i];
-            Eigen::Vector2d outward = robots[i].position - e.path.target().position;
-            outward = outward.norm() > 1e-9 ? Eigen::Vector2d(outward.normalized())
-                                            : Eigen::Vector2d::UnitX();
-            coast.position += outward * e.measured_speed * ResetDwa::predictionHorizon();
-            const double yaw_error = std::atan2(std::sin(robots[i].yaw - e.path.target().yaw),
-                                                std::cos(robots[i].yaw - e.path.target().yaw));
-            coast.yaw += std::copysign(std::abs(e.measured_omega) * ResetDwa::predictionHorizon(),
-                                       yaw_error);
-            robots[i].brake_requested = g.status == PathStatus::Reached && e.path.reached(coast) &&
-                                        e.measured_speed <= 0.03 &&
-                                        std::abs(e.measured_omega) <= 0.05;
-            robots[i].stop_requested =
-                robots[i].brake_requested &&
-                robots[i].previous.cwiseAbs().maxCoeff() <= dwa_config_.feasibility_tolerance;
-        }
-        dwa_config_.dt = dt;
-        dwa_.apply(robots, paths, path_obstacles, fence_, dwa_config_);
-        const double solve_seconds = (ros::WallTime::now() - wall).toSec();
-        if (solve_seconds > 1.0 / frequency_) {
-            ROS_WARN("Reset solve deadline missed: %.3f ms > %.3f ms", solve_seconds * 1000.0,
-                     1000.0 / frequency_);
-            rejectActive("reset solve deadline missed");
-            return;
-        }
-        for (std::size_t i = 0; i < entries_.size(); ++i) {
-            auto& e = *entries_[i];
-            if (!e.robot.active) {
-                continue;
-            }
-            const bool arrived =
-                robots[i].stop_requested && robots[i].command.isZero(0.0) &&
-                e.robot.previous.cwiseAbs().maxCoeff() <= dwa_config_.feasibility_tolerance &&
-                e.measured_speed <= 0.03 && std::abs(e.measured_omega) <= 0.05;
-            if (arrived || completed_[i]) {
-                completed_[i] = true;
-                reply(e, ugv_reset_msgs::ResetResponse::ARRIVED, Eigen::Vector3d::Zero(), "");
-            } else if (!robots[i].local_plan_feasible) {
-                reply(e, ugv_reset_msgs::ResetResponse::RUNNING, Eigen::Vector3d::Zero(),
-                      "no feasible DWA sample");
-            } else {
-                reply(e, ugv_reset_msgs::ResetResponse::RUNNING, robots[i].command, "");
-            }
-        }
-    }
+
     ros::NodeHandle nh_, private_;
-    std::vector<std::unique_ptr<Entry>> entries_;
+    ros::CallbackQueue queue_;
+    std::unique_ptr<ResetCoordinator> core_;
+    std::map<std::string, Vehicle> vehicles_;
+    std::map<std::string, ros::Publisher> grant_pubs_;
+    std::map<std::string, std::tuple<uint32_t, int, uint32_t, int>> logged_;
+    ros::Publisher fleet_pub_;
     ros::Subscriber scene_sub_, scene_state_sub_;
+    std::string world_frame_, scene_namespace_, fleet_topic_;
+    Fence fence_;
+    bool event_{false};
+    bool scene_authored_{false};
+    bool scene_live_{false};
+    bool scene_parsed_{false};
+    bool scene_valid_{false};
+    bool world_pushed_{false};
+    double scene_state_wall_{0.0};
     xgc2_geometry_msgs::SceneSnapshot snapshot_;
     scene_projection::PreparedScene prepared_scene_;
     xgc2_math::geometry::PreparedGeometryCache geometry_cache_;
-    xgc2_geometry_msgs::SceneState scene_state_;
     ros::Time last_state_stamp_;
-    ros::WallTime scene_state_wall_;
-    bool scene_parsed_ = false;
-    bool scene_valid_ = false;
-    std::string world_frame_, scene_namespace_, scene_error_;
     std::vector<ConvexObstacle> obstacles_;
     std::vector<ConvexObstacle> occupancy_;
-    Fence fence_;
-    DwaConfig dwa_config_;
-    ResetDwa dwa_;
-    FleetSchedule schedule_;
-    bool schedule_ready_ = false;
-    std::vector<bool> scheduled_requested_, completed_;
-    ros::WallTime last_admission_;
-    bool obstacle_avoidance_ = true;
-    double frequency_ = 50, timeout_ = .15, state_timeout_ = 1.0;
-    ros::WallTime last_tick_;
-    ros::Time last_ros_tick_;
 };
+
 }  // namespace ugv_reset_safety
+
 int main(int argc, char** argv) {
-    ros::init(argc, argv, "ugv_reset_coordinator");
+    ros::init(argc, argv, "xgc_reset_coordinator");
     try {
-        ugv_reset_safety::Coordinator node;
+        ugv_reset_safety::CoordinatorNode node;
         node.run();
     } catch (const std::exception& e) {
         ROS_FATAL("Reset coordinator startup failed: %s", e.what());
