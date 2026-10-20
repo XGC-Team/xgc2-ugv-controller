@@ -120,7 +120,8 @@ void expectSafe(const std::vector<Outcome>& outcomes, const std::string& label) 
                 std::printf("      max cross-track: %s\n", o.max_cross_where.c_str());
             }
         }
-        EXPECT_FALSE(o.collision) << label << " " << o.name << " min clearance " << o.min_clear;
+        EXPECT_FALSE(o.collision) << label << " " << o.name << " min clearance " << o.min_clear << " at "
+                                  << o.min_clear_at << " s between " << o.min_clear_with;
         EXPECT_GT(o.min_planning_clear, 0.0) << label << " " << o.name << ": planning footprints overlapped";
     }
 }
@@ -172,6 +173,16 @@ TEST(ResetScenarios, Selected) {
     Options o;
     if (std::getenv("RESET_SCENARIOS_UNKNOWN") != nullptr) {
         o.teach = false;
+    }
+    if (const char* noise = std::getenv("RESET_SCENARIOS_NOISE")) {
+        o.pos_noise = std::atof(noise);
+    }
+    if (const char* loss = std::getenv("RESET_SCENARIOS_LOSS")) {
+        o.loss = std::atof(loss);
+    }
+    if (const char* outage = std::getenv("RESET_SCENARIOS_OUTAGE")) {
+        o.outage_start = 12.0;
+        o.outage_length = std::atof(outage);
     }
     const std::vector<Outcome> outcomes = runAll(world, o);
     print("selected", outcomes);
@@ -228,11 +239,25 @@ TEST(ResetScenarios, FullFamily) {
         const auto outcomes = runAll(subset, row.options);
         print(row.label, outcomes);
         for (const Outcome& o : outcomes) {
-            EXPECT_FALSE(o.collision) << row.label << " " << o.name << " min clearance " << o.min_clear;
+            EXPECT_FALSE(o.collision) << row.label << " " << o.name << " min clearance " << o.min_clear << " at "
+                                      << o.min_clear_at << " s between " << o.min_clear_with;
         }
+        // Each sensitivity row keeps most of the subset (the sign flip, 10% loss and a 0.8 s outage are
+        // 75-91% in the measured table).
+        EXPECT_GE(summarize(outcomes).completed, static_cast<int>(0.60 * outcomes.size())) << row.label;
     }
+    // The design targets (RESET.md 7.2, from the prototype): 85% of all, 91% of the random fields, 79% of
+    // the swaps on the line, 73% of the dense clusters, all within 90 s and without a collision.
     const Summary s = summarize(full_known);
-    EXPECT_GE(s.completed, static_cast<int>(0.80 * s.n));
+    EXPECT_GE(s.completed, static_cast<int>(0.85 * s.n));
+    EXPECT_GE(summarize(full_known, "rand_field").completed, static_cast<int>(0.90 * 150));
+    EXPECT_GE(summarize(full_known, "perm").completed, static_cast<int>(0.79 * 24));
+    EXPECT_GE(summarize(full_known, "dense").completed, static_cast<int>(0.73 * 60));
+    // Every unfinished run carries a typed result at the deadline, never silence.
+    for (const Outcome& o : full_known) {
+        EXPECT_EQ(o.outcomes.find('.'), std::string::npos) << o.name << " " << o.outcomes;
+    }
+    EXPECT_GE(summarize(full_unknown).completed, static_cast<int>(0.65 * s.n)) << "offset not yet known";
 }
 
 }  // namespace

@@ -133,6 +133,7 @@ class ResetExecutor {
         s_limit_ = 0.0;
         grant_id_ = 0;
         heartbeat_deadline_ = 0.0;
+        lapsed_ = false;
         tracker_.clear();
         command_ = Command{};
         last_step_ros_ = -1.0;
@@ -252,11 +253,11 @@ class ResetExecutor {
                 heard_ ? "the coordinator stopped answering" : "no coordinator answered", m);
             return finished(m);
         }
-        if (have_route_ && m.wall_now > heartbeat_deadline_) {
-            // The grant lapsed: whatever the vehicle was driving is no longer permitted.
-            end(Outcome::AbortedCoordinatorLost, Reason::None, "the grant lapsed (no heartbeat)", m);
-            return finished(m);
-        }
+        // A grant that is not refreshed (a second after the last message) is no longer permission to
+        // move: the vehicle stops where it is, inside its own prefix, and waits. If the coordinator
+        // comes back within the silence limit above the session goes on from there; if not, the
+        // check above ends it with AbortedCoordinatorLost.
+        lapsed_ = have_route_ && m.wall_now > heartbeat_deadline_;
         if (!have_route_) {
             command_ = Command{};
             tracker_.clear();
@@ -269,7 +270,8 @@ class ResetExecutor {
                                                    : std::clamp(m.ros_now - last_step_ros_, 1e-3, 0.1);
             last_step_ros_ = m.ros_now;
             const double v = velocity_.valid() ? velocity_.speed() : 0.0;
-            command_ = tracker_.step(m.pose, ell_.ell(), v, dt, s_limit_);
+            const double limit = lapsed_ ? std::min(s_limit_, tracker_.progress()) : s_limit_;
+            command_ = tracker_.step(m.pose, ell_.ell(), v, dt, limit);
             if (!checkTube(m)) {
                 return finished(m);
             }
@@ -457,7 +459,7 @@ class ResetExecutor {
 
     // A vehicle that may move and does not, for `stall` seconds.
     bool checkProgress(const Measurement& m) {
-        const bool may_move = s_limit_ - tracker_.progress() > 0.1;
+        const bool may_move = !lapsed_ && s_limit_ - tracker_.progress() > 0.1;
         const double moved = std::hypot(m.pose.x - stall_pose_.x, m.pose.y - stall_pose_.y) +
                              0.3 * std::abs(wrapAngle(m.pose.yaw - stall_pose_.yaw));
         if (!may_move || moved > 0.03 || !tracker_.active()) {
@@ -526,6 +528,7 @@ class ResetExecutor {
     uint32_t grant_id_{0};
     double s_limit_{0.0};
     double heartbeat_deadline_{0.0};
+    bool lapsed_{false};
     double last_step_ros_{-1.0};
     double last_pose_stamp_{-1.0};
     double settle_{0.0};

@@ -622,7 +622,10 @@ TEST_F(ResetTest, ExecutesTheGrantOfItsSessionAndStopsWhenItsHeartbeatLapses) {
         << "linear " << rig_.twists().back().linear_x << " angular " << rig_.twists().back().angular_z;
     EXPECT_LE(rig_.twists().back().linear_x, 0.35 + 1e-9);
     EXPECT_EQ(rig_.session().phase, XGC2_UGV_RESET_PHASE_MOVING);
-    // The coordinator falls silent: within the heartbeat (1 s) the vehicle ends its own session.
+    // The coordinator falls silent: after the heartbeat (1 s) the vehicle brakes and waits, and once
+    // the silence reaches 2 s it ends its own session.
+    rig_.ticks(600);
+    EXPECT_EQ(rig_.controlState(), "Reset") << "braking and waiting, not yet ended";
     rig_.ticks(700);
     EXPECT_EQ(rig_.controlState(), "Ready");
     xgc2_ugv_reset_result r;

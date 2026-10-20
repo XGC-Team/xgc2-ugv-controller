@@ -104,7 +104,7 @@ class EllEstimator {
             return;
         }
         const double turn = wrapAngle(q.yaw - anchor_.yaw);
-        if (std::abs(turn) >= 0.06) {
+        if (std::abs(turn) >= kMinTurn) {
             const double mid = anchor_.yaw + 0.5 * turn;
             // The origin's displacement in the frame of the mean heading. The offset only explains
             // the lateral part of a turn in place; an interval that also contains a drive (the
@@ -142,11 +142,14 @@ class EllEstimator {
         for (double s : samples_) {
             worst = std::max(worst, std::abs(s - ell_));
         }
-        return std::min(bound_, std::max(0.02, worst + 0.02));
+        return std::min(bound_, std::max(0.02, worst + 0.01));
     }
 
    private:
     static constexpr size_t kKeep = 6;
+    // A sample needs this much turning since its anchor: the offset is the lateral displacement over
+    // the turn, so the noise of the pose divided by the turn is the noise of the sample.
+    static constexpr double kMinTurn = 0.2;
     double bound_;
     Pose anchor_;
     bool have_anchor_{false};

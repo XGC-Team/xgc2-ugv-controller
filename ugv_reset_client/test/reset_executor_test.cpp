@@ -234,19 +234,26 @@ TEST(ResetExecutor, EveryFailsafeEndsTheSessionWithItsOwnTypedResult) {
         EXPECT_EQ(rig.exec().result().outcome, rc::Outcome::RejectedNoTarget);
         EXPECT_NEAR(rig.exec().result().duration, 2.0, 0.1);
     }
-    {  // the heartbeat lapses while moving: within a second of the last message
+    {  // the heartbeat lapses while moving: the vehicle brakes from a second after the last message and
+       // the session ends typed once the coordinator has been silent for 2 s (exact zero command)
         SoloRig rig(scoutConfig(), c.start, plant);
         fresh(rig);
         double last_message = -1.0;
+        double speed_at_lapse = 0.0;
         const bool ended = rig.run(30.0, [&](SoloRig& r, const rc::StepOutput&) {
             if (r.time() < 4.0 && (last_message < 0.0 || r.time() - last_message >= 0.4)) {
                 last_message = r.time();
                 r.exec().onGrant(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
             }
+            if (last_message > 0.0 && r.time() < last_message + 1.0 && r.time() > last_message + 0.9) {
+                speed_at_lapse = r.speed();
+            }
         });
         ASSERT_TRUE(ended);
         EXPECT_EQ(rig.exec().result().outcome, rc::Outcome::AbortedCoordinatorLost);
-        EXPECT_LE(rig.time() - last_message, 1.1);
+        EXPECT_NEAR(rig.time() - last_message, 2.0, 0.15) << "the typed result after 2 s of silence";
+        EXPECT_GT(speed_at_lapse, 0.25) << "it was driving at the lapse";
+        EXPECT_LT(rig.speed(), 0.6 * speed_at_lapse) << "and it had been braking for a second";
     }
     {  // a rejection of the planner is an infeasibility with its reason; a bad session is not
         SoloRig rig(scoutConfig(), c.start, plant);
@@ -375,30 +382,52 @@ TEST(ResetExecutor, ARouteIsOnlyChangedFromStandstillAndAStaleGrantIsIgnored) {
     EXPECT_EQ(rig.exec().tracker().route().vertices().size(), 4U);
 }
 
-TEST(ResetExecutor, ASingleLostHeartbeatIsToleratedAndTwoInARowEndTheSession) {
+TEST(ResetExecutor, ALapsedHeartbeatStopsTheVehicleAndAShortOutageIsResumedFrom) {
     const Course c;
     PlantParams plant;
+    struct Outcome {
+        rc::Outcome outcome{rc::Outcome::None};
+        double min_speed_during_gap{1e9};
+        bool arrived{false};
+    };
     auto run = [&](int lost_in_a_row) {
         SoloRig rig(scoutConfig(), c.start, plant);
         rig.exec().begin(1, c.goal, true, rig.measurement());
         double next = 0.0;
         int count = 0;
-        const bool ended = rig.run(25.0, [&](SoloRig& r, const rc::StepOutput&) {
+        double gap_from = -1.0, gap_to = -1.0;
+        Outcome result;
+        const bool ended = rig.run(60.0, [&](SoloRig& r, const rc::StepOutput&) {
             if (r.time() + 1e-12 >= next) {
                 next = r.time() + 0.4;
                 ++count;
                 // Messages 10..(10+lost-1) are lost.
                 if (count >= 10 && count < 10 + lost_in_a_row) {
+                    if (gap_from < 0.0) {
+                        gap_from = r.time();
+                    }
                     return;
+                }
+                if (count == 10 + lost_in_a_row) {
+                    gap_to = r.time();
                 }
                 r.exec().onGrant(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
             }
+            if (gap_from >= 0.0 && r.time() > gap_from + 1.4 && (gap_to < 0.0 || r.time() < gap_to)) {
+                result.min_speed_during_gap = std::min(result.min_speed_during_gap, r.speed());
+            }
         });
-        return ended ? rig.exec().result().outcome : rc::Outcome::None;
+        if (ended) {
+            result.outcome = rig.exec().result().outcome;
+        }
+        return result;
     };
-    EXPECT_NE(run(0), rc::Outcome::AbortedCoordinatorLost);
-    EXPECT_NE(run(1), rc::Outcome::AbortedCoordinatorLost) << "0.8 s between receipts";
-    EXPECT_EQ(run(2), rc::Outcome::AbortedCoordinatorLost) << "1.2 s between receipts";
+    EXPECT_EQ(run(0).outcome, rc::Outcome::Arrived);
+    EXPECT_EQ(run(1).outcome, rc::Outcome::Arrived) << "0.8 s between receipts";
+    const Outcome two = run(2);  // 1.2 s between receipts: stopped for a moment, then on
+    EXPECT_EQ(two.outcome, rc::Outcome::Arrived);
+    const Outcome four = run(4);  // 2.0 s of silence: ended, typed
+    EXPECT_EQ(four.outcome, rc::Outcome::AbortedCoordinatorLost);
 }
 
 TEST(ResetExecutor, TheRotationCentreOffsetIsLearnedFromTurnsAndDoesNotFollowPoseNoise) {

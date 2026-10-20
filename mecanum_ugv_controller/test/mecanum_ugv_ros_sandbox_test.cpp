@@ -124,8 +124,9 @@ TEST(MecanumRosSandbox, PoseCommandFenceAndDrop) {
             pose_pub.publish(makePose(0.0, 0.0, 0.0, ros::Time::now()));
             return last_cmd.linear.x == 0.0;
         },
-        2.0))
-        << "a lapsed grant heartbeat must stop";
+        3.0))
+        << "a lapsed grant heartbeat must stop (it brakes from a second after the last message and the "
+           "session ends with an exact zero at two seconds of silence)";
     EXPECT_TRUE(waitFor([&]() { return control_state == "Ready"; }, 3.0))
         << "the vehicle ends its own session when the heartbeat lapses";
 

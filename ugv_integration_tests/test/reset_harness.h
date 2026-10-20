@@ -169,6 +169,8 @@ struct Outcome {
     double t_last{-1.0};
     bool collision{false};
     double min_clear{1e9};            // physical chassis, statics and pairs
+    double min_clear_at{-1.0};        // simulation time of that minimum, and what touched
+    std::string min_clear_with;
     double min_planning_clear{1e9};   // planning footprints (chassis + margin) between pairs that started clear
     double min_planning_at{-1.0};     // simulation time of that minimum, and the pair
     std::string min_planning_pair;
@@ -324,6 +326,20 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
         for (size_t i = 0; i < n; ++i) {
             executors[i].observe(measurement(i, t));
         }
+    }
+    // The vehicles have been sending their Idle sessions at 5 Hz since their controllers started, so
+    // the coordinator knows every body (its declared footprint and pose) before the Reset is clicked,
+    // however many of those messages the bus loses.
+    for (int k = 0; k < 10; ++k) {
+        samplePoses(t);
+        for (size_t i = 0; i < n; ++i) {
+            executors[i].observe(measurement(i, t));
+            if (o.loss > 0 && uniform(rng) < o.loss) {
+                continue;
+            }
+            coordinator.onSession(names[i], executors[i].makeSession(measurement(i, t)), t + kWall);
+        }
+        t += 0.2;
     }
     // Everything from here on is the Reset: sessions begin at `t0`.
     const double t0 = t;
@@ -525,11 +541,21 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
             next_audit += 0.01;
             for (size_t i = 0; i < n; ++i) {
                 const Polygon body = rect(plants[i].pose(), chassis.first, chassis.second);
-                for (const Polygon& obstacle : world.obstacles) {
-                    out.min_clear = std::min(out.min_clear, clearance(body, obstacle));
+                for (size_t k = 0; k < world.obstacles.size(); ++k) {
+                    const double c = clearance(body, world.obstacles[k]);
+                    if (c < out.min_clear) {
+                        out.min_clear = c;
+                        out.min_clear_at = t - t0;
+                        out.min_clear_with = names[i] + "/static" + std::to_string(k);
+                    }
                 }
                 for (size_t j = i + 1; j < n; ++j) {
-                    out.min_clear = std::min(out.min_clear, clearance(body, rect(plants[j].pose(), chassis.first, chassis.second)));
+                    const double chassis_clear = clearance(body, rect(plants[j].pose(), chassis.first, chassis.second));
+                    if (chassis_clear < out.min_clear) {
+                        out.min_clear = chassis_clear;
+                        out.min_clear_at = t - t0;
+                        out.min_clear_with = names[i] + "/" + names[j];
+                    }
                     if (pair_ok[i][j]) {
                         const double c = clearance(rect(plants[i].pose(), planning.first, planning.second),
                                                    rect(plants[j].pose(), planning.first, planning.second));
