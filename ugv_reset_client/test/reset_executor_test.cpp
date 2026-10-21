@@ -117,6 +117,39 @@ TEST(ResetExecutor, TheTrackerConvergesOverLagCouplingNoiseAndDelay) {
     EXPECT_LT(slowest, 90.0);
 }
 
+// E2E 20261020T161318 (TASE-4UGVs-Wheeltec): two of four vehicles ended "ABORTED_STALLED: allowed to
+// move but did not for 10 s" 6.1 and 4.9 cm from the slot with the heading right. They drove the
+// 3.4 m line aligned with it and turned 66 degrees at the end; the tracker had entered its final
+// stage on the distance of the rotation centre it believed in (offset not learned yet, true value
+// +-0.04 m), the turn about the true centre left the origin 4-6 cm to the side, and the final stage
+// can only move along the heading. A vehicle that may move and is farther than the arrival
+// tolerance must move: it drives the lateral error out (teaching the offset with the turns) and
+// arrives.
+TEST(ResetExecutor, AFinalTurnAboutAWronglyBelievedCentreIsCorrectedInsteadOfStalling) {
+    const rc::Pose start{-6.0, 2.2, -1.5943};
+    const rc::Pose goal{-6.0, -1.2, -0.393};
+    for (double ell : {-0.04, -0.02, 0.02, 0.04}) {
+        PlantParams plant;
+        plant.ell = ell;
+        SoloRig rig(wheeltecConfig(), start, plant);
+        rig.exec().begin(1, goal, true, rig.measurement());
+        uint32_t id = 1;
+        double next = 0.0;
+        const bool ended = rig.run(90.0, [&](SoloRig& r, const rc::StepOutput&) {
+            if (r.time() + 1e-12 >= next) {
+                next = r.time() + 0.4;
+                r.exec().onGrant(goGrant(1, id, start, {}, goal, 0.0, 1e18), r.measurement());
+            }
+        });
+        rc::Result result;
+        rig.exec().takeResult(&result);
+        ASSERT_TRUE(ended) << "ell " << ell;
+        EXPECT_EQ(result.outcome, rc::Outcome::Arrived) << "ell " << ell << ": " << result.detail;
+        EXPECT_LE(result.final_planar_error, 0.05) << "ell " << ell;
+        EXPECT_LE(result.final_yaw_error, 5.0 * rc::kPi / 180.0) << "ell " << ell;
+    }
+}
+
 TEST(ResetExecutor, AnOmnidirectionalVehicleArrivesToo) {
     const Course c;
     PlantParams plant;

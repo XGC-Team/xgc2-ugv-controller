@@ -154,6 +154,46 @@ TEST(ResetScenarios, OmniHeadOn) {
     EXPECT_TRUE(outcomes[0].completed) << outcomes[0].outcomes;
 }
 
+// TASE-4UGVs-Wheeltec on the 1.6 m slot line (E2E 20261020T161318): the four vehicles stand 3.4 m
+// short of their slots, side by side on the line, and drive it as unicycles. The first Reset of
+// that run ended ugv1 and ugv4 "ABORTED_STALLED: allowed to move but did not for 10 s" 6.1 and
+// 4.9 cm from their slots with the heading right: the tracker had entered its final stage on the
+// rotation-centre distance, turned there, and a lateral error of the origin was left that the
+// final stage can not move.
+Scenario wheeltecSlotLine() {
+    Scenario s;
+    s.name = "wheeltec_slot_line";
+    s.starts = {Eigen::Vector3d(-5.9991, 2.2349, -1.5943), Eigen::Vector3d(-5.9813, 0.7357, -1.5428),
+                Eigen::Vector3d(-6.0008, -0.7657, -1.4573), Eigen::Vector3d(-6.0005, -2.2649, -1.5167)};
+    s.goals = {Eigen::Vector3d(-6.0, -1.2, -0.393), Eigen::Vector3d(-6.0, -2.8, 1.0791),
+               Eigen::Vector3d(-6.0, -4.4, -1.5279), Eigen::Vector3d(-6.0, -6.0, 0.5333)};
+    return s;
+}
+
+TEST(ResetScenarios, WheeltecSlotLine) {
+    ScenarioFile world = loadScenarios(dataFile("tase_scenarios_subset80.txt"));
+    world.scenarios = {wheeltecSlotLine()};
+    // The offset of the rotation centre is true +-0.04 m and either learned during the mission or not.
+    for (const bool teach : {true, false}) {
+        for (const double ell : {0.0, 0.04, -0.04}) {
+            for (const double noise : {0.0, 0.002}) {
+                Options o;
+                o.wheeltec_unicycle = true;
+                o.ell = ell;
+                o.teach = teach;
+                o.pos_noise = noise;
+                const std::vector<Outcome> outcomes = runAll(world, o);
+                const std::string label = std::string("wheeltec slot line, offset ") + (teach ? "learned" : "unknown") +
+                                          ", ell " + std::to_string(ell) + ", noise " + std::to_string(noise);
+                expectSafe(outcomes, label);
+                EXPECT_TRUE(outcomes[0].completed) << label << ": " << outcomes[0].outcomes << outcomes[0].details;
+                EXPECT_LE(outcomes[0].max_perr, 0.05) << label;
+                EXPECT_LE(outcomes[0].max_yerr, 5.0 * 3.14159265 / 180.0) << label;
+            }
+        }
+    }
+}
+
 // Diagnosis: RESET_SCENARIOS_ONLY="rand_field_1,perm_23" runs just those of the 235 scenarios, verbosely.
 TEST(ResetScenarios, Selected) {
     const char* only = std::getenv("RESET_SCENARIOS_ONLY");

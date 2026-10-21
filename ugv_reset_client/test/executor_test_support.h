@@ -195,6 +195,15 @@ inline rc::ExecutorConfig scoutConfig() {
     return cfg;
 }
 
+// The Wheeltec driven as a unicycle: its 0.41 x 0.36 chassis plus the project's 0.14 m margin a side,
+// and a small bound on the rotation-centre offset.
+inline rc::ExecutorConfig wheeltecConfig() {
+    rc::ExecutorConfig cfg = scoutConfig();
+    cfg.spec.footprint = {0.345, 0.32, 0.0, 0.0};
+    cfg.spec.ell_bound = 0.05;
+    return cfg;
+}
+
 inline rc::ExecutorConfig omniConfig() {
     rc::ExecutorConfig cfg = scoutConfig();
     cfg.spec.model = rc::Model::Omni;

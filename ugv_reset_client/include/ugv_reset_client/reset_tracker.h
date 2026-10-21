@@ -104,8 +104,13 @@ class EllEstimator {
     // samples as soon as there are enough of them.
     void add(const Pose& q) {
         double sample = 0.0, turn = 0.0;
+        // The same predicate spread() already uses. Once three slow samples exist, the fast
+        // track still steps, counts the turn and keeps its samples, but does not pull ell_.
+        const bool mature = slow_.samples.size() >= 3;
         if (step(fast_, q, kFastTurn, &sample, &turn)) {
-            ell_ += 0.5 * (sample - ell_);
+            if (!mature) {
+                ell_ += 0.5 * (sample - ell_);
+            }
             turn_total_ += std::abs(turn);
             fast_.push(sample);
         }

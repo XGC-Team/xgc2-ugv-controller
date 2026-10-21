@@ -7,7 +7,7 @@
 // physical plant per vehicle: a first-order lag on every axis, the uncommanded lateral velocity of
 // a skid-steer (vy = -ell * omega), a delayed and noisy pose, and the command published at 30 Hz
 // with zero-order hold. The Scout's physical chassis (0.62 x 0.52) and the Wheeltec's (0.41 x 0.36)
-// are audited against the statics and each other every 10 ms, independently of the planner (its
+// are audited against the statics and each other on every plant step (2 ms), independently of the planner (its
 // footprint is the larger Reset envelope: chassis plus 0.14 m a side).
 //
 // Scenario file: the TASE scene (7 obstacles) and 235 start/goal sets for four Scouts, from the
@@ -159,6 +159,9 @@ struct Options {
     double outage_start{-1.0};      // coordinator outage window
     double outage_length{0.0};
     bool mecanum{false};
+    // The Wheeltec (a mecanum chassis) driven as a unicycle, as TASE-4UGVs-Wheeltec does: its real
+    // 0.41 x 0.36 chassis, the 0.69 x 0.64 envelope it declares, rotation about its origin.
+    bool wheeltec_unicycle{false};
     bool ell_in_planner{true};      // (kept for symmetry: the planner always gets the vehicle's own estimate)
     unsigned seed{7};
 };
@@ -219,16 +222,17 @@ class Plant {
     bool mecanum_;
 };
 
-inline rc::ExecutorConfig executorConfig(bool mecanum) {
+inline rc::ExecutorConfig executorConfig(const Options& o) {
     rc::ExecutorConfig cfg;
-    cfg.spec.model = mecanum ? rc::Model::Omni : rc::Model::Unicycle;
-    cfg.spec.footprint = mecanum ? rc::Footprint{0.345, 0.32, 0.0, 0.0} : rc::Footprint{0.45, 0.40, 0.0, 0.0};
+    const bool small = o.mecanum || o.wheeltec_unicycle;
+    cfg.spec.model = o.mecanum ? rc::Model::Omni : rc::Model::Unicycle;
+    cfg.spec.footprint = small ? rc::Footprint{0.345, 0.32, 0.0, 0.0} : rc::Footprint{0.45, 0.40, 0.0, 0.0};
     cfg.spec.max_v = 0.35;
-    cfg.spec.max_vy = mecanum ? 0.35 : 0.0;
+    cfg.spec.max_vy = o.mecanum ? 0.35 : 0.0;
     cfg.spec.max_w = 0.5;
     cfg.spec.acc_v = 0.35;
     cfg.spec.acc_w = 0.6;
-    cfg.spec.ell_bound = mecanum ? 0.0 : 0.25;
+    cfg.spec.ell_bound = o.mecanum ? 0.0 : (o.wheeltec_unicycle ? 0.05 : 0.25);
     return cfg;
 }
 
@@ -238,8 +242,9 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
     std::mt19937 rng(o.seed);
     std::normal_distribution<double> gauss(0.0, 1.0);
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
-    const std::pair<double, double> chassis = o.mecanum ? std::make_pair(0.205, 0.18) : std::make_pair(0.31, 0.26);
-    const std::pair<double, double> planning = o.mecanum ? std::make_pair(0.345, 0.32) : std::make_pair(0.45, 0.40);
+    const bool small = o.mecanum || o.wheeltec_unicycle;
+    const std::pair<double, double> chassis = small ? std::make_pair(0.205, 0.18) : std::make_pair(0.31, 0.26);
+    const std::pair<double, double> planning = small ? std::make_pair(0.345, 0.32) : std::make_pair(0.45, 0.40);
 
     Outcome out;
     out.name = scenario.name;
@@ -260,7 +265,7 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
     std::vector<std::string> names;
     for (size_t i = 0; i < n; ++i) {
         plants.emplace_back(scenario.starts[i], o, o.mecanum);
-        executors.emplace_back(executorConfig(o.mecanum));
+        executors.emplace_back(executorConfig(o));
         names.push_back("ugv" + std::to_string(i + 1));
     }
 
@@ -380,7 +385,7 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
     const bool trace = trace_name != nullptr && scenario.name == trace_name;
     std::vector<double> next_trace(n, t);
     std::map<std::string, std::string> grant_signature;
-    double next_sample = t, next_coordinator = t, next_audit = t, last_step = -1.0;
+    double next_sample = t, next_coordinator = t, last_step = -1.0;
     bool event = false;
     const double kStep = 0.002;
     const double end = t0 + o.horizon + 1.0;
@@ -536,41 +541,38 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
             }
             plants[i].step(published[i], kStep);
         }
-        // The physical audit, every 10 ms.
-        if (t + 1e-9 >= next_audit) {
-            next_audit += 0.01;
-            for (size_t i = 0; i < n; ++i) {
-                const Polygon body = rect(plants[i].pose(), chassis.first, chassis.second);
-                for (size_t k = 0; k < world.obstacles.size(); ++k) {
-                    const double c = clearance(body, world.obstacles[k]);
-                    if (c < out.min_clear) {
-                        out.min_clear = c;
-                        out.min_clear_at = t - t0;
-                        out.min_clear_with = names[i] + "/static" + std::to_string(k);
-                    }
+        // Independent physical SAT audit on this plant step (kStep is 2 ms).
+        for (size_t i = 0; i < n; ++i) {
+            const Polygon body = rect(plants[i].pose(), chassis.first, chassis.second);
+            for (size_t k = 0; k < world.obstacles.size(); ++k) {
+                const double c = clearance(body, world.obstacles[k]);
+                if (c < out.min_clear) {
+                    out.min_clear = c;
+                    out.min_clear_at = t - t0;
+                    out.min_clear_with = names[i] + "/static" + std::to_string(k);
                 }
-                for (size_t j = i + 1; j < n; ++j) {
-                    const double chassis_clear = clearance(body, rect(plants[j].pose(), chassis.first, chassis.second));
-                    if (chassis_clear < out.min_clear) {
-                        out.min_clear = chassis_clear;
-                        out.min_clear_at = t - t0;
-                        out.min_clear_with = names[i] + "/" + names[j];
-                    }
-                    if (pair_ok[i][j]) {
-                        const double c = clearance(rect(plants[i].pose(), planning.first, planning.second),
-                                                   rect(plants[j].pose(), planning.first, planning.second));
-                        if (c < out.min_planning_clear) {
-                            out.min_planning_clear = c;
-                            out.min_planning_at = t - t0;
-                            out.min_planning_pair = names[i] + "/" + names[j];
-                        }
+            }
+            for (size_t j = i + 1; j < n; ++j) {
+                const double chassis_clear = clearance(body, rect(plants[j].pose(), chassis.first, chassis.second));
+                if (chassis_clear < out.min_clear) {
+                    out.min_clear = chassis_clear;
+                    out.min_clear_at = t - t0;
+                    out.min_clear_with = names[i] + "/" + names[j];
+                }
+                if (pair_ok[i][j]) {
+                    const double c = clearance(rect(plants[i].pose(), planning.first, planning.second),
+                                               rect(plants[j].pose(), planning.first, planning.second));
+                    if (c < out.min_planning_clear) {
+                        out.min_planning_clear = c;
+                        out.min_planning_at = t - t0;
+                        out.min_planning_pair = names[i] + "/" + names[j];
                     }
                 }
             }
-            if (out.min_clear < -1e-6) {
-                out.collision = true;
-                break;
-            }
+        }
+        if (out.min_clear < -1e-6) {
+            out.collision = true;
+            break;
         }
         bool all = true;
         for (size_t i = 0; i < n; ++i) {
