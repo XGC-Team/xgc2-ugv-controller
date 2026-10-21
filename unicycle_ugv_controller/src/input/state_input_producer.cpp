@@ -29,6 +29,7 @@ void StateInputProducer::stateCallback(
         return;
     }
     const UnicycleProjection planar = projectRigidToUnicycle(*msg);
+    state_.pose_stamp_trusted = !msg->header.stamp.isZero();
     state_.stamp = toCoreTime(msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp);
     state_.x = planar.x;
     state_.y = planar.y;
@@ -61,6 +62,7 @@ void StateInputProducer::poseCallback(const geometry_msgs::PoseStamped::ConstPtr
     state_.x = msg->pose.position.x;
     state_.y = msg->pose.position.y;
     state_.yaw = yaw;
+    state_.pose_stamp_trusted = !msg->header.stamp.isZero();
     state_.stamp = toCoreTime(msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp);
     state_.estimator_state = 0U;
     state_.estimator_flags = 0U;

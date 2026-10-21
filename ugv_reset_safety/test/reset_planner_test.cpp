@@ -12,7 +12,7 @@ using ugv_reset_safety::Fence;
 using ugv_reset_safety::PlannerConfig;
 using ugv_reset_safety::PlannerDecision;
 using ugv_reset_safety::PlannerVehicle;
-using ugv_reset_safety::ResetPlanner;
+using ResetPlanner = StoppedPlannerFixture;
 
 rc::VehicleSpec scoutSpec() {
     rc::VehicleSpec spec;
@@ -290,7 +290,8 @@ TEST(ResetPlanner, AParkedBodyThatBlocksTheRestOfAHeldRouteRevokesItAndTheVehicl
     two.pose = {0.0, -3.0, 1.5708};
     std::vector<PlannerDecision> revoked;
     for (double t = 0.3; t < 1.0 && revoked.empty(); t += 0.1) {
-        revoked = planner.update(t, {one, two});
+        for (const auto& d : planner.update(t, {one, two}))
+            if (d.id == "ugv2") revoked.push_back(d);
     }
     ASSERT_FALSE(revoked.empty());
     EXPECT_EQ(revoked[0].id, "ugv2");
@@ -299,7 +300,7 @@ TEST(ResetPlanner, AParkedBodyThatBlocksTheRestOfAHeldRouteRevokesItAndTheVehicl
     ASSERT_EQ(revoked[0].blockers.size(), 1U);
     EXPECT_EQ(revoked[0].blockers[0], "ugv1");
     EXPECT_EQ(planner.stats().revocations, 1);
-    // From where it stands, ugv2 is planned a detour around the parked body, in the same step.
+    // The ideal fixture performs the exact Brake/certificate wire turns before the detour.
     ASSERT_GE(revoked.size(), 2U);
     EXPECT_EQ(revoked[1].id, "ugv2");
     EXPECT_EQ(revoked[1].state, rc::GrantState::Go);

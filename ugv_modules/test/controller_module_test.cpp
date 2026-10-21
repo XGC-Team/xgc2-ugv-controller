@@ -48,6 +48,7 @@ xgc2_ugv_planar_state estimate(int64_t stamp_ns, const Plant& p) {
     xgc2_ugv_planar_state s;
     std::memset(&s, 0, sizeof s);
     s.stamp_ns = stamp_ns;
+    s.pose_stamp_trusted = 1U;
     s.x = p.x;
     s.y = p.y;
     s.yaw = p.yaw;
@@ -65,6 +66,7 @@ xgc2_ugv_planar_state poseOf(int64_t stamp_ns, const Plant& p) {
     xgc2_ugv_planar_state s;
     std::memset(&s, 0, sizeof s);
     s.stamp_ns = stamp_ns;
+    s.pose_stamp_trusted = 1U;
     s.x = p.x;
     s.y = p.y;
     s.yaw = p.yaw;
@@ -149,6 +151,13 @@ class Rig {
             linear_ = twist.linear_x;
             angular_ = twist.angular_z;
             twists_.push_back(twist);
+            if (twist.linear_x==0.0 && twist.linear_y==0.0 && twist.angular_z==0.0) {
+                const auto report=session();
+                if (report.request_generation!=0 && report.acknowledged_grant_id!=0) {
+                    xgc2_ugv_reset_zero_publication receipt{now_,report.request_generation,report.acknowledged_grant_id};
+                    host_.push("reset_zero_publication",receipt,now_);
+                }
+            }
         }
         plant_.step(linear_, angular_, 2e-3);
         now_ += kStep;
@@ -206,7 +215,7 @@ TEST(ControllerModule, DescribesItsPortsForTheHost) {
     const xgc2_module_desc* d = library.desc();
     EXPECT_EQ(d->abi_major, XGC2_MODULE_ABI_MAJOR);
     EXPECT_STREQ(d->name, "ugv_unicycle_controller");
-    ASSERT_EQ(d->port_count, 12u);
+    ASSERT_EQ(d->port_count, 13u);
     struct Expect {
         const char* name;
         xgc2_port_direction direction;
@@ -217,14 +226,16 @@ TEST(ControllerModule, DescribesItsPortsForTheHost) {
         uint32_t flags;
     };
     const Expect expected[] = {
-        {"state", XGC2_PORT_IN, XGC2_PORT_STATE, "xgc2.ugv.planar_state.v1",
+        {"state", XGC2_PORT_IN, XGC2_PORT_STATE, XGC2_UGV_SCHEMA_PLANAR_STATE,
          sizeof(xgc2_ugv_planar_state), 0, XGC2_PORT_REQUIRED},
         {"command", XGC2_PORT_IN, XGC2_PORT_EVENT, "xgc2.ugv.command.v1", sizeof(xgc2_ugv_command),
          8, 0},
         {"reset_target", XGC2_PORT_IN, XGC2_PORT_STATE, "xgc2.ugv.reset_target.v1",
          sizeof(xgc2_ugv_reset_target), 0, 0},
-        {"reset_grant", XGC2_PORT_IN, XGC2_PORT_EVENT, "xgc2.ugv.reset_grant.v1",
+        {"reset_grant", XGC2_PORT_IN, XGC2_PORT_EVENT, XGC2_UGV_SCHEMA_RESET_GRANT,
          sizeof(xgc2_ugv_reset_grant), 16, 0},
+        {"reset_zero_publication", XGC2_PORT_IN, XGC2_PORT_STATE,
+         XGC2_UGV_SCHEMA_RESET_ZERO_PUBLICATION,sizeof(xgc2_ugv_reset_zero_publication),0,0},
         {"active_analytic", XGC2_PORT_IN, XGC2_PORT_STATE,
          "xgc2.ugv.unicycle_reference.analytic.v1", sizeof(xgc2_ugv_analytic_reference), 0, 0},
         {"active_polynomial", XGC2_PORT_IN, XGC2_PORT_STATE,
@@ -237,7 +248,7 @@ TEST(ControllerModule, DescribesItsPortsForTheHost) {
          0, 0},
         {"status", XGC2_PORT_OUT, XGC2_PORT_STATE, "xgc2.ugv.controller_status.v1",
          sizeof(xgc2_ugv_controller_status), 0, 0},
-        {"reset_session", XGC2_PORT_OUT, XGC2_PORT_STATE, "xgc2.ugv.reset_session.v2",
+        {"reset_session", XGC2_PORT_OUT, XGC2_PORT_STATE, XGC2_UGV_SCHEMA_RESET_SESSION,
          sizeof(xgc2_ugv_reset_session), 0, 0},
         {"reset_result", XGC2_PORT_OUT, XGC2_PORT_EVENT, "xgc2.ugv.reset_result.v1",
          sizeof(xgc2_ugv_reset_result), 4, 0},
@@ -253,7 +264,7 @@ TEST(ControllerModule, DescribesItsPortsForTheHost) {
         EXPECT_EQ(p.queue_depth, expected[i].depth) << p.name;
         EXPECT_EQ(p.flags, expected[i].flags) << p.name;
         // The inputs come first: the index of an input is its index in the port table.
-        EXPECT_EQ(p.direction == XGC2_PORT_IN, i < 8u) << p.name;
+        EXPECT_EQ(p.direction == XGC2_PORT_IN, i < 9u) << p.name;
     }
 }
 
@@ -545,6 +556,15 @@ class ResetTest : public ::testing::Test {
     }
 
     xgc2_ugv_reset_grant grant(uint32_t session, uint32_t state, double s_limit = 1e9) {
+        auto current=rig_.session();
+        if (state==XGC2_UGV_RESET_GRANT_GO && session==current.session && !current.stop_certified) {
+            xgc2_ugv_reset_grant b{};b.session=current.session;b.request_generation=current.request_generation;
+            b.state=XGC2_UGV_RESET_GRANT_BRAKE;b.grant_id=++decision_;b.publication_seq=publication_++;b.ttl=1;
+            rig_.host().push("reset_grant",b,rig_.now());
+            rig_.ticks(160); // real paced fixture steps, publisher receipt + >.2s fresh samples
+            current=rig_.session();
+            EXPECT_EQ(current.stop_certified,1U);
+        }
         xgc2_ugv_reset_grant g;
         std::memset(&g, 0, sizeof g);
         g.stamp_ns = rig_.now();
@@ -558,7 +578,9 @@ class ResetTest : public ::testing::Test {
         g.ttl = 1.0;
         g.session = session;
         g.state = state;
-        g.grant_id = 1;
+        g.grant_id = ++decision_;
+        g.request_generation=current.request_generation;
+        g.publication_seq=publication_++;
         g.final_move = 1;
         return g;
     }
@@ -573,6 +595,7 @@ class ResetTest : public ::testing::Test {
         return true;
     }
 
+    uint32_t decision_{0},publication_{0};
     Rig rig_;
 };
 
@@ -676,6 +699,61 @@ TEST_F(ResetTest, AStopEndsTheSessionAndAMalformedGrantChangesNothing) {
     ASSERT_TRUE(result(&r));
     EXPECT_EQ(r.outcome, 3u) << "STOPPED";
     EXPECT_EQ(rig_.session().phase, XGC2_UGV_RESET_PHASE_IDLE);
+}
+
+TEST_F(ResetTest, LifecycleStopRetainsOutcomeWithoutPortFlushAndARealStepCanDeliverIt) {
+    // Isolate stop/credit behavior from the separate initial-turn test: the
+    // seeded (2,.5) route is 14deg off heading and must rotate before translating.
+    xgc2_ugv_reset_target target{};target.x=2.0;
+    ASSERT_TRUE(rig_.host().push("reset_target",target,rig_.now()));
+    requestReset();
+    const uint32_t session=rig_.session().session;
+    auto go=grant(session,XGC2_UGV_RESET_GRANT_GO);
+    const auto certified=rig_.session();
+    ASSERT_EQ(certified.stop_certified,1u);
+    ASSERT_EQ(go.request_generation,certified.request_generation);
+    ASSERT_GT(go.grant_id,certified.acknowledged_grant_id);
+    // Freeze the grant to the actual target consumed by begin(), not the
+    // helper's default goal for the other tests.
+    go.goal_x=certified.target_x;go.goal_y=certified.target_y;go.goal_yaw=certified.target_yaw;
+    ASSERT_DOUBLE_EQ(go.goal_y,0.0);
+    ASSERT_TRUE(rig_.host().push("reset_grant",go,rig_.now()));
+    rig_.ticks(40);
+    EXPECT_EQ(rig_.session().acknowledged_grant_id,go.grant_id);
+    EXPECT_EQ(rig_.session().stop_certified,0u);
+    bool drove=false;
+    for (const auto& cmd:rig_.twists()) drove=drove || std::abs(cmd.linear_x)>1e-6;
+    ASSERT_TRUE(drove);
+    rig_.host().limitOutput("reset_result",0);
+    const auto sessions=rig_.host().outputs("reset_session").size();
+    const auto commands=rig_.host().outputs("cmd_vel").size();
+    const auto refused=rig_.host().refusedWrites("reset_result");
+    const auto after=rig_.twists().size();
+    ASSERT_EQ(rig_.host().stop(),XGC2_OK); // Real loaded module lifecycle callback, no step.
+    EXPECT_EQ(rig_.host().outputs("reset_session").size(),sessions);
+    EXPECT_EQ(rig_.host().outputs("cmd_vel").size(),commands);
+    EXPECT_TRUE(rig_.host().outputs("reset_result").empty());
+    EXPECT_EQ(rig_.host().refusedWrites("reset_result"),refused);
+    EXPECT_TRUE(rig_.host().logged(2,"outcome retained locally"));
+    ASSERT_EQ(rig_.host().start(),XGC2_OK);
+    rig_.ticks(20);
+    EXPECT_GT(rig_.host().refusedWrites("reset_result"),refused);
+    EXPECT_TRUE(rig_.host().outputs("reset_result").empty());
+    rig_.host().limitOutput("reset_result",1);
+    rig_.ticks(20);
+    const auto results=rig_.host().outputsAs<xgc2_ugv_reset_result>("reset_result");
+    ASSERT_EQ(results.size(),1u);
+    EXPECT_EQ(results[0].session,session);
+    EXPECT_EQ(results[0].outcome,3u) << "STOPPED";
+    for (size_t i=after;i<rig_.twists().size();++i) {
+        EXPECT_DOUBLE_EQ(rig_.twists()[i].linear_x,0);
+        EXPECT_DOUBLE_EQ(rig_.twists()[i].linear_y,0);
+        EXPECT_DOUBLE_EQ(rig_.twists()[i].angular_z,0);
+    }
+    ASSERT_EQ(rig_.host().stop(),XGC2_OK);
+    ASSERT_EQ(rig_.host().start(),XGC2_OK);
+    rig_.ticks(20);
+    EXPECT_EQ(rig_.host().outputs("reset_result").size(),1u) << "no duplicate outcome";
 }
 
 TEST_F(ResetTest, ALostVehicleStateEndsTheSessionUnhealthy) {

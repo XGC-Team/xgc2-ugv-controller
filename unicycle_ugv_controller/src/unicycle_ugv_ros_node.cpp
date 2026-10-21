@@ -157,10 +157,12 @@ void UnicycleUgvRosNode::updateOnce() {
     ugv_reset_client::Session session;
     if (controller_.takeResetSession(&session)) {
         reset_edge_.publish(session);
+        controller_.resetSessionPublished();
     }
     ugv_reset_client::Result result;
-    if (controller_.takeResetResult(&result)) {
+    if (controller_.peekResetResult(&result)) {
         reset_edge_.publish(result);
+        controller_.resetResultPublished();
     }
     const auto control_state = controller_.stateMachine().currentState(region_type::CONTROL);
     const auto health_state = controller_.stateMachine().currentState(region_type::HEALTH);
@@ -169,7 +171,12 @@ void UnicycleUgvRosNode::updateOnce() {
 }
 
 void UnicycleUgvRosNode::dispatchOutputEvents(const std::vector<::state_machine::Event>& events) {
-    const auto result = output_dispatcher_.dispatch(events);
+    auto outputs = events;
+    if (controller_.resetExecutor().needsZeroPublication()) {
+        outputs.emplace_back(output_event_type::PUBLISH_ZERO_CMD_VEL,
+                             ::state_machine::EventTimestamp{controller_.currentTime()});
+    }
+    const auto result = output_dispatcher_.dispatch(outputs);
     for (const auto& event : result.unhandled_events) {
         ROS_WARN("[UnicycleUgvRosNode] Unhandled output event id: %u",
                  static_cast<unsigned>(event.id));

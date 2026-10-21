@@ -1,14 +1,14 @@
 <launch>
-  <!-- The Reset coordinator has no roster: it finds the vehicles by their reset/session topics and
-       takes everything else from what each vehicle declares. config_file is accepted and ignored
-       (for one release): launches written for the roster YAML still pass it. -->
-  <arg name="config_file" default=""/>
+  <!-- Explicit frozen Session.robots JSON, or the equivalent kind/namespace rows for standalone use.
+       No implicit discovery timeout or empty-scope motion admission. -->
+  <arg name="expected_scope"/>
   <!-- Empty: no Scene was authored for this Experiment. -->
   <arg name="scene_namespace" default=""/>
   <!-- "x_min,x_max,y_min,y_max", or empty for none. -->
   <arg name="fence" default=""/>
   <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node" name="xgc_reset_coordinator" output="screen">
     <env name="XGC_RESET_SCENE_NAMESPACE" value="$(arg scene_namespace)"/>
+    <env name="XGC_RESET_EXPECTED_SCOPE" value="$(arg expected_scope)"/>
     <env name="XGC_RESET_FENCE" value="$(arg fence)"/>
   </node>
 </launch>

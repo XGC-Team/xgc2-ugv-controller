@@ -22,6 +22,10 @@ bool CmdVelOutputConsumer::handle(const ::state_machine::Event& event) {
         return false;
     }
     cmd_vel_pub_.publish(twist);
+    if (twist.linear.x == 0.0 && twist.linear.y == 0.0 && twist.linear.z == 0.0 &&
+        twist.angular.x == 0.0 && twist.angular.y == 0.0 && twist.angular.z == 0.0) {
+        controller_.notifyResetZeroPublished(ros::Time::now().toSec());
+    }
     return true;
 }
 

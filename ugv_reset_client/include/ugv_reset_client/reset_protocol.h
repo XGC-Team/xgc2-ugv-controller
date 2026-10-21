@@ -7,7 +7,8 @@
 //
 // Who decides what: the vehicle owns its motion, its deadline and its fail-stop; the coordinator
 // only grants permission to move (a frozen route and the prefix of it that is free). A vehicle
-// declares everything the planner needs to know about it in its Session; there is no roster.
+// declares body/spec/target truth in its Session. A separate finite namespace scope gates initial
+// discovery; it never supplies shapes, kinematics or targets.
 
 #include <cmath>
 #include <cstddef>
@@ -38,7 +39,7 @@ enum class Model : uint8_t { Unicycle = 0, Omni = 1 };
 
 enum class Phase : uint8_t {
     Idle = 0,        // not resetting
-    Requesting = 1,  // entered Reset, no grant yet
+    Requesting = 1,  // a route request; exact stop certification is separate
     Waiting = 2,     // stopped: between moves, or held at the end of the granted prefix
     Moving = 3,
     Settling = 4,  // at the end of the final route, closing the arrival gate
@@ -159,8 +160,15 @@ struct VehicleSpec {
     double ell_bound{0.25};  // |rotation-centre offset| bound of a unicycle (Scout lateral coupling)
 };
 
-// ResetSession.
+// ResetSession. G and publication sequence continue across S within one live owner;
+// zero G is observational only. No wrap or cross-restart resume is supported.
+// stop_certified refers only to the exact accepted Brake (S,G,ack), after actual
+// zero publication and fresh stopped acquisition. Go/Hold receipts have cert=false.
 struct Session {
+    uint32_t request_generation{0};
+    uint32_t acknowledged_grant_id{0};
+    bool stop_certified{false};
+    uint32_t publication_seq{0};  // preserve ROS Header.seq; not an additional wire field
     double stamp{0.0};  // the vehicle's clock when it was made [s]
     uint32_t session{0};
     double pose_stamp{0.0};
@@ -177,6 +185,8 @@ struct Session {
 
 // ResetGrant. A GO carries the whole frozen route and the prefix of it that may be driven.
 struct Grant {
+    uint32_t request_generation{0};
+    uint32_t publication_seq{0};  // preserve ROS Header.seq before heartbeat validation
     double stamp{0.0};  // the coordinator's clock when it was published [s]
     double ttl{1.0};    // heartbeat: the grant holds for this long after it is received [s]
     uint32_t session{0};

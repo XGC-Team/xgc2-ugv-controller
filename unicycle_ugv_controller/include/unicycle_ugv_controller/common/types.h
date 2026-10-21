@@ -113,6 +113,7 @@ struct UgvState {
     uint8_t estimator_state{0U};
     uint32_t estimator_flags{0U};
     bool received{false};
+    bool pose_stamp_trusted{false};
     bool velocity_valid{false};
 };
 

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <limits>
 #include <set>
+#include <stdexcept>
 #include <sstream>
 #include <ugv_reset_safety/reset_path.h>
 #include <utility>
@@ -257,6 +258,7 @@ double wrap(double a) {
 // Bodies.
 
 struct Plan {
+    uint32_t session{0}, request_generation{0};
     Route route;  // the planned rotation-centre offset
     std::vector<SampleSet> sets;
     std::vector<size_t> cursor, hi;
@@ -271,6 +273,8 @@ struct Plan {
 struct Body {
     std::string id;
     uint32_t session{0};
+    uint32_t request_generation{0}, barrier_id{0}, budget_session{0};
+    bool awaiting_stop{false}, certified{false}, plan_retiring{false}, go_received{false};
     rc::VehicleSpec spec;
     Shape shape;
     double delta{0.0};  // sampling error of this body's sweeps
@@ -335,6 +339,12 @@ struct ResetPlanner::Impl {
     uint32_t next_grant{1};
 
     explicit Impl(const PlannerConfig& config) : cfg(config) {}
+
+    uint32_t allocate() {
+        if (next_grant == 0 || next_grant == std::numeric_limits<uint32_t>::max())
+            throw std::overflow_error("Reset decision allocator exhausted");
+        return next_grant++;
+    }
 
     // ----------------------------------------------------------------- clearance helpers
 
@@ -437,7 +447,7 @@ struct ResetPlanner::Impl {
                         }
                         continue;
                     }
-                    if (soft_found) {
+                    if (soft_found && !other.plan_retiring) {
                         continue;
                     }
                     const double m_mover = cfg.pair_margin + self.delta + other.delta;
@@ -448,10 +458,10 @@ struct ResetPlanner::Impl {
                     }
                     for (size_t w = 0; w < other.plan.sets.size(); ++w) {
                         const SampleSet& reserved = other.plan.sets[w];
-                        if (other.plan.hi[w] <= other.plan.cursor[w]) {
+                        const size_t lo = other.plan.cursor[w] > kBehind ? other.plan.cursor[w] - kBehind : 0;
+                        if (other.plan.hi[w] <= lo) {
                             continue;
                         }
-                        const size_t lo = other.plan.cursor[w] > kBehind ? other.plan.cursor[w] - kBehind : 0;
                         for (size_t k = lo / kChunk; k * kChunk < other.plan.hi[w]; ++k) {
                             if (!separated(cb, reserved.chunks[k], m_mover)) {
                                 rel_movers.push_back({&other, w, k});
@@ -499,42 +509,47 @@ struct ResetPlanner::Impl {
                             return result;
                         }
                     }
-                    if (soft_found) {
-                        continue;
-                    }
-                    bool bad = false;
-                    std::string who;
-                    for (size_t k = 0; k < now_bodies.size() && !bad; ++k) {
-                        const double m = cfg.pair_margin + self.delta + now_bodies[k]->delta;
-                        if (!sampleClear(self, q, *now_bodies[k], rel_mover_now[k], m)) {
-                            bad = true;
-                            who = now_bodies[k]->id;
-                        }
-                    }
-                    for (const MoverChunk& mc : rel_movers) {
-                        if (bad) {
-                            break;
-                        }
-                        const Body& other = *mc.body;
-                        const double m = cfg.pair_margin + self.delta + other.delta;
-                        if (separated(q.box, other.plan.sets[mc.variant].chunks[mc.chunk], m)) {
-                            continue;
-                        }
-                        const SampleSet& reserved = other.plan.sets[mc.variant];
-                        const size_t lo = std::max(mc.chunk * kChunk,
-                                                   other.plan.cursor[mc.variant] > kBehind
-                                                       ? other.plan.cursor[mc.variant] - kBehind
-                                                       : size_t{0});
-                        const size_t hi = std::min({(mc.chunk + 1) * kChunk, reserved.pts.size(),
-                                                    other.plan.hi[mc.variant]});
-                        for (size_t r = lo; r < hi; ++r) {
-                            if (!sampleClear(self, q, other, reserved.pts[r], m)) {
-                                bad = true;
-                                who = other.id;
-                                break;
+                    // A retirement barrier freezes the highest issued prefix and rear cursor.
+                    // It cannot be treated as a mover whose reservation will shrink by waiting.
+                    // Check its ENTIRE existing per-variant retained sample interval before the
+                    // soft-conflict shortcut. No new hull/polygon or pose-only substitute is used.
+                    auto reservedConflict = [&](bool retiring, std::string& who) {
+                        for (size_t k = 0; k < now_bodies.size(); ++k) {
+                            const Body& other = *now_bodies[k];
+                            if (other.plan_retiring != retiring) continue;
+                            const double m = cfg.pair_margin + self.delta + other.delta;
+                            if (!sampleClear(self, q, other, rel_mover_now[k], m)) {
+                                who = other.id; return true;
                             }
                         }
+                        for (const MoverChunk& mc : rel_movers) {
+                            const Body& other = *mc.body;
+                            if (other.plan_retiring != retiring) continue;
+                            const double m = cfg.pair_margin + self.delta + other.delta;
+                            if (separated(q.box, other.plan.sets[mc.variant].chunks[mc.chunk], m)) continue;
+                            const SampleSet& reserved = other.plan.sets[mc.variant];
+                            const size_t lo = std::max(mc.chunk * kChunk,
+                                other.plan.cursor[mc.variant] > kBehind
+                                    ? other.plan.cursor[mc.variant] - kBehind : size_t{0});
+                            const size_t hi = std::min({(mc.chunk + 1) * kChunk, reserved.pts.size(),
+                                                      other.plan.hi[mc.variant]});
+                            for (size_t r = lo; r < hi; ++r) {
+                                if (!sampleClear(self, q, other, reserved.pts[r], m)) {
+                                    who = other.id; return true;
+                                }
+                            }
+                        }
+                        return false;
+                    };
+                    std::string who;
+                    if (reservedConflict(true, who)) {
+                        result.hard = true;
+                        result.s = q.s;
+                        result.blockers = {who};
+                        return result;
                     }
+                    if (soft_found) continue;
+                    const bool bad = reservedConflict(false, who);
                     if (bad) {
                         soft_found = true;
                         if (q.s < result.s) {
@@ -569,6 +584,36 @@ struct ResetPlanner::Impl {
             obstacle.vertices.emplace_back(v.x[k], v.y[k]);
         }
         return obstacle;
+    }
+
+    // Routing-only outer rectangle for a frozen retiring sweep. It generates search vertices;
+    // it does not replace or enlarge the Plan's reservation or its exact sampled verifier.
+    static ConvexObstacle retiringRoutingObstacle(const Body& body) {
+        std::vector<Eigen::Vector2d> points;
+        auto append = [&](const Pose& pose) {
+            Verts verts; place(body.shape, pose.x, pose.y, pose.yaw, &verts);
+            for (int k=0;k<verts.n;++k) points.emplace_back(verts.x[k], verts.y[k]);
+        };
+        append(body.pose); // the original verifier also checks the current reported footprint
+        for (size_t variant=0;variant<body.plan.sets.size();++variant) {
+            const auto& set=body.plan.sets[variant];
+            const size_t hi=std::min(set.pts.size(),body.plan.hi[variant]);
+            const size_t lo=body.plan.cursor[variant]>kBehind?body.plan.cursor[variant]-kBehind:0;
+            if (hi<=lo) continue; // the exact existing retained interval is empty
+            for (size_t i=lo;i<hi;++i) {
+                const auto& q=set.pts[i];append({q.x,q.y,q.yaw});
+            }
+        }
+        // Four support halfspaces aligned with the frozen nominal route chord: a routing-only
+        // outer rectangle with bounded visibility vertices. Every retained variant/corner is
+        // projected; neither downsampling nor a last-pose/last-ack prefix substitutes for it.
+        const double angle=std::atan2(body.plan.goal.y-body.plan.route.start().y,
+                                      body.plan.goal.x-body.plan.route.start().x);
+        const Eigen::Vector2d u(std::cos(angle),std::sin(angle)),v(-u.y(),u.x());
+        double xmin=kInf,xmax=-kInf,ymin=kInf,ymax=-kInf;
+        for(const auto&p:points){const double x=u.dot(p),y=v.dot(p);xmin=std::min(xmin,x);xmax=std::max(xmax,x);ymin=std::min(ymin,y);ymax=std::max(ymax,y);}
+        std::vector<Eigen::Vector2d> hull={xmin*u+ymin*v,xmax*u+ymin*v,xmax*u+ymax*v,xmin*u+ymax*v};
+        ConvexObstacle obstacle;obstacle.id="frozen"+body.id;obstacle.vertices=std::move(hull);return obstacle;
     }
 
     const std::vector<ConvexObstacle>& staticObstacles() const {
@@ -609,7 +654,9 @@ struct ResetPlanner::Impl {
                     if (&other == &body) {
                         continue;
                     }
-                    if (other.plan_active) {
+                    if (other.plan_active && other.plan_retiring) {
+                        obstacles.push_back(retiringRoutingObstacle(other));
+                    } else if (other.plan_active) {
                         // Coarse stand-in for the remaining sweep (the exact verifier follows).
                         const SampleSet& set = other.plan.sets.size() == 3 ? other.plan.sets[1]
                                                                            : other.plan.sets[0];
@@ -705,10 +752,16 @@ struct ResetPlanner::Impl {
         return plan.route.length() / (0.7 * body.spec.max_v) + turn / (0.7 * body.spec.max_w) + 3.0;
     }
 
-    void installPlan(Body& body, Plan plan) {
+    bool installPlan(Body& body, Plan plan) {
+        if (body.grants >= 3) {
+            emitReject(body, Reason::NoRoute, "Reset replan budget exhausted", {});
+            return false;
+        }
+        plan.session = body.session;
+        plan.request_generation = body.request_generation;
         body.plan = std::move(plan);
         body.plan_active = true;
-        body.plan.grant_id = next_grant++;
+        body.plan.grant_id = allocate();
         body.plan.cursor.assign(body.plan.sets.size(), 0);
         updateHi(body);
         body.hold_reason = Reason::None;
@@ -716,6 +769,9 @@ struct ResetPlanner::Impl {
         body.no_route_since = -1.0;
         body.progress_pose = body.pose;
         ++body.grants;
+        body.plan_retiring = false;
+        body.go_received = false;
+        return true;
     }
 
     static void updateHi(Body& body) {
@@ -742,6 +798,7 @@ struct ResetPlanner::Impl {
         PlannerDecision d;
         d.id = body.id;
         d.session = body.session;
+        d.request_generation = body.request_generation;
         d.state = state;
         return d;
     }
@@ -773,6 +830,7 @@ struct ResetPlanner::Impl {
             return;
         }
         PlannerDecision d = base(body, GrantState::Hold);
+        d.grant_id = allocate();
         d.reason = reason;
         d.detail = detail;
         d.blockers = blockers;
@@ -786,9 +844,15 @@ struct ResetPlanner::Impl {
     void emitBrake(Body& body, Reason reason, const std::string& detail,
                    const std::vector<std::string>& blockers) {
         PlannerDecision d = base(body, GrantState::Brake);
+        d.grant_id = allocate();
         d.reason = reason;
         d.detail = detail;
         d.blockers = blockers;
+        body.awaiting_stop = true;
+        body.certified = false;
+        body.plan_retiring = body.plan_active;
+        body.go_received = false;
+        body.barrier_id = d.grant_id;
         body.emitted = true;
         body.last_state = GrantState::Brake;
         body.last_reason = reason;
@@ -799,9 +863,12 @@ struct ResetPlanner::Impl {
     void emitReject(Body& body, Reason reason, const std::string& detail,
                     const std::vector<std::string>& blockers) {
         PlannerDecision d = base(body, GrantState::Reject);
+        d.grant_id = allocate();
         d.reason = reason;
         d.detail = detail;
         d.blockers = blockers;
+        body.plan_retiring = body.plan_active;
+        body.go_received = false;
         body.rejected = true;
         body.emitted = true;
         body.last_state = GrantState::Reject;
@@ -816,68 +883,60 @@ struct ResetPlanner::Impl {
     void sync(const std::vector<PlannerVehicle>& vehicles) {
         for (const PlannerVehicle& v : vehicles) {
             auto found = bodies.find(v.id);
-            bool fresh = found == bodies.end();
+            const bool fresh = found == bodies.end();
             Body& body = bodies[v.id];
-            if (fresh) {
-                body.id = v.id;
-                body.session = v.session;
-                body.spec = v.spec;
-                body.shape = makeShape(v.spec);
-                body.since = now;
-                setDelta(body);
-            }
-            if (!fresh && !(v.spec.model == body.spec.model &&
-                            v.spec.footprint.half_length == body.spec.footprint.half_length &&
-                            v.spec.footprint.half_width == body.spec.footprint.half_width &&
-                            v.spec.footprint.offset_x == body.spec.footprint.offset_x &&
-                            v.spec.footprint.offset_y == body.spec.footprint.offset_y &&
-                            v.spec.ell_bound == body.spec.ell_bound)) {
-                body.plan_active = false;
-                body.spec = v.spec;
-                body.shape = makeShape(v.spec);
-                setDelta(body);
-            } else {
-                body.spec = v.spec;
-            }
-            if (v.session != body.session) {
-                // A new session: nothing of the previous one carries over.
-                body.session = v.session;
-                body.plan_active = false;
-                body.rejected = false;
-                body.emitted = false;
-                body.since = now;
-                body.occupied_since = -1.0;
-                body.no_route_since = -1.0;
-                dirty = true;
-            }
-            body.pose = v.pose;
-            body.target = v.target;
-            body.ell_hat = v.ell_hat;
-            body.ell_spread = v.ell_spread;
-            const bool was = body.participant;
+            if (fresh) { body.id = v.id; body.since = now; }
+            if (!fresh && (v.request_generation < body.request_generation ||
+                (v.request_generation == body.request_generation && v.session != body.session))) continue;
+            const bool new_request = v.request_generation > body.request_generation;
+            const bool new_session = v.session != body.session;
+            if (v.available || fresh) body.pose = v.pose;
             body.phase = v.phase;
             body.participant = v.phase == Phase::Requesting || v.phase == Phase::Waiting ||
                                v.phase == Phase::Moving || v.phase == Phase::Settling;
-            if (body.participant && !was) {
-                body.since = now;
-                dirty = true;
-                if (!fresh) {
-                    body.emitted = false;
-                    body.rejected = false;
-                }
+            if (!body.plan_active && (v.available || fresh)) {
+                body.spec = v.spec; body.shape = makeShape(v.spec); setDelta(body);
             }
-            if (!body.participant && body.plan_active) {
-                // The session ended (arrived, stopped, timed out): the body is parked where it is.
-                body.plan_active = false;
-                dirty = true;
-            }
-            body.uncontrolled =
-                v.uncontrolled_moving ||
+            body.ell_hat = v.ell_hat; body.ell_spread = v.ell_spread;
+            body.uncontrolled = v.uncontrolled_moving ||
                 (body.participant && !body.plan_active && v.phase == Phase::Moving);
-            if (!body.participant) {
-                body.emitted = false;
-                body.rejected = false;
+            if (new_request) {
+                body.session = v.session;
+                body.request_generation = v.request_generation;
+                body.target = v.target;
+                if (new_session || fresh) body.since = now;
+                body.rejected = false; body.emitted = false;
+                body.occupied_since = -1.0; body.no_route_since = -1.0;
+                emitBrake(body, Reason::Replan, "awaiting exact post-zero stopping certificate", {});
+                dirty = true;
+            } else if (fresh) {
+                body.session = v.session; body.target = v.target;
             }
+            if (body.request_generation == 0) continue; // discovery only; no authority
+            if (body.plan_active && (!v.available || !body.participant) && !body.plan_retiring) {
+                emitBrake(body, Reason::Replan, "permission retained until stopping is acknowledged", {});
+                dirty = true;
+            }
+            if (!new_request && v.available && body.awaiting_stop && v.stop_certified &&
+                v.acknowledged_grant_id == body.barrier_id && body.barrier_id != 0) {
+                // The only reservation retirement point. The latest declaration may now replace
+                // the frozen old shape/spec; a repeated certificate cannot clear a later Plan.
+                body.plan_active = false; body.plan_retiring = false;
+                body.awaiting_stop = false; body.certified = true; body.go_received = false;
+                body.spec = v.spec; body.shape = makeShape(v.spec); setDelta(body);
+                body.target = v.target;
+                if (body.budget_session != v.session) {
+                    body.budget_session = v.session; body.grants = 0;
+                }
+                body.emitted = false;
+                if (!body.participant)
+                    emitHold(body, Reason::None, "Reset permission retired", {});
+                dirty = true;
+            }
+            if (body.plan_active && !body.plan_retiring && !v.stop_certified &&
+                v.acknowledged_grant_id == body.plan.grant_id &&
+                body.plan.session == v.session && body.plan.request_generation == v.request_generation)
+                body.go_received = true;
         }
     }
 
@@ -895,10 +954,11 @@ struct ResetPlanner::Impl {
             const auto& pts = plan.sets[w].pts;
             size_t best = plan.cursor[w];
             double best_d = kInf;
-            // Yaw-dominant metric (0.6 m lever arm): in-place turns repeat the same position.
+            // Unicycle turns repeat positions; Omni's reserved circumscribed disc is heading independent.
             for (size_t m = plan.cursor[w]; m < std::min(pts.size(), plan.cursor[w] + kWindow); ++m) {
                 const double d = std::hypot(pts[m].x - body.pose.x, pts[m].y - body.pose.y) +
-                                 0.6 * std::abs(wrap(pts[m].yaw - body.pose.yaw));
+                                 (body.spec.model == rc::Model::Unicycle
+                                      ? 0.6 * std::abs(wrap(pts[m].yaw - body.pose.yaw)) : 0.0);
                 if (d < best_d) {
                     best_d = d;
                     best = m;
@@ -925,21 +985,15 @@ struct ResetPlanner::Impl {
                 continue;
             }
             any_mover = true;
+            if (body.plan_retiring || !body.go_received) continue;
             advanceCursor(body);
             if (std::hypot(body.pose.x - body.progress_pose.x, body.pose.y - body.progress_pose.y) > 0.02 ||
                 std::abs(wrap(body.pose.yaw - body.progress_pose.yaw)) > 0.02) {
                 body.progress_pose = body.pose;
                 advanced = true;
             }
-            // A parking move ends at its goal; the vehicle then waits for a new route.
-            if (!body.plan.final_move && body.phase == Phase::Waiting &&
-                std::hypot(body.pose.x - body.plan.goal.x, body.pose.y - body.plan.goal.y) < 0.12 &&
-                std::abs(wrap(body.pose.yaw - body.plan.goal.yaw)) < 0.2) {
-                body.plan_active = false;
-                body.emitted = false;
-                dirty = true;
-                continue;
-            }
+            // Whole-route parking completion is a vehicle-initiated new-G transaction.
+            // Phase/proximity never retire the issued sweep here.
         }
         if (advanced || !any_mover) {
             fleet_progress = now;
@@ -954,6 +1008,7 @@ struct ResetPlanner::Impl {
             if (!body.plan_active) {
                 continue;
             }
+            if (body.plan_retiring) continue;
             const Plan& plan = body.plan;
             const bool prefix_open = plan.s_limit < plan.total - 1e-9;
             if (!prefix_open && !world_changed) {
@@ -973,8 +1028,6 @@ struct ResetPlanner::Impl {
                           violation.world ? "the scene changed under the route"
                                           : "the rest of the route is blocked",
                           violation.blockers);
-                body.plan_active = false;
-                body.emitted = false;
                 ++stats.revocations;
                 dirty = true;
                 continue;
@@ -982,11 +1035,13 @@ struct ResetPlanner::Impl {
             if (violation.hard || !prefix_open) {
                 continue;
             }
+            if (!body.go_received) continue; // safety revocation above never waits for a Go receipt
             const double next = violation.s == kInf ? 1e18 : std::max(plan.s_limit, violation.s - cfg.hold_margin);
             if (next > plan.s_limit + 1e-9) {
                 body.plan.s_limit = next;
                 updateHi(body);
-                body.plan.grant_id = next_grant++;
+                body.plan.grant_id = allocate();
+                body.go_received = false;
                 ++stats.extensions;
                 emitGo(body);
             } else {
@@ -1002,11 +1057,10 @@ struct ResetPlanner::Impl {
         if (any && now - fleet_progress > cfg.stall_s) {
             for (auto& entry : bodies) {
                 Body& body = entry.second;
-                if (!body.plan_active || body.phase != Phase::Waiting) {
+                if (!body.plan_active || body.plan_retiring || body.phase != Phase::Waiting) {
                     continue;
                 }
                 emitReject(body, Reason::Stalled, "no vehicle advanced for 10 s", body.blockers);
-                body.plan_active = false;
             }
             fleet_progress = now;
             dirty = true;
@@ -1111,7 +1165,7 @@ struct ResetPlanner::Impl {
 
     bool anyMover() const {
         for (const auto& entry : bodies) {
-            if (entry.second.plan_active) {
+            if (entry.second.plan_active && !entry.second.plan_retiring) {
                 return true;
             }
         }
@@ -1122,7 +1176,7 @@ struct ResetPlanner::Impl {
         std::vector<Body*> waiting;
         for (auto& entry : bodies) {
             Body& b = entry.second;
-            if (b.participant && !b.plan_active && !b.rejected &&
+            if (b.participant && b.certified && !b.awaiting_stop && !b.plan_active && !b.rejected &&
                 (b.phase == Phase::Requesting || b.phase == Phase::Waiting)) {
                 waiting.push_back(&b);
             }
@@ -1248,7 +1302,7 @@ struct ResetPlanner::Impl {
                     emitReject(*b, Reason::TooSlow, text.str(), {});
                     continue;
                 }
-                installPlan(*b, std::move(cand.plan));
+                if (!installPlan(*b, std::move(cand.plan))) continue;
                 emitGo(*b);
                 ++stats.admissions;
                 ++granted;
@@ -1293,7 +1347,7 @@ struct ResetPlanner::Impl {
         Choice best;
         for (auto& entry : bodies) {
             Body& k = entry.second;
-            if (!k.participant || k.plan_active || k.rejected) {
+            if (!k.participant || !k.certified || k.awaiting_stop || k.plan_active || k.rejected) {
                 continue;
             }
             for (double r : {1.6, 2.4, 3.2}) {
@@ -1352,7 +1406,7 @@ struct ResetPlanner::Impl {
         if (best.body == nullptr || best.score <= 0) {
             return false;
         }
-        installPlan(*best.body, std::move(best.cand.plan));
+        if (!installPlan(*best.body, std::move(best.cand.plan))) return false;
         emitGo(*best.body);
         ++stats.parks;
         return true;
@@ -1361,7 +1415,7 @@ struct ResetPlanner::Impl {
     void deadlock() {
         std::vector<std::string> stuck;
         for (const auto& entry : bodies) {
-            if (entry.second.participant && !entry.second.plan_active && !entry.second.rejected) {
+            if (entry.second.participant && entry.second.certified && !entry.second.awaiting_stop && !entry.second.plan_active && !entry.second.rejected) {
                 stuck.push_back(entry.first);
             }
         }
@@ -1379,10 +1433,15 @@ struct ResetPlanner::Impl {
     // ----------------------------------------------------------------- the step
 
     void step(bool admit_allowed) {
-        updateMovers();
         if (!admit_allowed) {
-            return;
+            for (auto& entry : bodies) {
+                Body& b = entry.second;
+                if (b.plan_active && !b.plan_retiring)
+                    emitBrake(b, Reason::SceneUnavailable, "new admissions unavailable", {});
+            }
         }
+        updateMovers();
+        if (!admit_allowed) return;
         const bool periodic = now - last_replan >= cfg.replan_period;
         if (!dirty && !periodic) {
             return;
@@ -1390,7 +1449,7 @@ struct ResetPlanner::Impl {
         bool waiting = false;
         for (const auto& entry : bodies) {
             const Body& b = entry.second;
-            waiting = waiting || (b.participant && !b.plan_active && !b.rejected &&
+            waiting = waiting || (b.participant && b.certified && !b.awaiting_stop && !b.plan_active && !b.rejected &&
                                   (b.phase == Phase::Requesting || b.phase == Phase::Waiting));
         }
         dirty = false;
@@ -1407,7 +1466,7 @@ struct ResetPlanner::Impl {
             bool blocked = false;
             for (const auto& entry : bodies) {
                 const Body& b = entry.second;
-                if (b.participant && !b.plan_active && !b.rejected && !b.uncontrolled &&
+                if (b.participant && b.certified && !b.awaiting_stop && !b.plan_active && !b.rejected && !b.uncontrolled &&
                     (b.phase == Phase::Requesting || b.phase == Phase::Waiting)) {
                     blocked = true;
                 }
@@ -1443,6 +1502,7 @@ struct ResetPlanner::Impl {
 
 ResetPlanner::ResetPlanner(const PlannerConfig& config) : impl_(new Impl(config)) {}
 ResetPlanner::~ResetPlanner() = default;
+uint32_t ResetPlanner::allocateGrantId() { return impl_->allocate(); }
 
 double ResetPlanner::samplingError(const PlannerConfig& config, double radius) {
     return std::max(0.5 * config.step, 0.5 * config.step_yaw * radius);

@@ -6,6 +6,8 @@
   <env name="XGC2_MODULE_HOST" value="$(arg host)"/>
   <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node" name="xgc_reset_coordinator" output="screen"
         required="true">
+    <env name="XGC_RESET_EXPECTED_SCOPE" value="[{&quot;kind&quot;:&quot;scout_mini&quot;,&quot;namespace&quot;:&quot;ugv1&quot;}]"/>
+
     <env name="XGC_RESET_SCENE_NAMESPACE" value="/reset_fixture/scene"/>
   </node>
   <node pkg="ugv_integration_tests" type="module_host_node.py" name="scout_entity"

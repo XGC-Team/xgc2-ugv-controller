@@ -2,7 +2,9 @@
   <!-- Isolated rostest master only. One coordinator, a Scout and a Mecanum controller node: the
        vehicles know nothing of each other, only the coordinator does. -->
   <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node" name="xgc_reset_coordinator" output="screen"
-        required="true"/>
+        required="true">
+    <env name="XGC_RESET_EXPECTED_SCOPE" value="[{&quot;kind&quot;:&quot;scout_mini&quot;,&quot;namespace&quot;:&quot;ugv1&quot;},{&quot;kind&quot;:&quot;mecanum_ugv&quot;,&quot;namespace&quot;:&quot;ugv2&quot;}]"/>
+  </node>
   <group ns="ugv1">
     <node pkg="unicycle_ugv_controller" type="unicycle_ugv_controller_node"
           name="unicycle_ugv_controller" output="screen" required="true">

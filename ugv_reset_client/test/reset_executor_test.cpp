@@ -40,7 +40,7 @@ Outcome drive(SoloRig& rig, const Course& c, double ell_plan, double s_limit, do
     out.ended = rig.run(seconds, [&](SoloRig& r, const rc::StepOutput&) {
         if (r.time() + 1e-12 >= next) {
             next = r.time() + refresh;
-            r.exec().onGrant(goGrant(1, id, c.start, c.via, c.goal, ell_plan, s_limit), r.measurement());
+            r.deliver(goGrant(1, id, c.start, c.via, c.goal, ell_plan, s_limit), r.measurement());
         }
         out.max_cross = std::max(out.max_cross, std::abs(r.exec().tracker().crossTrack()));
         out.max_progress = std::max(out.max_progress, r.exec().tracker().progress());
@@ -138,7 +138,7 @@ TEST(ResetExecutor, AFinalTurnAboutAWronglyBelievedCentreIsCorrectedInsteadOfSta
         const bool ended = rig.run(90.0, [&](SoloRig& r, const rc::StepOutput&) {
             if (r.time() + 1e-12 >= next) {
                 next = r.time() + 0.4;
-                r.exec().onGrant(goGrant(1, id, start, {}, goal, 0.0, 1e18), r.measurement());
+                r.deliver(goGrant(1, id, start, {}, goal, 0.0, 1e18), r.measurement());
             }
         });
         rc::Result result;
@@ -173,7 +173,7 @@ TEST(ResetExecutor, StopsAtTheEndOfTheGrantedPrefixAndContinuesWhenItGrows) {
     const bool ended = rig.run(90.0, [&](SoloRig& r, const rc::StepOutput& out) {
         if (r.time() + 1e-12 >= next) {
             next = r.time() + 0.4;
-            r.exec().onGrant(goGrant(1, s_limit > 5.0 ? 2 : 1, c.start, c.via, c.goal, plant.ell, s_limit),
+            r.deliver(goGrant(1, s_limit > 5.0 ? 2 : 1, c.start, c.via, c.goal, plant.ell, s_limit),
                              r.measurement());
         }
         max_progress = std::max(max_progress, r.exec().tracker().progress());
@@ -199,7 +199,7 @@ TEST(ResetExecutor, AHeldVehicleDoesNotCountAsStalledAndAFrozenOneDoes) {
         const bool ended = rig.run(40.0, [&](SoloRig& r, const rc::StepOutput&) {
             if (r.time() + 1e-12 >= next) {
                 next = r.time() + 0.4;
-                r.exec().onGrant(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 0.0), r.measurement());
+                r.deliver(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 0.0), r.measurement());
             }
         });
         EXPECT_FALSE(ended) << rig.exec().result().detail;
@@ -212,7 +212,7 @@ TEST(ResetExecutor, AHeldVehicleDoesNotCountAsStalledAndAFrozenOneDoes) {
         const bool ended = rig.run(60.0, [&](SoloRig& r, const rc::StepOutput&) {
             if (r.time() + 1e-12 >= next) {
                 next = r.time() + 0.4;
-                r.exec().onGrant(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
+                r.deliver(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
             }
             if (!frozen && r.time() > 1.0) {
                 frozen = true;
@@ -236,7 +236,7 @@ TEST(ResetExecutor, LeavingTheRouteTubeBrakesAndReportsDeviation) {
     const bool ended = rig.run(30.0, [&](SoloRig& r, const rc::StepOutput&) {
         if (r.time() + 1e-12 >= next) {
             next = r.time() + 0.4;
-            r.exec().onGrant(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
+            r.deliver(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
         }
         if (!pushed && r.time() > 3.0) {
             pushed = true;
@@ -276,7 +276,7 @@ TEST(ResetExecutor, EveryFailsafeEndsTheSessionWithItsOwnTypedResult) {
         const bool ended = rig.run(30.0, [&](SoloRig& r, const rc::StepOutput&) {
             if (r.time() < 4.0 && (last_message < 0.0 || r.time() - last_message >= 0.4)) {
                 last_message = r.time();
-                r.exec().onGrant(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
+                r.deliver(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
             }
             if (last_message > 0.0 && r.time() < last_message + 1.0 && r.time() > last_message + 0.9) {
                 speed_at_lapse = r.speed();
@@ -297,6 +297,7 @@ TEST(ResetExecutor, EveryFailsafeEndsTheSessionWithItsOwnTypedResult) {
         g.reason = rc::Reason::GoalOccupied;
         g.detail = "target occupied by ugv3";
         g.blockers = {"ugv3"};
+        g.request_generation=rig.exec().requestGeneration();g.grant_id=1;g.publication_seq=0;
         rig.exec().onGrant(g, rig.measurement());
         const rc::StepOutput out = rig.exec().step(rig.measurement());
         EXPECT_TRUE(out.ended) << "the controller hears of a rejection at its next step";
@@ -308,7 +309,7 @@ TEST(ResetExecutor, EveryFailsafeEndsTheSessionWithItsOwnTypedResult) {
         SoloRig other(scoutConfig(), c.start, plant);
         fresh(other);
         g.reason = rc::Reason::BadSession;
-        other.exec().onGrant(g, other.measurement());
+        other.deliver(g, other.measurement());
         rc::Result bad;
         ASSERT_TRUE(other.exec().takeResult(&bad));
         EXPECT_EQ(bad.outcome, rc::Outcome::RejectedByCoordinator);
@@ -316,7 +317,7 @@ TEST(ResetExecutor, EveryFailsafeEndsTheSessionWithItsOwnTypedResult) {
     {  // Stop and a health loss end it from the outside
         SoloRig rig(scoutConfig(), c.start, plant);
         fresh(rig);
-        rig.exec().onGrant(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), rig.measurement());
+        rig.deliver(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), rig.measurement());
         rig.exec().abort(rc::Outcome::Stopped, "stop", rig.measurement());
         rc::Result result;
         ASSERT_TRUE(rig.exec().takeResult(&result));
@@ -327,7 +328,7 @@ TEST(ResetExecutor, EveryFailsafeEndsTheSessionWithItsOwnTypedResult) {
     {  // an unhealthy vehicle stands still and does not end by itself
         SoloRig rig(scoutConfig(), c.start, plant);
         fresh(rig);
-        rig.exec().onGrant(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), rig.measurement());
+        rig.deliver(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), rig.measurement());
         rig.setUnhealthy(true);
         const rc::StepOutput out = rig.exec().step(rig.measurement(false));
         EXPECT_TRUE(out.command.zero());
@@ -348,16 +349,19 @@ TEST(ResetExecutor, TheDeadlineRunsOnTheWallClockAndOnTheRosClock) {
         m.pose_stamp = 10.0;
         m.healthy = true;
         ex.begin(1, c.goal, true, m);
-        ex.onGrant(goGrant(1, 1, c.start, c.via, c.goal, 0.0, 0.0), m);  // held: nothing moves
+        rc::Grant hold;
+        hold.session=1;hold.request_generation=ex.requestGeneration();hold.grant_id=1;
+        hold.state=rc::GrantState::Brake;hold.publication_seq=0;
+        ex.onGrant(hold,m);  // a real pending stop barrier; no motion authority
         EXPECT_FALSE(ex.step(m).ended);
         // One clock advances 89.9 s, the other not at all: still going (heartbeat renewed).
         m.ros_now = clock == 0 ? 99.9 : 10.0;
         m.wall_now = clock == 0 ? 100.0 : 189.9;
-        ex.onGrant(goGrant(1, 1, c.start, c.via, c.goal, 0.0, 0.0), m);
+        ++hold.publication_seq;ex.onGrant(hold,m);
         EXPECT_FALSE(ex.step(m).ended) << "clock " << clock;
         m.ros_now = clock == 0 ? 100.1 : 10.0;
         m.wall_now = clock == 0 ? 100.0 : 190.1;
-        ex.onGrant(goGrant(1, 1, c.start, c.via, c.goal, 0.0, 0.0), m);
+        ++hold.publication_seq;ex.onGrant(hold,m);
         const rc::StepOutput out = ex.step(m);
         ASSERT_TRUE(out.ended) << "clock " << clock;
         rc::Result result;
@@ -379,11 +383,11 @@ TEST(ResetExecutor, ARouteIsOnlyChangedFromStandstillAndAStaleGrantIsIgnored) {
     rig.run(8.0, [&](SoloRig& r, const rc::StepOutput&) {
         if (r.time() + 1e-12 >= next) {
             next = r.time() + 0.4;
-            r.exec().onGrant(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
+            r.deliver(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
             // A different route and a grant of another session arrive while the vehicle drives.
             if (r.time() > 3.0 && r.speed() > 0.1) {
-                r.exec().onGrant(goGrant(1, 2, c.start, other_via, c.goal, plant.ell, 1e9), r.measurement());
-                r.exec().onGrant(goGrant(2, 3, c.start, other_via, c.goal, plant.ell, 1e9), r.measurement());
+                r.deliver(goGrant(1, 2, c.start, other_via, c.goal, plant.ell, 1e9), r.measurement());
+                r.deliver(goGrant(2, 3, c.start, other_via, c.goal, plant.ell, 1e9), r.measurement());
                 checked = true;
                 changed_while_moving = r.exec().tracker().route().vertices().size() != 3;
             }
@@ -396,7 +400,7 @@ TEST(ResetExecutor, ARouteIsOnlyChangedFromStandstillAndAStaleGrantIsIgnored) {
     brake.session = 1;
     brake.state = rc::GrantState::Brake;
     brake.reason = rc::Reason::Replan;
-    rig.exec().onGrant(brake, rig.measurement());
+    rig.deliver(brake, rig.measurement());
     EXPECT_TRUE(rig.exec().step(rig.measurement()).command.zero());
     double hold_next = 0.0;
     rig.run(3.0, [&](SoloRig& r, const rc::StepOutput&) {
@@ -405,13 +409,16 @@ TEST(ResetExecutor, ARouteIsOnlyChangedFromStandstillAndAStaleGrantIsIgnored) {
             rc::Grant hold;
             hold.session = 1;
             hold.state = rc::GrantState::Hold;
-            r.exec().onGrant(hold, r.measurement());
+            r.deliver(hold, r.measurement());
         }
     });
     EXPECT_LT(rig.speed(), 0.02);
     rc::Pose now = rig.pose();
     ASSERT_TRUE(rig.exec().active()) << rig.exec().result().detail;
-    rig.exec().onGrant(goGrant(1, 4, now, other_via, c.goal, plant.ell, 1e9), rig.measurement());
+    const auto stopped_measurement=rig.measurement();
+    rig.exec().observe(stopped_measurement); // actual controller observes before installing Go in its step
+    rig.deliver(goGrant(1, 4, now, other_via, c.goal, plant.ell, 1e9), stopped_measurement);
+    rig.exec().step(stopped_measurement);
     EXPECT_EQ(rig.exec().tracker().route().vertices().size(), 4U);
 }
 
@@ -444,7 +451,7 @@ TEST(ResetExecutor, ALapsedHeartbeatStopsTheVehicleAndAShortOutageIsResumedFrom)
                 if (count == 10 + lost_in_a_row) {
                     gap_to = r.time();
                 }
-                r.exec().onGrant(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
+                r.deliver(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
             }
             if (gap_from >= 0.0 && r.time() > gap_from + 1.4 && (gap_to < 0.0 || r.time() < gap_to)) {
                 result.min_speed_during_gap = std::min(result.min_speed_during_gap, r.speed());
@@ -497,11 +504,13 @@ TEST(ResetExecutor, TheSessionMessageDeclaresTheVehicleAndIsDueOnChangeAndAtFive
     SoloRig rig(scoutConfig(), c.start, plant);
     rc::Measurement m = rig.measurement();
     EXPECT_TRUE(rig.exec().sessionDue(m)) << "the first one";
+    rig.exec().markSessionPublished(m);
     EXPECT_FALSE(rig.exec().sessionDue(m));
     m.wall_now += 0.19;
     EXPECT_FALSE(rig.exec().sessionDue(m));
     m.wall_now += 0.02;
     EXPECT_TRUE(rig.exec().sessionDue(m)) << "every 0.2 s";
+    rig.exec().markSessionPublished(m);
     rig.exec().begin(7, c.goal, true, m);
     EXPECT_TRUE(rig.exec().sessionDue(m)) << "a new session at once";
     const rc::Session s = rig.exec().makeSession(m);

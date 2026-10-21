@@ -47,6 +47,7 @@ struct UgvState {
     double y{0.0};
     double yaw{0.0};
     bool received{false};
+    bool pose_stamp_trusted{false};
 };
 
 struct ControlCommand {

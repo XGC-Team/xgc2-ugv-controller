@@ -72,6 +72,7 @@ class Probe {
         std::lock_guard<std::mutex> lock(mutex_);
         return messages_.at(i);
     }
+    bool connected() const { return edge_test::connected(sub_); }
     bool waitFor(size_t n, int timeout_ms = 3000) const {
         return waitUntil([&] { return count() >= n; }, timeout_ms);
     }
@@ -134,7 +135,7 @@ TEST_F(EdgeTest, DescribesItsPortsForTheHost) {
     const xgc2_module_desc* d = library().desc();
     EXPECT_EQ(d->abi_major, XGC2_MODULE_ABI_MAJOR);
     EXPECT_STREQ(d->name, "ugv_ros_edge");
-    ASSERT_EQ(d->port_count, 18u);
+    ASSERT_EQ(d->port_count, 19u);
     const char* inputs[] = {"cmd_vel",          "controller_status", "reset_session",
                             "reset_result",     "reference_status",  "active_analytic",
                             "active_polynomial", "active_sampled"};
@@ -147,7 +148,8 @@ TEST_F(EdgeTest, DescribesItsPortsForTheHost) {
                              "sampled_request",
                              "waypoint_request",
                              "reference_reset",
-                             "clock"};
+                             "clock",
+                             "reset_zero_publication"};
     for (uint32_t i = 0; i < 8; ++i) {
         EXPECT_STREQ(d->ports[i].name, inputs[i]);
         EXPECT_EQ(d->ports[i].direction, static_cast<uint32_t>(XGC2_PORT_IN));
@@ -156,12 +158,13 @@ TEST_F(EdgeTest, DescribesItsPortsForTheHost) {
                                         : static_cast<uint32_t>(XGC2_PORT_STATE));
         EXPECT_EQ(d->ports[i].flags, 0u);
     }
-    for (uint32_t i = 0; i < 10; ++i) {
+    for (uint32_t i = 0; i < 11; ++i) {
         const xgc2_port_desc& p = d->ports[8 + i];
         EXPECT_STREQ(p.name, outputs[i]);
         EXPECT_EQ(p.direction, static_cast<uint32_t>(XGC2_PORT_OUT));
-        // Everything the edge writes, ROS threads write.
-        EXPECT_EQ(p.flags, static_cast<uint32_t>(XGC2_PORT_ASYNC_WRITER)) << p.name;
+        // The publication receipt is written by step, after the zero ROS publish.
+        EXPECT_EQ(p.flags, std::string(p.name) == "reset_zero_publication" ? 0u
+                      : static_cast<uint32_t>(XGC2_PORT_ASYNC_WRITER)) << p.name;
         EXPECT_EQ(p.align, 8u) << p.name;
         EXPECT_EQ(p.kind, std::string(p.name).find("request") != std::string::npos ||
                                   std::string(p.name) == "command" ||
@@ -173,11 +176,13 @@ TEST_F(EdgeTest, DescribesItsPortsForTheHost) {
     }
     EXPECT_STREQ(d->ports[17].schema_id, "xgc2.clock.v1");
     EXPECT_EQ(d->ports[17].size, 8u);
-    EXPECT_STREQ(d->ports[8].schema_id, "xgc2.ugv.planar_state.v1");
+    EXPECT_STREQ(d->ports[8].schema_id, "xgc2.ugv.planar_state.v2");
     EXPECT_STREQ(d->ports[13].schema_id, "xgc2.ugv.unicycle_reference.analytic.v1");
-    EXPECT_STREQ(d->ports[11].schema_id, "xgc2.ugv.reset_grant.v1");
-    EXPECT_STREQ(d->ports[2].schema_id, "xgc2.ugv.reset_session.v2");
+    EXPECT_STREQ(d->ports[11].schema_id, "xgc2.ugv.reset_grant.v2");
+    EXPECT_STREQ(d->ports[2].schema_id, "xgc2.ugv.reset_session.v3");
     EXPECT_STREQ(d->ports[3].schema_id, "xgc2.ugv.reset_result.v1");
+    EXPECT_STREQ(d->ports[18].schema_id, XGC2_UGV_SCHEMA_RESET_ZERO_PUBLICATION);
+    EXPECT_EQ(d->ports[18].size, 16u);
 }
 
 TEST_F(EdgeTest, TheConfigurationIsStrict) {
@@ -225,6 +230,7 @@ TEST_F(EdgeTest, AStateEstimateBecomesThePlanarStateInTheHostClock) {
     EXPECT_EQ(s.estimator_flags, 256u);
     EXPECT_EQ(s.source, XGC2_UGV_STATE_SOURCE_ESTIMATE);
     EXPECT_EQ(s.velocity_valid, 1);
+    EXPECT_EQ(s.pose_stamp_trusted, 1u);
     // The measurement time is half a second before the receipt, in the host clock.
     EXPECT_GE(s.stamp_ns, before - 500 * kMs - 5 * kMs);
     EXPECT_LE(s.stamp_ns, after - 500 * kMs + 5 * kMs);
@@ -248,6 +254,7 @@ TEST_F(EdgeTest, AnUnstampedEstimateIsStampedWithItsReceiptTime) {
     EXPECT_GE(states[0].stamp_ns, before);
     EXPECT_LE(states[0].stamp_ns, after);
     EXPECT_EQ(states[0].velocity_valid, 0);
+    EXPECT_EQ(states[0].pose_stamp_trusted, 0u);
 }
 
 TEST_F(EdgeTest, APoseBecomesThePlanarStateOfAPoseSource) {
@@ -271,6 +278,7 @@ TEST_F(EdgeTest, APoseBecomesThePlanarStateOfAPoseSource) {
     EXPECT_DOUBLE_EQ(states[0].y, 0.5);
     EXPECT_NEAR(states[0].yaw, 0.5, 1e-12);
     EXPECT_EQ(states[0].source, XGC2_UGV_STATE_SOURCE_POSE);
+    EXPECT_EQ(states[0].pose_stamp_trusted, 1u);
     EXPECT_EQ(states[0].velocity_valid, 0);
     EXPECT_EQ(states[0].speed, 0.0);
 
@@ -565,6 +573,53 @@ TEST_F(EdgeTest, TheControllersTwistAndStatusAreTheChassisTopics) {
     EXPECT_TRUE(twists.waitFor(2));
 }
 
+TEST_F(EdgeTest, StopPublishesDirectAllAxisZeroWithoutReadingAnUnreadNonzeroPort) {
+    startEdge("{\"namespace\":\"stop_callback\"}");
+    Probe<geometry_msgs::Twist> twists(nh_,"/stop_callback/cmd_vel");
+    ASSERT_TRUE(twists.connected());
+    xgc2_ugv_cmd_vel cmd{};cmd.kind=XGC2_UGV_CMD_VEL_COMMAND;
+    cmd.linear_x=.3;cmd.linear_y=-.2;cmd.angular_z=.4;
+    host_.push("cmd_vel",cmd,host_.now());step();
+    ASSERT_TRUE(twists.waitFor(1));
+    EXPECT_DOUBLE_EQ(twists.at(0).linear.x,.3);
+    // Fresh input deliberately left unread. stop() must not publish this command.
+    cmd.linear_x=.8;cmd.linear_y=.6;cmd.angular_z=-.7;
+    host_.push("cmd_vel",cmd,host_.now());
+    const auto receipts=host_.outputs("reset_zero_publication").size();
+    ASSERT_EQ(host_.stop(),XGC2_OK); // Real module callback; no synthetic StepContext.
+    ASSERT_TRUE(twists.waitFor(2)); // Finite in-process ROS observation, not a transport guarantee.
+    for (size_t i=1;i<twists.count();++i) {
+        const auto zero=twists.at(i);
+        EXPECT_DOUBLE_EQ(zero.linear.x,0);EXPECT_DOUBLE_EQ(zero.linear.y,0);EXPECT_DOUBLE_EQ(zero.linear.z,0);
+        EXPECT_DOUBLE_EQ(zero.angular.x,0);EXPECT_DOUBLE_EQ(zero.angular.y,0);EXPECT_DOUBLE_EQ(zero.angular.z,0);
+    }
+    EXPECT_EQ(host_.outputs("reset_zero_publication").size(),receipts)
+        << "disconnect does not invent a causal stop certificate";
+}
+
+TEST_F(EdgeTest, AResetZeroReceiptFollowsTheActualAllAxisZeroPublish) {
+    startEdge();
+    xgc2_ugv_reset_session session{};session.request_generation=4;session.acknowledged_grant_id=11;
+    host_.push("reset_session",session,host_.now());
+    xgc2_ugv_cmd_vel cmd{};cmd.kind=XGC2_UGV_CMD_VEL_COMMAND;cmd.linear_y=.02;
+    host_.push("cmd_vel",cmd,host_.now());step();
+    EXPECT_TRUE(host_.outputs("reset_zero_publication").empty()) << "Mecanum lateral motion is not zero";
+    const int64_t before=host_.now();cmd.linear_y=0;
+    host_.push("cmd_vel",cmd,before);step();
+    const auto receipts=host_.outputsAs<xgc2_ugv_reset_zero_publication>("reset_zero_publication");
+    ASSERT_EQ(receipts.size(),1u);
+    EXPECT_EQ(receipts[0].request_generation,4u);
+    EXPECT_EQ(receipts[0].acknowledged_grant_id,11u);
+    EXPECT_GE(receipts[0].stamp_ns,before);EXPECT_LE(receipts[0].stamp_ns,host_.now());
+    step();EXPECT_EQ(host_.outputs("reset_zero_publication").size(),1u);
+    session.request_generation=5;session.acknowledged_grant_id=17;
+    host_.push("reset_session",session,host_.now());
+    host_.push("cmd_vel",cmd,host_.now());step();
+    const auto next=host_.outputsAs<xgc2_ugv_reset_zero_publication>("reset_zero_publication");
+    ASSERT_EQ(next.size(),2u);EXPECT_EQ(next.back().request_generation,5u);
+    EXPECT_EQ(next.back().acknowledged_grant_id,17u);
+}
+
 TEST_F(EdgeTest, TheGeneratorsOutputsAreTheReferenceTopicsInRosTime) {
     startEdge();
     Probe<msgs::ReferenceStatus> status(nh_, "alg/unicycle_reference_trajectory/status");
@@ -696,6 +751,10 @@ TEST_F(EdgeTest, TheResetSessionResultAndGrantsPassThroughTheEdge) {
     session.ell_spread = 0.05;
     session.ell_bound = 0.25;
     session.session = 7;
+    session.request_generation = 4;
+    session.acknowledged_grant_id = 11;
+    session.stop_certified = 1;
+    session.publication_seq = 42;
     session.phase = XGC2_UGV_RESET_PHASE_MOVING;
     session.model = XGC2_UGV_RESET_MODEL_UNICYCLE;
     session.healthy = 1;
@@ -707,6 +766,9 @@ TEST_F(EdgeTest, TheResetSessionResultAndGrantsPassThroughTheEdge) {
     const auto m = sessions.at(0);
     EXPECT_EQ(m.header.frame_id, "world");
     EXPECT_EQ(m.session, 7u);
+    EXPECT_EQ(m.request_generation, 4u);
+    EXPECT_EQ(m.acknowledged_grant_id, 11u);
+    EXPECT_TRUE(m.stop_certified);
     EXPECT_EQ(m.phase, ugv_reset_msgs::ResetSession::PHASE_MOVING);
     EXPECT_DOUBLE_EQ(m.pose.x, 1.0);
     EXPECT_DOUBLE_EQ(m.pose.theta, 0.6);
@@ -744,6 +806,8 @@ TEST_F(EdgeTest, TheResetSessionResultAndGrantsPassThroughTheEdge) {
     ugv_reset_msgs::ResetGrant brake;
     brake.header.stamp = ros::Time::now();
     brake.session = 7;
+    brake.request_generation = 4;
+    brake.grant_id = 11;
     brake.state = ugv_reset_msgs::ResetGrant::STATE_BRAKE;
     brake.reason = ugv_reset_msgs::ResetGrant::REASON_REPLAN;
     brake.detail = "the rest of the route is blocked";
@@ -751,6 +815,7 @@ TEST_F(EdgeTest, TheResetSessionResultAndGrantsPassThroughTheEdge) {
     ugv_reset_msgs::ResetGrant go;
     go.header.stamp = ros::Time::now();
     go.session = 7;
+    go.request_generation = 4;
     go.state = ugv_reset_msgs::ResetGrant::STATE_GO;
     go.grant_id = 12;
     go.start.x = 1.0;
@@ -768,10 +833,14 @@ TEST_F(EdgeTest, TheResetSessionResultAndGrantsPassThroughTheEdge) {
     grants.publish(go);
     const auto received = waitOutputs<xgc2_ugv_reset_grant>("reset_grant", 2);
     EXPECT_EQ(received[0].state, XGC2_UGV_RESET_GRANT_BRAKE);
+    EXPECT_EQ(received[0].request_generation, 4u);
+    EXPECT_EQ(received[0].grant_id, 11u);
     EXPECT_EQ(received[0].reason, 3u);
     EXPECT_STREQ(received[0].detail, "the rest of the route is blocked [ugv2]");
     EXPECT_EQ(received[1].state, XGC2_UGV_RESET_GRANT_GO);
     EXPECT_EQ(received[1].grant_id, 12u);
+    EXPECT_EQ(received[1].request_generation, 4u);
+    EXPECT_GT(received[1].publication_seq, received[0].publication_seq);
     EXPECT_EQ(received[1].via_count, 1u);
     EXPECT_DOUBLE_EQ(received[1].via[0][0], 1.5);
     EXPECT_DOUBLE_EQ(received[1].s_limit, 3.5);

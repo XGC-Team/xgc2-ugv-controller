@@ -5,7 +5,7 @@
       "id": "xgc2-ugv-reset-coordinator-ros1",
       "version": "2.0.0",
       "label": "UGV Reset coordinator",
-      "description": "The single ground-station Reset coordinator of a Session. It needs no roster: every vehicle declares its footprint, limits, target and health in its own Reset session message, and the coordinator grants routes verified against the declared footprints, the Scene and the world boundary. It does not subscribe /command and does not publish cmd_vel. Started by the Session-managed system workflow xgc.system.ground-control.",
+      "description": "The single ground-station Reset coordinator of a Session. Its namespace scope is declared once from frozen Session.robots; only first valid declared bodies enable new admissions: every vehicle declares its footprint, limits, target and health in its own Reset session message, and the coordinator grants routes verified against the declared footprints, the Scene and the world boundary. It does not subscribe /command and does not publish cmd_vel. Started by the Session-managed system workflow xgc.system.ground-control.",
       "parameters": {
         "groups": [
           {
@@ -44,9 +44,15 @@
             "type": "string",
             "default": "127.0.0.1",
             "output": true
+          },
+          "expectedScope": {
+            "type": "json",
+            "description": "Frozen Session.robots scope records; kind selects supported UGVs and namespace declares the exact expected set. No shape/target truth is taken from this input."
           }
         },
-        "required": []
+        "required": [
+          "expectedScope"
+        ]
       },
       "command": {
         "executable": "${rosInstallPath}/lib/ugv_reset_safety/ugv_reset_coordinator_node",
@@ -56,7 +62,8 @@
           "ROS_IP": "${rosIp}",
           "ROS_MASTER_URI": "${rosMasterUri}",
           "XGC_RESET_FENCE": "${fence}",
-          "XGC_RESET_SCENE_NAMESPACE": "${sceneNamespace}"
+          "XGC_RESET_SCENE_NAMESPACE": "${sceneNamespace}",
+          "XGC_RESET_EXPECTED_SCOPE": "${expectedScope}"
         }
       },
       "setupFiles": [

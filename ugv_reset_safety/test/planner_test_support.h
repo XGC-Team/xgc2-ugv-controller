@@ -150,17 +150,22 @@ class IdealFollower {
 
     void beginSession(uint32_t session) {
         session_ = session;
+        ++generation_;
+        acknowledged_ = 0;
+        certified_ = false;
         phase_ = rc::Phase::Requesting;
         have_route_ = false;
         done_ = false;
     }
 
     void onDecision(const ugv_reset_safety::PlannerDecision& d) {
-        if (d.session != session_ || done_) {
+        if (d.session != session_ || d.request_generation != generation_) {
             return;
         }
         switch (d.state) {
             case rc::GrantState::Go:
+                if (done_) return;
+                acknowledged_ = d.grant_id; certified_ = false;
                 if (!have_route_ || route_start_.x != d.start.x || route_start_.y != d.start.y ||
                     goal_.x != d.goal.x || goal_.y != d.goal.y || via_.size() != d.via.size()) {
                     startRoute(d);
@@ -168,8 +173,11 @@ class IdealFollower {
                 s_limit_ = d.s_limit;
                 break;
             case rc::GrantState::Brake:
-                have_route_ = false;
-                phase_ = rc::Phase::Waiting;
+                // This ideal geometry fixture has no inertia: receiving Brake is its
+                // explicit zero/stop certificate, not evidence about a real plant.
+                have_route_ = false; moving_ = false;
+                acknowledged_ = d.grant_id; certified_ = true;
+                if (!done_) phase_ = rc::Phase::Requesting;
                 break;
             case rc::GrantState::Reject:
                 done_ = true;
@@ -177,6 +185,7 @@ class IdealFollower {
                 phase_ = rc::Phase::Done;
                 break;
             case rc::GrantState::Hold:
+                acknowledged_ = d.grant_id; certified_ = false;
                 break;
         }
     }
@@ -184,6 +193,7 @@ class IdealFollower {
     void onGrant(const rc::Grant& g) {
         ugv_reset_safety::PlannerDecision d;
         d.session = g.session;
+        d.request_generation = g.request_generation;
         d.state = g.state;
         d.reason = g.reason;
         d.grant_id = g.grant_id;
@@ -237,9 +247,12 @@ class IdealFollower {
                     phase_ = rc::Phase::Done;
                     done_ = true;
                     arrived_ = true;
+                    ++generation_; acknowledged_ = 0; certified_ = false;
+                    have_route_ = false;
                 }
-            } else {
-                phase_ = rc::Phase::Waiting;
+            } else if (have_route_) {
+                ++generation_; acknowledged_ = 0; certified_ = false;
+                have_route_ = false; phase_ = rc::Phase::Requesting;
             }
         } else {
             phase_ = moved ? rc::Phase::Moving : rc::Phase::Waiting;
@@ -250,6 +263,10 @@ class IdealFollower {
     rc::Session session() const {
         rc::Session s;
         s.session = session_;
+        s.request_generation = generation_;
+        s.acknowledged_grant_id = acknowledged_;
+        s.stop_certified = certified_;
+        s.publication_seq = ++publication_;
         s.pose = pose_;
         s.target = target_;
         s.phase = phase_;
@@ -314,7 +331,9 @@ class IdealFollower {
     std::vector<rc::Point> via_;
     double ell_true_;
     bool ell_known_;
-    uint32_t session_{0};
+    uint32_t session_{0}, generation_{0}, acknowledged_{0};
+    mutable uint32_t publication_{0};
+    bool certified_{false};
     rc::Phase phase_{rc::Phase::Idle};
     bool have_route_{false}, done_{false}, arrived_{false}, moving_{false}, final_{true},
         has_moved_{false};
@@ -323,6 +342,41 @@ class IdealFollower {
     std::vector<double> time_;
     size_t index_{0};
     double fraction_{0.0}, s_limit_{0.0}, settle_{0.0};
+};
+
+// Direct geometry cases use a separate, ideal stopped wire endpoint. Each Brake is
+// returned with its exact certificate in a later update call, without simulating inertia.
+// It is deliberately not used by the causal-retirement tests or the real Executor probe.
+class StoppedPlannerFixture : public ugv_reset_safety::ResetPlanner {
+    struct Wire { uint32_t session{0}, generation{0}, ack{0}; bool cert{false}; rc::Phase phase{rc::Phase::Idle}; };
+    std::map<std::string, Wire> wires_;
+   public:
+    using ugv_reset_safety::ResetPlanner::ResetPlanner;
+    std::vector<ugv_reset_safety::PlannerDecision> update(double now,
+            std::vector<ugv_reset_safety::PlannerVehicle> vehicles) {
+        std::map<std::string,bool> initial;
+        for (auto& v : vehicles) {
+            auto& w=wires_[v.id];
+            const bool participating=v.phase!=rc::Phase::Idle && v.phase!=rc::Phase::Done;
+            const bool was_participating=w.phase!=rc::Phase::Idle && w.phase!=rc::Phase::Done;
+            initial[v.id]=w.generation==0;
+            if ((participating && w.generation==0) || (w.generation && v.session!=w.session) || (!participating && was_participating))
+                { ++w.generation; w.ack=0; w.cert=false; }
+            w.session=v.session;w.phase=v.phase;
+        }
+        std::vector<ugv_reset_safety::PlannerDecision> result;
+        for (unsigned turn=0;turn<4;++turn) {
+            for(auto& v:vehicles) {const auto& w=wires_.at(v.id);v.request_generation=w.generation;v.acknowledged_grant_id=w.ack;v.stop_certified=w.cert;}
+            auto ds=ugv_reset_safety::ResetPlanner::update(now,vehicles);bool barrier=false;
+            for(const auto& d:ds) {
+                auto& w=wires_.at(d.id);
+                if(d.state==rc::GrantState::Brake) {w.ack=d.grant_id;w.cert=true;barrier=true;if(!initial[d.id]) result.push_back(d);}
+                else {result.push_back(d);if(d.state==rc::GrantState::Go || d.state==rc::GrantState::Hold) {w.ack=d.grant_id;w.cert=false;}}
+            }
+            if(!barrier) break;
+        }
+        return result;
+    }
 };
 
 // The planner driven by ideal followers, with an independent continuous audit.
@@ -409,6 +463,9 @@ inline DriveResult drive(const ScenarioFile& world, const Scenario& scenario, co
                 ugv_reset_safety::PlannerVehicle v;
                 v.id = r.id();
                 v.session = s.session;
+                v.request_generation = s.request_generation;
+                v.acknowledged_grant_id = s.acknowledged_grant_id;
+                v.stop_certified = s.stop_certified;
                 v.spec = s.spec;
                 v.pose = s.pose;
                 v.target = s.target;

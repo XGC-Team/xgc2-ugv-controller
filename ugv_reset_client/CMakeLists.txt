@@ -10,7 +10,7 @@ include_directories(include ${catkin_INCLUDE_DIRS})
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
 if(CATKIN_ENABLE_TESTING)
   # The executor, the tracker and the route: header-only, no ROS anywhere.
-  catkin_add_gtest(reset_executor_test test/reset_executor_test.cpp)
+  catkin_add_gtest(reset_executor_test test/reset_executor_test.cpp test/reset_causal_test.cpp)
   if(TARGET reset_executor_test)
     set_property(TARGET reset_executor_test PROPERTY INCLUDE_DIRECTORIES "")
     target_include_directories(reset_executor_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include

@@ -236,6 +236,9 @@ class RouteTracker {
     bool atEnd() const {
         return at_end_;
     }
+    bool inFinalStage() const {
+        return final_stage_;
+    }
     // The prefix covers the whole route, including the final turn.
     static bool wholeRouteGranted(const Route& route, double s_limit) {
         return route.length() <= s_limit + 1e-6;

@@ -32,17 +32,15 @@ void CommandInputProducer::handleCommand(const std_msgs::String::ConstPtr& msg,
     }
     switch (parseOperatorCommand(msg->data)) {
         case OperatorCommand::kCustom1:
-            ROS_INFO("[UgvCommandInputProducer] Accepted Custom1 command: %s on %s",
-                     msg->data.c_str(), source);
+
             post(event_type::CUSTOM1_REQUESTED, source);
             break;
         case OperatorCommand::kStop:
-            ROS_INFO("[UgvCommandInputProducer] Accepted stop command: %s on %s", msg->data.c_str(),
-                     source);
+
             post(event_type::STOP_REQUESTED, source);
             break;
         case OperatorCommand::kReset:
-            ROS_INFO("[UgvCommandInputProducer] Accepted reset command on %s", source);
+
             post(event_type::RESET_REQUESTED, source);
             break;
         case OperatorCommand::kUnknown:
@@ -61,6 +59,7 @@ void CommandInputProducer::post(::state_machine::EventId id, const char* source)
     event.source = source;
     event.category = ::state_machine::EventCategory::kInput;
     const auto status = event_sink_(std::move(event));
+    if (status.ok()) ROS_INFO("[UgvCommandInputProducer] Command event queued: %u on %s", static_cast<unsigned>(id), source);
     if (!status.ok()) {
         ROS_WARN("[UgvCommandInputProducer] Failed to post command event: %s",
                  status.message.c_str());

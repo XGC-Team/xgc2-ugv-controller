@@ -2,26 +2,18 @@
 
 // The Reset planner: the ROS-free heart of the coordinator.
 //
-// It decides only one thing, which vehicle may move where and when, and expresses it as frozen,
-// exactly verified grants: a route (visibility-graph path around the statics) together with the
-// prefix of it that is free. A grant is issued, or extended, only if the swept footprint of the
-// route (the vehicle's declared rectangle at every sample of the route, for each rotation-centre
-// offset the vehicle may have) keeps the required clearance from
-//   - the statics and the fence,
-//   - every parked body (a vehicle outside any session, or one that arrived), and
-//   - the remaining granted sweep of every vehicle that is already moving.
-// The reservation of a mover only shrinks from behind while it advances, and a prefix ends
-// hold_margin before the first conflict with another mover's reservation. Hence a collision cannot
-// happen as long as each vehicle stays in its own tube (the vehicle's monitor), whatever the
-// speeds, latencies or message delays are. A parked body that blocks the frozen rest of a held
-// route revokes it, and the vehicle is re-planned from where it stands, so no wait is circular.
+// It grants a frozen ordinary route and a free prefix using the declared body/spec truth.
+// The geometric verifier samples ideal routes at three ell values for a unicycle, or one
+// circumscribed omnidirectional footprint. These checks are not a proof of continuous real
+// feedback/lag/coupling plant containment, heading coverage or braking/rear-release safety.
 //
-// Determinism: a decision is a pure function of the measured poses, the statics and the declared
-// specs, taken in id order. There is no rotating priority and no per-tick re-planning.
+// Causality: one issued Plan remains reserved while an exact Brake is in flight. Only a
+// matching (S,G,Brake id) post-zero stopping certificate retires it. Waiting/Idle/loss never
+// retire it; only exact latest Go receipt permits the existing rear-cursor advancement.
+// Replacement uses the same route planner, within initial plus two routes per S.
 //
-// Guarantees and limits (README): sound, terminating (at most N final moves plus 2N parking moves
-// per session), not complete (coordinating rectangles is PSPACE-hard); an instance the planner
-// cannot solve is reported with the blockers' names, never held silently.
+// Decisions are deterministic in id order, with no per-tick route replanning. Geometry and
+// real-plant acceptance remain separate from the causal-retirement regression tests.
 
 #include <Eigen/Core>
 #include <map>
@@ -65,6 +57,10 @@ struct PlannerConfig {
 struct PlannerVehicle {
     std::string id;
     uint32_t session{0};
+    uint32_t request_generation{0};
+    uint32_t acknowledged_grant_id{0};
+    bool stop_certified{false};
+    bool available{true};
     ugv_reset_client::VehicleSpec spec;
     ugv_reset_client::Pose pose;
     ugv_reset_client::Pose target;
@@ -80,11 +76,12 @@ struct PlannerVehicle {
 struct PlannerDecision {
     std::string id;
     uint32_t session{0};
+    uint32_t request_generation{0};
     ugv_reset_client::GrantState state{ugv_reset_client::GrantState::Hold};
     ugv_reset_client::Reason reason{ugv_reset_client::Reason::None};
     std::string detail;
     std::vector<std::string> blockers;
-    // GO:
+    // Every state has a checked nonzero decision identity.
     uint32_t grant_id{0};
     ugv_reset_client::Pose start;
     ugv_reset_client::Pose goal;
@@ -132,13 +129,15 @@ class ResetPlanner {
 
     // One planning step at time `now` (the coordinator's clock) for all vehicles it knows.
     // Vehicles must be in id order. Without `admit` (an authored Scene is not available) the
-    // movers are kept up (extensions, revocations) but nobody is granted a new route.
+    // issued Plans are braked/retained and nobody is granted a new route.
     std::vector<PlannerDecision> update(double now, const std::vector<PlannerVehicle>& vehicles,
                                         bool admit = true);
 
     std::vector<PlannerBodyReport> report() const;
     const PlannerStats& stats() const;
     const PlannerConfig& config() const;
+    // All logical decisions, including Coordinator-generated ones, share this checked owner.
+    uint32_t allocateGrantId();
 
     // The sampling error the sweep check adds to a margin, for a footprint whose farthest point
     // is `radius` from the rotation centre: half a translation step or half a rotation step.

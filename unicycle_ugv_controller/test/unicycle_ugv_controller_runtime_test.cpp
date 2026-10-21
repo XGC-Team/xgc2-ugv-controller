@@ -33,6 +33,7 @@ bool hasOutputEvent(UnicycleUgvController& controller, ::state_machine::EventId 
 
 void setPose(UgvState& state, double t, double x, double y, double yaw) {
     state.received = true;
+    state.pose_stamp_trusted = true;
     state.stamp = Time(t);
     state.x = x;
     state.y = y;
@@ -43,11 +44,15 @@ void postCommand(UnicycleUgvController& controller, ::state_machine::EventId id,
     ::state_machine::Event event(id, ::state_machine::EventTimestamp{t});
     event.source = "test";
     event.category = ::state_machine::EventCategory::kInput;
-    ASSERT_TRUE(controller.postEvent(std::move(event)).ok());
+    const auto posted=controller.postEvent(std::move(event));
+    if (id==event_type::CUSTOM1_REQUESTED && (controller.resetExecutor().permissionPending() || controller.resetExecutor().active()))
+        EXPECT_EQ(posted.code,::state_machine::ErrorCode::kTransitionRejected);
+    else ASSERT_TRUE(posted.ok());
 }
 
 void goReadyEstimator(UnicycleUgvController& controller, UgvState& state, double t) {
     state.received = true;
+    state.pose_stamp_trusted = true;
     state.stamp = Time(t);
     state.estimator_state = rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING;
     state.estimator_flags = 0U;
@@ -588,6 +593,7 @@ TEST(UnicycleUgvControllerRuntime, ProductHealthTimeoutIsHalfSecond) {
 TEST(UnicycleUgvControllerRuntime, StateFreshRejectsExcessivelyFutureStamp) {
     UgvState state;
     state.received = true;
+    state.pose_stamp_trusted = true;
     state.stamp = Time(1.04);
     EXPECT_TRUE(stateFresh(state, Time(1.0), 0.2));
     state.stamp = Time(1.051);
@@ -635,6 +641,7 @@ TEST(UnicycleUgvControllerRuntime, AutoStartCustom1WhenStateAndReferenceAreReady
     reference.origin.orientation.w = 1.0;
     ASSERT_TRUE(controller.referenceCache().updateAnalytic(toCoreReference(reference)));
     state.received = true;
+    state.pose_stamp_trusted = true;
     state.stamp = Time(1.0);
     state.estimator_state = rigid_state_estimator_msgs::RigidStateEstimate::STATE_RUNNING;
     controller.update(1.0);
@@ -840,13 +847,20 @@ namespace {
 
 // A coordinator grant for the controller's current session: the route from `start` through `via`
 // to `goal`, the prefix `s_limit` of it, valid for one second after the controller receives it.
+uint32_t nextResetPublication() {
+    static uint32_t sequence=0;
+    return sequence++;
+}
+
 ugv_reset_client::Grant goFor(const UnicycleUgvController& controller, const ugv_reset_client::Pose& start,
                               const std::vector<ugv_reset_client::Point>& via,
                               const ugv_reset_client::Pose& goal, double s_limit, uint32_t id = 1U) {
     ugv_reset_client::Grant g;
     g.session = controller.resetExecutor().sessionId();
+    g.request_generation = controller.resetExecutor().requestGeneration();
+    g.publication_seq = nextResetPublication();
     g.state = ugv_reset_client::GrantState::Go;
-    g.grant_id = id;
+    g.grant_id = 100U + id;
     g.start = start;
     g.via = via;
     g.goal = goal;
@@ -859,22 +873,36 @@ ugv_reset_client::Grant rejectFor(const UnicycleUgvController& controller, ugv_r
                                   const std::string& detail) {
     ugv_reset_client::Grant g;
     g.session = controller.resetExecutor().sessionId();
+    g.request_generation = controller.resetExecutor().requestGeneration();
+    g.publication_seq = nextResetPublication();
     g.state = ugv_reset_client::GrantState::Reject;
+    g.grant_id = 200U;
     g.reason = reason;
     g.detail = detail;
     return g;
 }
 
 void enterReset(UnicycleUgvController& controller, UgvState& state, double goal_x) {
-    goReadyPose(controller, state, 1.0);
+    goReadyPose(controller, state, 0.5);
     ResetTarget goal;
     goal.x = goal_x;
     goal.valid = true;
     controller.setResetTarget(goal);
-    postCommand(controller, event_type::RESET_REQUESTED, 1.01);
-    setPose(state, 1.01, 0.0, 0.0, 0.0);
-    controller.update(1.01);
-    controller.update(1.012);
+    postCommand(controller, event_type::RESET_REQUESTED, 0.51);
+    setPose(state, 0.51, 0.0, 0.0, 0.0);
+    controller.update(0.51);
+    controller.update(0.512);
+    // This fixture is the station/output edge: publish an exact all-axis zero and
+    // collect fresh acquisition-stamped poses before offering any Go.
+    ugv_reset_client::Grant brake;
+    brake.session=controller.resetExecutor().sessionId();
+    brake.request_generation=controller.resetExecutor().requestGeneration();
+    brake.state=ugv_reset_client::GrantState::Brake;brake.grant_id=1;
+    brake.publication_seq=nextResetPublication();controller.onResetGrant(brake);
+    controller.notifyResetZeroPublished(.514,brake.request_generation,brake.grant_id);
+    setPose(state,.52,0,0,0);controller.update(.52);
+    setPose(state,.74,0,0,0);controller.update(.74);
+    setPose(state,1.01,0,0,0);controller.update(1.012);
     ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
 }
 
@@ -910,6 +938,7 @@ TEST(UnicycleSm, ResetBeginsASessionThatDeclaresTheVehicleToTheCoordinator) {
     EXPECT_DOUBLE_EQ(session.spec.max_v, 0.35);
     EXPECT_DOUBLE_EQ(session.spec.ell_bound, 0.25);
     EXPECT_TRUE(session.healthy);
+    controller.resetSessionPublished();
     EXPECT_FALSE(controller.takeResetSession(&session)) << "the next one is due in 0.2 s";
 }
 
@@ -1104,12 +1133,15 @@ TEST(UnicycleSm, ResetOutcomesAreLoggedWithTheirReason) {
         enterReset(controller, state, 1.0);
         ugv_reset_client::Grant hold;
         hold.session = controller.resetExecutor().sessionId();
+        hold.request_generation=controller.resetExecutor().requestGeneration();
+        hold.grant_id=300U;hold.publication_seq=nextResetPublication();
         hold.state = ugv_reset_client::GrantState::Hold;
         hold.reason = ugv_reset_client::Reason::WaitingForPeer;
         hold.detail = "ugv2 passes first";
         hold.blockers = {"ugv2"};
         controller.onResetGrant(hold);
         controller.update(1.014);
+        hold.publication_seq=nextResetPublication();
         controller.onResetGrant(hold);
         controller.update(1.016);
         int lines = 0;
@@ -1178,6 +1210,29 @@ TEST(UnicycleCommands, TheOperatorTextIsReadCaseInsensitively) {
     for (const char* text : {"", " reset", "resets", "go", "custom2"}) {
         EXPECT_EQ(parseOperatorCommand(text), OperatorCommand::kUnknown) << text;
     }
+}
+
+
+TEST(UnicycleSm, NewResetReplacesActiveSessionWithoutRetirementOrOutcomeOverwrite) {
+    UgvState state;UnicycleUgvController controller(state);enterReset(controller,state,1.0);
+    const auto old_session=controller.resetExecutor().sessionId();
+    const auto old_generation=controller.resetExecutor().requestGeneration();
+    const auto old_go=goFor(controller,{0,0,0},{},{1,0,0},1e9);
+    ASSERT_TRUE(controller.postEvent(::state_machine::Event(event_type::RESET_REQUESTED,
+                    ::state_machine::EventTimestamp{1.02})).ok());
+    setPose(state,1.02,0,0,0);controller.update(1.02);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL),state_type::Reset);
+    EXPECT_NE(controller.resetExecutor().sessionId(),old_session);
+    EXPECT_GT(controller.resetExecutor().requestGeneration(),old_generation);
+    controller.onResetGrant(old_go);EXPECT_FALSE(controller.resetExecutor().tracker().active());
+    EXPECT_TRUE(controller.resetExecutor().command().zero());
+    ugv_reset_client::Result result;ASSERT_TRUE(controller.peekResetResult(&result));
+    EXPECT_EQ(result.session,old_session);EXPECT_EQ(result.outcome,ugv_reset_client::Outcome::Stopped);
+    EXPECT_EQ(controller.postEvent(::state_machine::Event(event_type::CUSTOM1_REQUESTED,
+                    ::state_machine::EventTimestamp{1.03})).code,::state_machine::ErrorCode::kTransitionRejected);
+    EXPECT_EQ(controller.postEvent(::state_machine::Event(event_type::RESET_REQUESTED,
+                    ::state_machine::EventTimestamp{1.03})).code,::state_machine::ErrorCode::kLimitReached);
+    ASSERT_TRUE(controller.peekResetResult(&result));EXPECT_EQ(result.session,old_session);
 }
 
 }  // namespace unicycle_ugv_controller

@@ -45,6 +45,7 @@ void UnicycleUgvController::update(double now_sec) {
     if (state_.received) {
         reset_executor_.observe(resetMeasurement());
     }
+    reset_executor_.poll(resetMeasurement());
     maybeAutoStartCustom1();
     if (machine_) {
         (void)machine_->update();
@@ -56,13 +57,24 @@ void UnicycleUgvController::update(double now_sec) {
 ::state_machine::Status UnicycleUgvController::postEvent(::state_machine::Event event) {
     const auto id = event.id;
     const std::string source = event.source;
+    if (id == event_type::CUSTOM1_REQUESTED && (reset_executor_.permissionPending() || reset_executor_.active())) {
+        return sm::Status::error(sm::ErrorCode::kTransitionRejected,
+                                 "Reset permission is active or retirement is not acknowledged; motion refused");
+    }
     if (id == event_type::RESET_REQUESTED) {
+        if (pending_reset_requested_ || reset_session_counter_ == std::numeric_limits<uint32_t>::max() ||
+            !reset_executor_.reserveBegin()) {
+            return sm::Status::error(sm::ErrorCode::kLimitReached,
+                                     "Reset result credit or authority counter unavailable");
+        }
+        pending_reset_session_ = reset_executor_.sessionId();
         pending_reset_requested_ = true;
         pending_reset_source_ = source.empty() ? "command" : source;
         last_reset_admission_miss_.clear();
     }
     auto status = machine_->postEvent(std::move(event));
     if (id == event_type::RESET_REQUESTED && !status.ok()) {
+        reset_executor_.cancelBeginReservation();
         pending_reset_requested_ = false;
         last_reset_admission_miss_ = std::string("Failed to post command event: ") +
                                      status.message + " source=" + pending_reset_source_ +
@@ -81,10 +93,11 @@ void UnicycleUgvController::noteResetAdmissionAfterUpdate() {
         return;
     }
     pending_reset_requested_ = false;
-    if (machine_->currentState(region_type::CONTROL) == state_type::Reset) {
+    if (reset_executor_.sessionId() != pending_reset_session_) {
         last_reset_admission_miss_.clear();
         return;
     }
+    reset_executor_.cancelBeginReservation();
     last_reset_admission_miss_ = describeResetAdmissionMiss(pending_reset_source_);
     UGV_LOG_ERROR("[UnicycleUgvController] %s", last_reset_admission_miss_.c_str());
 }
@@ -168,7 +181,7 @@ bool UnicycleUgvController::commandReady() const {
 
 void UnicycleUgvController::setCommand(ControlCommand command) {
     std::lock_guard<std::mutex> lock(command_mutex_);
-    command_ = command;
+    command_ = reset_executor_.requiresZeroCommand() ? ControlCommand{} : command;
 }
 
 ControlCommand UnicycleUgvController::command() const {
@@ -204,14 +217,16 @@ ugv_reset_client::Measurement UnicycleUgvController::resetMeasurement() const {
     m.pose = {state_.x, state_.y, state_.yaw};
     m.pose_stamp = state_.stamp.toSec();
     m.healthy = healthReady();
+    m.pose_stamp_trusted = state_.pose_stamp_trusted;
+    const auto outer = command();
+    m.external_command_zero = outer.linear_speed == 0.0 && outer.angular_speed == 0.0;
     return m;
 }
 
 void UnicycleUgvController::beginResetSession(const ResetTarget& target) {
-    // Refuse wraparound, which could confuse a grant of an older session with this one.
-    if (reset_session_counter_ == std::numeric_limits<uint32_t>::max()) {
-        reset_session_counter_ = 0U;
-    }
+    // Admission refused exhaustion before accepting the input; never reuse an old S.
+    if (reset_session_counter_ == std::numeric_limits<uint32_t>::max()) return;
+    reset_ever_started_ = true;
     reset_executor_.begin(++reset_session_counter_, {target.x, target.y, target.yaw},
                           target.valid && std::isfinite(target.x) && std::isfinite(target.y) &&
                               std::isfinite(target.yaw),
@@ -220,6 +235,7 @@ void UnicycleUgvController::beginResetSession(const ResetTarget& target) {
 
 void UnicycleUgvController::onResetGrant(const ugv_reset_client::Grant& grant) {
     reset_executor_.onGrant(grant, resetMeasurement());
+    if (reset_executor_.requiresZeroCommand()) clearCommand();
 }
 
 bool UnicycleUgvController::takeResetSession(ugv_reset_client::Session* session) {
@@ -234,6 +250,16 @@ bool UnicycleUgvController::takeResetSession(ugv_reset_client::Session* session)
 bool UnicycleUgvController::takeResetResult(ugv_reset_client::Result* result) {
     return reset_executor_.takeResult(result);
 }
+
+bool UnicycleUgvController::peekResetResult(ugv_reset_client::Result* result) const {
+    return reset_executor_.peekResult(result);
+}
+void UnicycleUgvController::resetResultPublished() { reset_executor_.commitResult(); }
+void UnicycleUgvController::resetSessionPublished() { reset_executor_.markSessionPublished(resetMeasurement()); }
+void UnicycleUgvController::notifyResetZeroPublished(double now, uint32_t generation, uint32_t brake) {
+    if (resetMeasurement().external_command_zero) reset_executor_.onZeroPublished(now,generation,brake);
+}
+
 
 // What the coordinator says while it holds the vehicle, once per change.
 void UnicycleUgvController::logResetHold() {
@@ -257,6 +283,7 @@ void UnicycleUgvController::logResetHold() {
 }
 
 CmdVel UnicycleUgvController::cmdVel() const {
+    if (reset_executor_.requiresZeroCommand()) return CmdVel{};
     const ControllerConfig cfg = config();
     const ControlCommand current = command();
     CmdVel out;
@@ -396,6 +423,7 @@ void UnicycleUgvController::setupMachine() {
         .from(state_type::Ready)
         .to(state_type::Custom1)
         .on(event_type::CUSTOM1_REQUESTED)
+        .when([this](const sm::GuardContext&) { return !reset_executor_.permissionPending(); })
         .priority(transition_priority::COMMAND);
     builder.transition()
         .from(state_type::Ready)
@@ -406,6 +434,12 @@ void UnicycleUgvController::setupMachine() {
         .from(state_type::Custom1)
         .to(state_type::Reset)
         .on(event_type::RESET_REQUESTED)
+        .priority(transition_priority::COMMAND);
+    builder.transition()
+        .from(state_type::Reset)
+        .to(state_type::Reset)
+        .on(event_type::RESET_REQUESTED)
+        .type(sm::TransitionType::kExternalSelf)
         .priority(transition_priority::COMMAND);
     builder.transition()
         .from(state_type::Reset)
@@ -431,7 +465,7 @@ void UnicycleUgvController::setupMachine() {
 
 void UnicycleUgvController::maybeAutoStartCustom1() {
     const auto cfg = config();
-    if (!cfg.auto_start_tracking || !healthReady() || !referenceReady() || !machine_) {
+    if (reset_ever_started_ || reset_executor_.permissionPending() || !cfg.auto_start_tracking || !healthReady() || !referenceReady() || !machine_) {
         return;
     }
     if (machine_->currentState(region_type::CONTROL) != state_type::Ready) {

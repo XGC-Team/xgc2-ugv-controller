@@ -18,6 +18,7 @@ No claim about wheel contact, braking, Gazebo or hardware is made; the plants ar
 import math
 import os
 import subprocess
+import threading
 import time
 import unittest
 
@@ -40,41 +41,54 @@ class Scene:
         from rospy import Publisher
         self.snapshot = None
         self.boxes = []
+        self.lock = threading.RLock()
+        self.state_held = False
+        self.state_publications = []
         self.snapshot_pub = Publisher(namespace + "/snapshot", SceneSnapshot, queue_size=1, latch=True)
         self.state_pub = Publisher(namespace + "/state", SceneState, queue_size=1)
         self.timer = rospy.Timer(rospy.Duration(0.1), self._state)
 
     def _state(self, _event):
-        if self.snapshot is None:
-            return
-        state = SceneState(epoch=self.snapshot.epoch, revision=self.snapshot.revision)
-        state.header.stamp = rospy.Time.now()
-        state.header.frame_id = "world"
-        self.state_pub.publish(state)
+        with self.lock:
+            if self.snapshot is None or self.state_held:
+                return
+            state = SceneState(epoch=self.snapshot.epoch, revision=self.snapshot.revision)
+            state.header.stamp = rospy.Time.now()
+            state.header.frame_id = "world"
+            self.state_pub.publish(state)
+            self.state_publications.append((state.epoch, state.revision))
 
-    def publish(self, boxes):
+    def release_state(self):
+        with self.lock:
+            self.state_held = False
+            self._state(None)
+
+
+    def publish(self, boxes, hold_state=False):
         """boxes: [(id, x, y, size_x, size_y)]"""
-        revision = (self.snapshot.revision + 1) if self.snapshot else 1
-        scene = SceneSnapshot(epoch="fixture", revision=revision)
-        scene.header.stamp = rospy.Time.now()
-        scene.header.frame_id = "world"
-        geometries, obstacles = [], []
-        for index, (name, x, y, sx, sy) in enumerate(boxes):
-            geometry = SceneGeometry()
-            geometry.type, geometry.parameters = encode_geometry({"type": "box", "size": [sx, sy, 0.3]})
-            geometries.append(geometry)
-            obstacle = SceneObstacle(id=name, name=name, motion_type="hold")
-            obstacle.pose.position.x, obstacle.pose.position.y = x, y
-            obstacle.pose.orientation.w = 1
-            part = ScenePart(id="body", geometry_index=index)
-            part.pose.orientation.w = 1
-            obstacle.parts = [part]
-            obstacles.append(obstacle)
-        scene.geometries, scene.obstacles = geometries, obstacles
-        self.boxes = boxes
-        self.snapshot = scene
-        self.snapshot_pub.publish(scene)
-        self._state(None)
+        with self.lock:
+            self.state_held = hold_state
+            revision = (self.snapshot.revision + 1) if self.snapshot else 1
+            scene = SceneSnapshot(epoch="fixture", revision=revision)
+            scene.header.stamp = rospy.Time.now()
+            scene.header.frame_id = "world"
+            geometries, obstacles = [], []
+            for index, (name, x, y, sx, sy) in enumerate(boxes):
+                geometry = SceneGeometry()
+                geometry.type, geometry.parameters = encode_geometry({"type": "box", "size": [sx, sy, 0.3]})
+                geometries.append(geometry)
+                obstacle = SceneObstacle(id=name, name=name, motion_type="hold")
+                obstacle.pose.position.x, obstacle.pose.position.y = x, y
+                obstacle.pose.orientation.w = 1
+                part = ScenePart(id="body", geometry_index=index)
+                part.pose.orientation.w = 1
+                obstacle.parts = [part]
+                obstacles.append(obstacle)
+            scene.geometries, scene.obstacles = geometries, obstacles
+            self.boxes = boxes
+            self.snapshot = scene
+            self.snapshot_pub.publish(scene)
+            self._state(None)
 
     def stop(self):
         self.timer.shutdown()
@@ -95,6 +109,22 @@ def min_scene_clearance(vehicle, scene, since=0):
         for box in scene.boxes:
             best = min(best, clearance(body, box_polygon(box)))
     return best
+
+
+def exact_scene_stop(grants, sessions, revoked, after_sequence):
+    """Inspect real messages; a newer request must echo its own exact Brake, never ack>=Go."""
+    for _, session in reversed(sessions):
+        if (session.session != revoked.session or
+                session.request_generation <= revoked.request_generation or
+                session.header.seq <= after_sequence or not session.stop_certified):
+            continue
+        for _, brake in reversed(grants):
+            if (brake.state == ResetGrant.STATE_BRAKE and
+                    brake.session == session.session and
+                    brake.request_generation == session.request_generation and
+                    brake.grant_id == session.acknowledged_grant_id):
+                return session, brake
+    return None
 
 
 class ResetProtocolTest(unittest.TestCase):
@@ -166,7 +196,17 @@ class ResetProtocolTest(unittest.TestCase):
         with v.lock:
             session = v.results[count].session
             self.assertEqual(len([r for r in v.results if r.session == session]), 1)
-            self.assertTrue(any(g.state == ResetGrant.STATE_GO for _, g in v.grants if g.session == session))
+            goes = [g for _, g in v.grants if g.session == session and g.state == ResetGrant.STATE_GO]
+            self.assertTrue(goes)
+            # Observe the real owners; the plant never fabricates authority or a stop certificate.
+            for grant in goes:
+                self.assertGreater(grant.request_generation, 0)
+                self.assertTrue(any(s.session == session and s.request_generation == grant.request_generation and
+                                    s.stop_certified and s.acknowledged_grant_id < grant.grant_id and
+                                    any(b.state == ResetGrant.STATE_BRAKE and b.session == session and
+                                        b.request_generation == s.request_generation and
+                                        b.grant_id == s.acknowledged_grant_id for _, b in v.grants)
+                                    for _, s in v.sessions), "Go requires its exact Brake certificate")
         # Latched: a late subscriber of the result sees the last one.
         late = rospy.wait_for_message("/ugv1/reset/result", ResetResult, timeout=3.0)
         self.assertEqual(late.session, session)
@@ -239,10 +279,53 @@ class ResetProtocolTest(unittest.TestCase):
         with v.lock:
             x, y = v.pose[0], v.pose[1]
             since = len(v.trace)
-        self.scene.publish([box, ("wall", x - 1.0, y, 0.3, 2.5)])
-        v.wait(lambda: any(g.state == ResetGrant.STATE_BRAKE and g.reason == ResetGrant.REASON_SCENE_CHANGED
-                           for _, g in v.grants), 4.0, "a Scene that changes under the route brakes the vehicle")
-        v.wait(lambda: len(v.results) > count, 85.0, "and the session still ends with a result")
+        with v.lock:
+            grant_offset = len(v.grants)
+            session_before = v.sessions[-1][1]
+            same_session = session_before.session
+            before_sequence = session_before.header.seq
+        # The original four-second change window covers Brake and the real stop transaction.
+        # A matching new SceneState is withheld by source ordering, never by an arbitrary sleep.
+        change_deadline = time.monotonic() + 4.0
+        self.scene.publish([box, ("wall", x - 1.0, y, 0.3, 2.5)], hold_state=True)
+
+        def scene_brake():
+            return next((g for _, g in v.grants[grant_offset:]
+                         if g.session == same_session and g.state == ResetGrant.STATE_BRAKE and
+                         g.reason in (ResetGrant.REASON_SCENE_CHANGED,
+                                      ResetGrant.REASON_SCENE_UNAVAILABLE)), None)
+
+        try:
+            v.wait(lambda: scene_brake() is not None, change_deadline - time.monotonic(),
+                   "a changed or temporarily unavailable Scene must Brake the current permission")
+            revoked = scene_brake()
+            v.wait(lambda: exact_scene_stop(v.grants[grant_offset:], v.sessions, revoked,
+                                            before_sequence) is not None,
+                   change_deadline - time.monotonic(),
+                   "the newer real request must certify its exact Brake after stopping")
+            with v.lock:
+                certified, current_brake = exact_scene_stop(v.grants[grant_offset:], v.sessions,
+                                                            revoked, before_sequence)
+                self.assertTrue(v.stopped())
+                self.assertFalse(any(g.state == ResetGrant.STATE_GO and g.session == same_session and
+                                     g.request_generation >= certified.request_generation
+                                     for _, g in v.grants[grant_offset:]),
+                                 "no fresh Go while the matching SceneState is withheld")
+            with self.scene.lock:
+                revision = (self.scene.snapshot.epoch, self.scene.snapshot.revision)
+                self.assertNotIn(revision, self.scene.state_publications)
+        finally:
+            self.scene.release_state()
+        # Stronger than the old second-leg result-only assertion: require the intended arrival.
+        result = self.arrived(v, count, 85.0, (-2.0, 0.0, 0.0))
+        self.assertEqual(result.session, same_session)
+        self.assertLess(result.duration, 90.0)
+        with v.lock:
+            self.assertTrue(any(g.state == ResetGrant.STATE_GO and g.session == same_session and
+                                g.request_generation >= certified.request_generation and
+                                g.grant_id > current_brake.grant_id
+                                for _, g in v.grants[grant_offset:]),
+                            "the matching Scene permits an ordinary new route after the stop proof")
         self.assertGreater(min_scene_clearance(v, self.scene, since), 0.0, "the new wall was never touched")
 
     def scenario_sce_pair(self):

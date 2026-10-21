@@ -248,7 +248,9 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
 
     Outcome out;
     out.name = scenario.name;
-    rs::ResetCoordinator coordinator;
+    rs::CoordinatorConfig coordinator_config;
+    for (size_t i=0; i<n; ++i) coordinator_config.expected_namespaces.push_back("ugv"+std::to_string(i+1));
+    rs::ResetCoordinator coordinator(coordinator_config);
     std::vector<rs::ConvexObstacle> statics;
     for (const Polygon& p : world.obstacles) {
         rs::ConvexObstacle obstacle;
@@ -339,10 +341,10 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
         samplePoses(t);
         for (size_t i = 0; i < n; ++i) {
             executors[i].observe(measurement(i, t));
-            if (o.loss > 0 && uniform(rng) < o.loss) {
-                continue;
-            }
-            coordinator.onSession(names[i], executors[i].makeSession(measurement(i, t)), t + kWall);
+            const auto session = executors[i].makeSession(measurement(i,t));
+            executors[i].markSessionPublished(measurement(i,t));
+            if (o.loss > 0 && uniform(rng) < o.loss) continue;
+            coordinator.onSession(names[i],session,t+kWall);
         }
         t += 0.2;
     }
@@ -409,7 +411,7 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
                     coordinator.onSession(names[it->vehicle], it->session, t + kWall);
                     event = true;
                 }
-            } else if (!ended[it->vehicle]) {
+            } else {
                 executors[it->vehicle].onGrant(it->grant, measurement(it->vehicle, t));
             }
             it = bus.erase(it);
@@ -472,7 +474,14 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
         // The vehicles: the controller steps the executor at 500 Hz.
         for (size_t i = 0; i < n; ++i) {
             if (ended[i]) {
+                const auto m = measurement(i,t);
+                executors[i].poll(m);
                 latest[i] = rc::Command{};
+                if (executors[i].sessionDue(m)) {
+                    const auto session=executors[i].makeSession(m);
+                    executors[i].markSessionPublished(m);
+                    if (!(o.loss>0 && uniform(rng)<o.loss)) bus.push_back({t+o.bus_delay,i,true,session,{}});
+                }
                 continue;
             }
             const rc::Measurement m = measurement(i, t);
@@ -491,6 +500,7 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
                 executors[i].finish();
                 // The Session of the vehicle, now Idle, so that the coordinator sees the end.
                 rc::Session s = executors[i].makeSession(m);
+                executors[i].markSessionPublished(m);
                 bus.push_back({t + o.bus_delay, i, true, s, rc::Grant()});
                 if (outcome[i] == rc::Outcome::Arrived) {
                     out.max_perr = std::max(out.max_perr, result.final_planar_error);
@@ -519,9 +529,10 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
                 out.max_cross_where = text;
             }
             if (executors[i].sessionDue(m)) {
-                if (!(o.loss > 0 && uniform(rng) < o.loss)) {
-                    bus.push_back({t + o.bus_delay, i, true, executors[i].makeSession(m), rc::Grant()});
-                }
+                const auto session=executors[i].makeSession(m);
+                executors[i].markSessionPublished(m);
+                if (!(o.loss > 0 && uniform(rng) < o.loss))
+                    bus.push_back({t + o.bus_delay, i, true, session, rc::Grant()});
             }
         }
         // The command is published at 30 Hz with zero-order hold; the plant follows it.
@@ -529,6 +540,8 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
             if (t + 1e-9 >= next_publish[i]) {
                 next_publish[i] = t + 1.0 / 30.0;
                 published[i] = latest[i];
+                // The real fixture publisher has just delivered all commanded axes to this plant.
+                if (published[i].zero()) executors[i].onZeroPublished(t);
                 if (!ended[i]) {
                     speed_sum[i] += std::abs(published[i].vx) / 30.0;
                     if (last_vx[i] * published[i].vx < -1e-9) {
@@ -576,9 +589,9 @@ inline Outcome run(const ScenarioFile& world, const Scenario& scenario, const Op
         }
         bool all = true;
         for (size_t i = 0; i < n; ++i) {
-            all = all && ended[i];
+            all = all && ended[i] && !executors[i].permissionPending();
         }
-        if (all) {
+        if (all && bus.empty()) {
             break;
         }
     }

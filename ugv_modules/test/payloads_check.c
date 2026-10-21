@@ -15,9 +15,9 @@ size_t ugv_payload_layout_in_c(size_t* out, size_t capacity) {
       sizeof(xgc2_ugv_reset_target),         _Alignof(xgc2_ugv_reset_target),
       offsetof(xgc2_ugv_reset_target, yaw),
       sizeof(xgc2_ugv_reset_grant),          _Alignof(xgc2_ugv_reset_grant),
-      offsetof(xgc2_ugv_reset_grant, detail),
+      offsetof(xgc2_ugv_reset_grant, publication_seq),
       sizeof(xgc2_ugv_reset_session),        _Alignof(xgc2_ugv_reset_session),
-      offsetof(xgc2_ugv_reset_session, healthy),
+      offsetof(xgc2_ugv_reset_session, publication_seq),
       sizeof(xgc2_ugv_reset_result),         _Alignof(xgc2_ugv_reset_result),
       offsetof(xgc2_ugv_reset_result, detail),
       sizeof(xgc2_ugv_cmd_vel),              _Alignof(xgc2_ugv_cmd_vel),
@@ -42,6 +42,9 @@ size_t ugv_payload_layout_in_c(size_t* out, size_t capacity) {
       offsetof(xgc2_ugv_reference_status, reserved),
       sizeof(xgc2_ugv_reference_reset),      _Alignof(xgc2_ugv_reference_reset),
       offsetof(xgc2_ugv_reference_reset, stamp_ns),
+        sizeof(xgc2_ugv_reset_zero_publication),
+        _Alignof(xgc2_ugv_reset_zero_publication),
+        offsetof(xgc2_ugv_reset_zero_publication, acknowledged_grant_id),
   };
   const size_t count = sizeof layout / sizeof layout[0];
   for (size_t i = 0; i < count && i < capacity; ++i) {

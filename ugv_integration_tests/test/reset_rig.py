@@ -104,6 +104,7 @@ class Vehicle:
             if self.sessions:
                 last = self.sessions[-1][1]
                 text += " last session phase=%s progress=%.2f healthy=%s" % (last.phase, last.progress, last.healthy)
+                text += " G=%d ack=%d cert=%s pub=%d" % (last.request_generation, last.acknowledged_grant_id, last.stop_certified, last.header.seq)
                 text += " phases=%s" % ["%.1f:%d:%.2f" % (t - self.sessions[0][0], m.phase, m.progress) for t, m in self.sessions[-40:][::5]]
             if self.grants:
                 g = self.grants[-1][1]

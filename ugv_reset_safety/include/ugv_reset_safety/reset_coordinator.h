@@ -2,11 +2,10 @@
 
 // The coordinator without ROS: the vehicles' Session messages in, the Grant messages out.
 //
-// It knows no roster. A vehicle is whoever sends sessions: its Session declares its footprint,
-// limits, target and health, and the namespace it sends from names it. A vehicle that falls silent
-// stays a parked body at its last pose (a vehicle does not vanish); a vehicle that sends something
-// invalid is refused for itself. Every fault is isolated to the vehicle that has it: there is no
-// fleet-wide rejection, the others keep their grants and treat the faulty one as a parked body.
+// A frozen, explicit namespace scope gates the first fleet admission. Session remains the only
+// source of body/spec/target truth. A silent or invalid participant retains its issued reservation
+// until an exact Brake certificate; silence/Idle never turn a moving sweep into a parked point.
+// Later local faults do not globally reject already valid peers.
 //
 // The node (reset_coordinator_node.cpp) only carries messages, the Scene and the clock; everything
 // that decides is here and in the planner, so the closed-loop harness drives exactly this code.
@@ -20,8 +19,10 @@
 namespace ugv_reset_safety {
 
 struct CoordinatorConfig {
+    // Explicit frozen Session scope, normalized ROS namespaces; empty never enables motion.
+    std::vector<std::string> expected_namespaces;
     PlannerConfig planner;
-    // No session message for this long: the vehicle is lost; it stays a parked body at its last pose.
+    // No fresh source publication for this long: retain its last body and any issued reservation.
     double lost_after{3.0};
     // An unchanged grant (or hold) is repeated at this period: the vehicles' heartbeat.
     double refresh_period{0.4};
@@ -101,12 +102,18 @@ class ResetCoordinator {
         double first_reject{-1.0};
         bool lost{false};
         bool participant{false};
+        bool scope_seen{false};
+        // Last valid declared body, even if a bad report arrives before the next planner tick.
+        ugv_reset_client::Pose body_pose;
+        ugv_reset_client::VehicleSpec body_spec;
+        uint32_t next_publication_seq{1};
     };
 
     ugv_reset_client::Grant grantOf(const PlannerDecision& d, double now) const;
     static bool validSpec(const ugv_reset_client::VehicleSpec& spec);
     static bool participantPhase(ugv_reset_client::Phase phase);
 
+    bool scopeReady() const;
     CoordinatorConfig config_;
     ResetPlanner planner_;
     std::map<std::string, Entry> entries_;

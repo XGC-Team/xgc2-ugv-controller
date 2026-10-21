@@ -1,11 +1,12 @@
 // The Reset coordinator node: the ROS edge of ResetCoordinator.
 //
 // Event driven: it sleeps in the callback queue (idle CPU about zero) and wakes on a Session, a
-// Scene message or, while a vehicle is in a session or moving, every 100 ms. It has no roster: it
-// finds the vehicles by their `<ns>/reset/session` topics on the master and answers each on
+// Scene message or, while a vehicle is in a session or moving, every 100 ms. Its expected scope is declared once from the frozen Session: it
+// observes the vehicles by their `<ns>/reset/session` topics on the master and answers each on
 // `<ns>/reset/grant`. It never subscribes /command and never publishes cmd_vel.
 //
-// Configuration (all optional): the environment of the process, because a Session-managed process
+// Configuration: XGC_RESET_EXPECTED_SCOPE is frozen Session.robots JSON (required for motion).
+// Other configuration: the environment of the process, because a Session-managed process
 // definition fills every argument and an empty argument is not a parameter. XGC_RESET_SCENE_NAMESPACE
 // (empty: no Scene was authored for this Experiment, and a missing Scene is not an error),
 // XGC_RESET_FENCE (the Session's frozen world boundary as "x_min,x_max,y_min,y_max", empty: no fence);
@@ -22,6 +23,7 @@
 #include <ugv_reset_msgs/ResetGrant.h>
 #include <ugv_reset_msgs/ResetSession.h>
 #include <ugv_reset_safety/reset_coordinator.h>
+#include <ugv_reset_safety/reset_scope.h>
 #include <ugv_reset_safety/scene_projection.h>
 #include <xgc2_geometry_msgs/SceneState.h>
 
@@ -51,6 +53,10 @@ rc::Session toSession(const msgs::ResetSession& m) {
     rc::Session s;
     s.stamp = m.header.stamp.toSec();
     s.session = m.session;
+    s.request_generation = m.request_generation;
+    s.acknowledged_grant_id = m.acknowledged_grant_id;
+    s.stop_certified = m.stop_certified;
+    s.publication_seq = m.header.seq;
     s.pose_stamp = m.pose_stamp.toSec();
     s.pose = {m.pose.x, m.pose.y, m.pose.theta};
     s.target = {m.target.x, m.target.y, m.target.theta};
@@ -76,6 +82,8 @@ msgs::ResetGrant toMessage(const rc::Grant& g, const std::string& frame) {
     m.header.stamp = ros::Time::now();
     m.header.frame_id = frame;
     m.session = g.session;
+    m.request_generation = g.request_generation;
+    m.header.seq = g.publication_seq;
     m.state = static_cast<uint8_t>(g.state);
     m.grant_id = g.grant_id;
     m.start.x = g.start.x;
@@ -111,6 +119,10 @@ class CoordinatorNode {
         scene_namespace_ = scene_text != nullptr ? scene_text : "";
         private_.param("fleet_topic", fleet_topic_, std::string("/ugv/reset/fleet"));
         CoordinatorConfig config;
+        const char* scope_text = std::getenv("XGC_RESET_EXPECTED_SCOPE");
+        config.expected_namespaces = expectedResetNamespaces(scope_text ? scope_text : "");
+        if (config.expected_namespaces.empty())
+            ROS_WARN("Reset expected scope missing/empty: observing bodies, no fleet motion admitted");
         private_.param("pair_margin", config.planner.pair_margin, config.planner.pair_margin);
         private_.param("static_margin", config.planner.static_margin, config.planner.static_margin);
         private_.param("hold_margin", config.planner.hold_margin, config.planner.hold_margin);
@@ -146,6 +158,9 @@ class CoordinatorNode {
         fleet_pub_ = nh_.advertise<msgs::ResetFleet>(fleet_topic_, 1, true);
         core_->setWorld({}, fence_);
         core_->setScene(scene_authored_, !scene_authored_);
+        // Subscribe the declared names immediately; first data still gates admission.
+        // Master-topic discovery remains observational and never substitutes for this scope.
+        for (const auto& name : config.expected_namespaces) observe(name);
         ROS_INFO("Reset coordinator ready: scene %s, fence %s",
                  scene_authored_ ? scene_namespace_.c_str() : "none authored",
                  fence_.enabled ? "set" : "none");
@@ -193,6 +208,15 @@ class CoordinatorNode {
         ros::Subscriber sub;
     };
 
+    void observe(const std::string& vehicle) {
+        if (vehicle.empty() || vehicles_.count(vehicle)) return;
+        grant_pubs_[vehicle] = nh_.advertise<msgs::ResetGrant>("/" + vehicle + "/reset/grant", 5);
+        vehicles_[vehicle].sub = nh_.subscribe<msgs::ResetSession>(
+            "/" + vehicle + "/reset/session", 10,
+            [this, vehicle](const msgs::ResetSession::ConstPtr& m) { session(vehicle, *m); });
+        ROS_INFO("Reset coordinator: observing vehicle %s", vehicle.c_str());
+    }
+
     void discover() {
         ros::master::V_TopicInfo topics;
         if (!ros::master::getTopics(topics)) {
@@ -211,10 +235,7 @@ class CoordinatorNode {
             if (vehicle.empty() || vehicles_.count(vehicle) != 0) {
                 continue;
             }
-            grant_pubs_[vehicle] = nh_.advertise<msgs::ResetGrant>("/" + vehicle + "/reset/grant", 5);
-            vehicles_[vehicle].sub = nh_.subscribe<msgs::ResetSession>(
-                t.name, 10, [this, vehicle](const msgs::ResetSession::ConstPtr& m) { session(vehicle, *m); });
-            ROS_INFO("Reset coordinator: vehicle %s joined", vehicle.c_str());
+            observe(vehicle);
         }
     }
 

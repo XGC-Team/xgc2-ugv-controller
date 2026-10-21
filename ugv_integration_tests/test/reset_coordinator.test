@@ -1,7 +1,9 @@
 <launch>
   <!-- Isolated rostest master only: the test program publishes synthetic poses and must never run on
        an experiment or vehicle master. One coordinator without a Scene, one Wheeltec-like vehicle. -->
-  <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node" name="xgc_reset_coordinator" output="screen"/>
+  <node pkg="ugv_reset_safety" type="ugv_reset_coordinator_node" name="xgc_reset_coordinator" output="screen">
+    <env name="XGC_RESET_EXPECTED_SCOPE" value="[{&quot;kind&quot;:&quot;mecanum_ugv&quot;,&quot;namespace&quot;:&quot;ugv1&quot;}]"/>
+  </node>
   <group ns="ugv1">
     <node pkg="mecanum_ugv_controller" type="mecanum_ugv_controller_node"
           name="mecanum_ugv_controller" output="screen" required="true">

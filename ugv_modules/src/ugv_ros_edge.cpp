@@ -111,6 +111,7 @@ enum Port : uint32_t {
     kWaypointRequest,
     kReferenceReset,
     kClock,
+    kResetZeroPublication,
     kPortCount
 };
 constexpr uint32_t kInputCount = kState;
@@ -152,6 +153,8 @@ const xgc2_port_desc kPorts[kPortCount] = {
     port<xgc2_ugv_reference_reset>("reference_reset", XGC2_PORT_OUT, XGC2_PORT_EVENT,
                                    XGC2_UGV_SCHEMA_REFERENCE_RESET, 2U, kAsync),
     port<int64_t>("clock", XGC2_PORT_OUT, XGC2_PORT_STATE, kClockSchema, 0U, kAsync),
+    port<xgc2_ugv_reset_zero_publication>("reset_zero_publication", XGC2_PORT_OUT, XGC2_PORT_STATE,
+        XGC2_UGV_SCHEMA_RESET_ZERO_PUBLICATION),
 };
 
 // ---- configuration
@@ -462,6 +465,12 @@ class Instance {
             spinner_->stop();
             spinner_.reset();
         }
+        // Publish direct all-axis zero while the old ROS publisher still exists.
+        // Never read a possibly nonzero kCmdVel or drain borrowed port views in disconnect.
+        // This best-effort call is not a stop certificate or a result-delivery acknowledgement.
+        if (connected_) {
+            cmd_vel_pub_.publish(geometry_msgs::Twist{});
+        }
         reset_grant_sub_.shutdown();
         reset_session_pub_.shutdown();
         reset_result_pub_.shutdown();
@@ -526,6 +535,7 @@ class Instance {
             return;
         }
         slot->stamp_ns = bridge_.toHost(stamp);
+        slot->pose_stamp_trusted = msg.header.stamp.isZero() ? 0U : 1U;
         slot->x = planar.x;
         slot->y = planar.y;
         slot->yaw = planar.yaw;
@@ -560,6 +570,7 @@ class Instance {
             return;
         }
         slot->stamp_ns = bridge_.toHost(stamp);
+        slot->pose_stamp_trusted = msg.header.stamp.isZero() ? 0U : 1U;
         slot->x = msg.pose.position.x;
         slot->y = msg.pose.position.y;
         slot->yaw = yaw;
@@ -651,6 +662,8 @@ class Instance {
         }
         slot->via_count = static_cast<uint32_t>(msg.via.size());
         slot->session = msg.session;
+        slot->request_generation = msg.request_generation;
+        slot->publication_seq = msg.header.seq;
         slot->state = msg.state;
         slot->grant_id = msg.grant_id;
         slot->reason = msg.reason;
@@ -743,6 +756,20 @@ class Instance {
         twist.linear.y = sample->linear_y;
         twist.angular.z = sample->angular_z;
         cmd_vel_pub_.publish(twist);
+        if (twist.linear.x == 0.0 && twist.linear.y == 0.0 && twist.linear.z == 0.0 &&
+            twist.angular.x == 0.0 && twist.angular.y == 0.0 && twist.angular.z == 0.0) {
+            const auto session = host_.latest<xgc2_ugv_reset_session>(kResetSession);
+            if (session && session->request_generation != 0 && session->acknowledged_grant_id != 0) {
+                auto receipt = host_.write<xgc2_ugv_reset_zero_publication>(kResetZeroPublication);
+                if (receipt) {
+                    // now_ns in step ctx is the step's start, which precedes this publish.
+                    receipt->stamp_ns = bridge_.toHost(ros::Time::now());
+                    receipt->request_generation = session->request_generation;
+                    receipt->acknowledged_grant_id = session->acknowledged_grant_id;
+                    receipt.commit(receipt->stamp_ns);
+                }
+            }
+        }
     }
 
     void publishControllerStatus() {
@@ -812,6 +839,10 @@ class Instance {
         m.header.stamp = bridge_.toRos(p.stamp_ns);
         m.header.frame_id = "world";
         m.session = p.session;
+        m.request_generation = p.request_generation;
+        m.acknowledged_grant_id = p.acknowledged_grant_id;
+        m.stop_certified = p.stop_certified != 0U;
+        m.header.seq = p.publication_seq;
         m.pose_stamp = bridge_.toRos(p.pose_stamp_ns);
         m.pose.x = p.pose_x;
         m.pose.y = p.pose_y;

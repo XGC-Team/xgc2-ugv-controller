@@ -31,11 +31,12 @@ extern "C" {
  */
 /* Schema ids */
 
-#define XGC2_UGV_SCHEMA_PLANAR_STATE "xgc2.ugv.planar_state.v1"
+#define XGC2_UGV_SCHEMA_PLANAR_STATE "xgc2.ugv.planar_state.v2"
 #define XGC2_UGV_SCHEMA_COMMAND "xgc2.ugv.command.v1"
 #define XGC2_UGV_SCHEMA_RESET_TARGET "xgc2.ugv.reset_target.v1"
-#define XGC2_UGV_SCHEMA_RESET_GRANT "xgc2.ugv.reset_grant.v1"
-#define XGC2_UGV_SCHEMA_RESET_SESSION "xgc2.ugv.reset_session.v2"
+#define XGC2_UGV_SCHEMA_RESET_GRANT "xgc2.ugv.reset_grant.v2"
+#define XGC2_UGV_SCHEMA_RESET_SESSION "xgc2.ugv.reset_session.v3"
+#define XGC2_UGV_SCHEMA_RESET_ZERO_PUBLICATION "xgc2.ugv.reset_zero_publication.v1"
 #define XGC2_UGV_SCHEMA_RESET_RESULT "xgc2.ugv.reset_result.v1"
 #define XGC2_UGV_SCHEMA_CMD_VEL "xgc2.ugv.cmd_vel.v1"
 #define XGC2_UGV_SCHEMA_CONTROLLER_STATUS "xgc2.ugv.controller_status.v1"
@@ -77,7 +78,8 @@ typedef struct xgc2_ugv_planar_state {
     uint32_t estimator_flags; /* RigidStateEstimate.flags; 0 for a pose source */
     uint8_t source;           /* XGC2_UGV_STATE_SOURCE_* */
     uint8_t velocity_valid;   /* vx and vy are finite estimator values */
-    uint8_t reserved[6];
+    uint8_t pose_stamp_trusted; /* collection stamp supplied, not receipt substitution */
+    uint8_t reserved[5];
 } xgc2_ugv_planar_state;
 
 /* ------------------------------------------------------------------------------------------------
@@ -130,6 +132,10 @@ typedef struct xgc2_ugv_reset_session {
     uint32_t phase; /* XGC2_UGV_RESET_PHASE_* */
     uint32_t model; /* XGC2_UGV_RESET_MODEL_* */
     uint32_t healthy;
+    uint32_t request_generation;
+    uint32_t acknowledged_grant_id;
+    uint32_t stop_certified; /* 0/1, post-zero certificate for the exact Brake */
+    uint32_t publication_seq; /* original ROS Header.seq / local publisher sequence */
 } xgc2_ugv_reset_session;
 
 #define XGC2_UGV_RESET_GRANT_HOLD 0u
@@ -159,7 +165,16 @@ typedef struct xgc2_ugv_reset_grant {
     uint32_t reason;     /* ResetGrant.REASON_* */
     uint32_t final_move; /* 1: the route ends at the target */
     char detail[XGC2_UGV_RESET_TEXT]; /* the coordinator's text, with the blockers' names appended */
+    uint32_t request_generation;
+    uint32_t publication_seq; /* original ROS Header.seq, not receipt clock */
 } xgc2_ugv_reset_grant;
+
+/* State receipt (edge -> controller), only after actual all-axis zero ROS publication. */
+typedef struct xgc2_ugv_reset_zero_publication {
+    int64_t stamp_ns;
+    uint32_t request_generation;
+    uint32_t acknowledged_grant_id;
+} xgc2_ugv_reset_zero_publication;
 
 /* Event port (controller -> edge, queue 4). The one outcome of a session. */
 typedef struct xgc2_ugv_reset_result {
@@ -337,9 +352,10 @@ typedef struct xgc2_ugv_reference_reset {
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_planar_state, 80u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_command, 16u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_target, 24u);
-XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_session, 192u);
-XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_grant, 584u);
+XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_session, 208u);
+XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_grant, 592u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_result, 144u);
+XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_zero_publication, 16u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_cmd_vel, 40u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_controller_status, 40u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_planar_pva, 64u);

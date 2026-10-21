@@ -23,6 +23,10 @@ inline ugv_reset_msgs::ResetSession toMessage(const Session& s, const ros::Time&
     m.header.stamp = stamp;
     m.header.frame_id = "world";
     m.session = s.session;
+    m.request_generation = s.request_generation;
+    m.acknowledged_grant_id = s.acknowledged_grant_id;
+    m.stop_certified = s.stop_certified;
+    m.header.seq = s.publication_seq;
     m.pose_stamp = ros::Time(s.pose_stamp);
     m.pose.x = s.pose.x;
     m.pose.y = s.pose.y;
@@ -70,6 +74,8 @@ inline Grant toGrant(const ugv_reset_msgs::ResetGrant& m) {
     g.stamp = m.header.stamp.toSec();
     g.ttl = m.ttl;
     g.session = m.session;
+    g.request_generation = m.request_generation;
+    g.publication_seq = m.header.seq;
     g.state = m.state <= ugv_reset_msgs::ResetGrant::STATE_REJECT ? static_cast<GrantState>(m.state)
                                                                   : GrantState::Hold;
     g.grant_id = m.grant_id;

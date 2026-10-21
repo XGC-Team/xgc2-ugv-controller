@@ -9,7 +9,43 @@ namespace {
 
 using ugv_reset_safety::CoordinatorConfig;
 using ugv_reset_safety::OutgoingGrant;
-using ugv_reset_safety::ResetCoordinator;
+// Legacy geometry/heartbeat cases use explicitly ideal stopped endpoints. The separate
+// ResetCausal tests and real Executor harness exercise the actual asynchronous barrier.
+class StoppedCoordinatorFixture : public ugv_reset_safety::ResetCoordinator {
+    struct Wire {rc::Session latest;uint32_t generation{0},sequence{0},ack{0};bool cert{false};};
+    std::map<std::string,Wire> wire_;
+   public:
+    explicit StoppedCoordinatorFixture(std::vector<std::string> names={"ugv1"})
+        :ugv_reset_safety::ResetCoordinator(config(std::move(names))) {}
+    explicit StoppedCoordinatorFixture(CoordinatorConfig c):ugv_reset_safety::ResetCoordinator(c) {}
+    static CoordinatorConfig config(std::vector<std::string> names) {CoordinatorConfig c;c.expected_namespaces=std::move(names);return c;}
+    void onSession(const std::string& id,rc::Session v,double now) {
+        auto& w=wire_[id];
+        auto active=[](rc::Phase p){return p!=rc::Phase::Idle&&p!=rc::Phase::Done;};
+        if((active(v.phase)&&!w.generation)||(w.generation&&v.session!=w.latest.session)||(!active(v.phase)&&active(w.latest.phase)))
+            {++w.generation;w.ack=0;w.cert=false;}
+        v.request_generation=w.generation;v.publication_seq=++w.sequence;
+        v.acknowledged_grant_id=w.ack;v.stop_certified=w.cert;w.latest=v;
+        ugv_reset_safety::ResetCoordinator::onSession(id,v,now);
+    }
+    std::vector<OutgoingGrant> step(double now) {
+        std::vector<OutgoingGrant> result;
+        for(unsigned turn=0;turn<4;++turn) {
+            bool barrier=false;
+            for(const auto& out:ugv_reset_safety::ResetCoordinator::step(now)) {
+                auto& w=wire_.at(out.vehicle);const auto& g=out.grant;
+                if(g.state==rc::GrantState::Brake) {
+                    barrier=true;w.ack=g.grant_id;w.cert=true;
+                    auto v=w.latest;v.acknowledged_grant_id=w.ack;v.stop_certified=true;v.publication_seq=++w.sequence;w.latest=v;
+                    ugv_reset_safety::ResetCoordinator::onSession(out.vehicle,v,now);
+                } else {result.push_back(out);if(g.state==rc::GrantState::Go||g.state==rc::GrantState::Hold) {w.ack=g.grant_id;w.cert=false;}}
+            }
+            if(!barrier)break;
+        }
+        return result;
+    }
+};
+using ResetCoordinator=StoppedCoordinatorFixture;
 
 rc::VehicleSpec scout() {
     rc::VehicleSpec spec;
@@ -41,8 +77,8 @@ std::vector<OutgoingGrant> only(const std::vector<OutgoingGrant>& all, const std
     return out;
 }
 
-TEST(ResetCoordinator, VehiclesAreFoundByTheirSessionsAndEveryParticipantHearsWithinTheRefreshPeriod) {
-    ResetCoordinator c;
+TEST(ResetCoordinator, DeclaredVehiclesAreFoundByTheirSessionsAndEveryParticipantHearsWithinTheRefreshPeriod) {
+    ResetCoordinator c({"ugv1","ugv2"});
     c.setWorld({}, ugv_reset_safety::Fence());
     double t = 0.0;
     c.onSession("ugv1", session(1, rc::Phase::Requesting, {-4, 0, 0}, {4, 0, 0}, t), t);
@@ -62,9 +98,13 @@ TEST(ResetCoordinator, VehiclesAreFoundByTheirSessionsAndEveryParticipantHearsWi
     EXPECT_LE(repeats, 6) << "about every 0.4 s";
 }
 
-TEST(ResetCoordinator, AFaultOfOneVehicleNeverTouchesTheOthers) {
-    ResetCoordinator c;
+TEST(ResetCoordinator, AFaultAfterValidDiscoveryNeverTouchesTheOthers) {
+    ResetCoordinator c({"ugv1","ugv2","ugv3"});
     c.setWorld({}, ugv_reset_safety::Fence());
+    // Every declared body is observed first. Initial missing/invalid body data is
+    // deliberately covered as a fleet admission hold in ResetCausal.
+    c.onSession("ugv2",session(1,rc::Phase::Idle,{-4,3,0},{4,3,0},0),0);
+    c.onSession("ugv3",session(1,rc::Phase::Idle,{-4,-3,0},{4,-3,0},0),0);
     // ugv1 drives; ugv2 sends an invalid footprint; ugv3 has a non-finite target.
     c.onSession("ugv1", session(1, rc::Phase::Requesting, {-4, 0, 0}, {4, 0, 0}, 0.0), 0.0);
     rc::Session bad = session(1, rc::Phase::Requesting, {-4, 3, 0}, {4, 3, 0}, 0.0);
@@ -94,7 +134,7 @@ TEST(ResetCoordinator, AFaultOfOneVehicleNeverTouchesTheOthers) {
 }
 
 TEST(ResetCoordinator, ANewSessionOfOneVehicleDoesNotDisturbAMover) {
-    ResetCoordinator c;
+    ResetCoordinator c({"ugv1","ugv2"});
     c.setWorld({}, ugv_reset_safety::Fence());
     c.onSession("ugv1", session(5, rc::Phase::Requesting, {-4, 0, 0}, {4, 0, 0}, 0.0), 0.0);
     c.onSession("ugv2", session(1, rc::Phase::Idle, {0, 5, 0}, {0, 5, 0}, 0.0), 0.0);
@@ -113,6 +153,7 @@ TEST(ResetCoordinator, ANewSessionOfOneVehicleDoesNotDisturbAMover) {
 
 TEST(ResetCoordinator, ASilentVehicleStaysABodyAndAMovingOutsiderHoldsNewRoutes) {
     CoordinatorConfig config;
+    config.expected_namespaces={"ugv1","ugv2"};
     ResetCoordinator c(config);
     c.setWorld({}, ugv_reset_safety::Fence());
     // ugv2 sits in the way, in Custom1 (outside any Reset session), and drives about.
@@ -205,7 +246,9 @@ TEST(ResetCoordinator, ARejectionIsRepeatedUntilTheVehicleEndsItsSessionAndThenF
     EXPECT_GE(rejects, 4);
     // It ended; a new session is answered afresh.
     c.onSession("ugv1", session(1, rc::Phase::Idle, {-4, 0, 0}, {0, 0, 0}, 2.1), 2.1);
-    EXPECT_TRUE(only(c.step(2.1), "ugv1").empty());
+    const auto retired=only(c.step(2.1),"ugv1");
+    ASSERT_EQ(retired.size(),1u);
+    EXPECT_EQ(retired[0].grant.state,rc::GrantState::Hold);
     c.onSession("ugv1", session(2, rc::Phase::Requesting, {-4, 0, 0}, {4, 0, 0}, 2.2), 2.2);
     const auto out = only(c.step(2.2), "ugv1");
     ASSERT_FALSE(out.empty());
@@ -221,7 +264,9 @@ TEST(ResetCoordinator, ClosedLoopWithIdealFollowersOnTheTaseFamily) {
     int run = 0;
     for (size_t index = 0; index < world.scenarios.size(); index += 4) {
         const Scenario& sc = world.scenarios[index];
-        ResetCoordinator c;
+        CoordinatorConfig config;
+        for(size_t i=0;i<sc.starts.size();++i)config.expected_namespaces.push_back("ugv"+std::to_string(i+1));
+        ugv_reset_safety::ResetCoordinator c(config);
         std::vector<ugv_reset_safety::ConvexObstacle> statics;
         for (const auto& p : world.obstacles) {
             ugv_reset_safety::ConvexObstacle o;

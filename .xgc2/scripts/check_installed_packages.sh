@@ -116,7 +116,9 @@ if rosmsg show ugv_reset_msgs/ResetRequest >/dev/null 2>&1; then
   exit 1
 fi
 test "$(rospack find ugv_reset_safety)" = "/opt/ros/${ROS_DISTRO}/share/ugv_reset_safety"
-roslaunch --files ugv_reset_safety ugv_reset_coordinator.launch >/tmp/xgc2-reset-coordinator-files.txt
+roslaunch --files ugv_reset_safety ugv_reset_coordinator.launch \
+  'expected_scope:=[{"kind":"scout_mini","namespace":"/ugv1"}]' \
+  >/tmp/xgc2-reset-coordinator-files.txt
 # No roster file ships any more: every vehicle declares itself in its Reset session.
 test ! -e "/opt/ros/${ROS_DISTRO}/share/ugv_reset_safety/config"
 

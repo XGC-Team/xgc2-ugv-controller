@@ -133,7 +133,7 @@ class ManifestTest(unittest.TestCase):
                     # (the edge's private clock has no reader in the vehicle manifest)
                     self.assertGreaterEqual(channel["readers"], 1 if channel["name"] != "clock" else 0,
                                             channel["name"])
-            self.assertEqual(channels["state"]["schema"], "xgc2.ugv.planar_state.v1")
+            self.assertEqual(channels["state"]["schema"], "xgc2.ugv.planar_state.v2")
             self.assertEqual(channels["command"]["kind"], "event")
             self.assertEqual(channels["cmd_vel"]["readers"], 1)
             self.assertEqual(channels["active_analytic"]["readers"], 2)  # the controller and the edge
