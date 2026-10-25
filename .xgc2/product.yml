@@ -93,4 +93,4 @@ release:
     xgc2-ros-msgs: rebuild
     xgc2-ros1-utils: rebuild
   apt_versions:
-    focal: 2.1.0-3
+    focal: 3.0.0-1
