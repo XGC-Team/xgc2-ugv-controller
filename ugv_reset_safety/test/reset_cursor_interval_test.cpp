@@ -37,8 +37,9 @@ Body line(rc::Model model) {
     }
     for (size_t i = 0; i < ss.pts.size(); i += rs::kChunk) {
         rs::Aabb box;
-        for (size_t j = i; j < std::min(ss.pts.size(), i + rs::kChunk); ++j)
+        for (size_t j = i; j < std::min(ss.pts.size(), i + rs::kChunk); ++j) {
             box.add(ss.pts[j].box);
+        }
         ss.chunks.push_back(box);
     }
     b.plan.sets = {ss};
@@ -137,13 +138,14 @@ TEST(Behind, RetiringRoutingAlsoIncludesTheExistingBehindFootprintAtHiEqualsCurs
     const auto obstacle = rs::ResetPlanner::Impl::retiringRoutingObstacle(b);
     ASSERT_EQ(obstacle.vertices.size(), 4u);
     // Sample45 at x=.90 is still in the original [44,50) interval, far from last pose.
-    for (const Eigen::Vector2d point :
-         {Eigen::Vector2d(.899, -.001), {.901, -.001}, {.901, .001}, {.899, .001}})
+    for (const Eigen::Vector2d& point :
+         {Eigen::Vector2d(.899, -.001), {.901, -.001}, {.901, .001}, {.899, .001}}) {
         for (size_t i = 0; i < obstacle.vertices.size(); ++i) {
             const auto edge =
                 obstacle.vertices[(i + 1) % obstacle.vertices.size()] - obstacle.vertices[i];
             const auto relative = point - obstacle.vertices[i];
             EXPECT_GE(edge.x() * relative.y() - edge.y() * relative.x(), -1e-10);
         }
+    }
 }
 }  // namespace

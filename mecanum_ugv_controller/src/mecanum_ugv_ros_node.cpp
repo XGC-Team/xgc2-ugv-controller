@@ -98,8 +98,9 @@ class MecanumUgvRosNode {
                     publishTwist(geometry_msgs::Twist{});
                 }
             }
-            if (controller_.resetExecutor().needsZeroPublication())
+            if (controller_.resetExecutor().needsZeroPublication()) {
                 publishTwist(geometry_msgs::Twist{});
+            }
             ugv_reset_client::Session session;
             if (controller_.takeResetSession(&session)) {
                 reset_edge_.publish(session);
@@ -126,8 +127,9 @@ class MecanumUgvRosNode {
     void publishTwist(const geometry_msgs::Twist& command) {
         cmd_vel_pub_.publish(command);
         if (command.linear.x == 0.0 && command.linear.y == 0.0 && command.linear.z == 0.0 &&
-            command.angular.x == 0.0 && command.angular.y == 0.0 && command.angular.z == 0.0)
+            command.angular.x == 0.0 && command.angular.y == 0.0 && command.angular.z == 0.0) {
             controller_.notifyResetZeroPublished(ros::Time::now().toSec());
+        }
     }
     void loadParams() {
         int queue_size = static_cast<int>(queue_size_);
@@ -244,8 +246,9 @@ class MecanumUgvRosNode {
         event.source = source;
         event.category = ::state_machine::EventCategory::kInput;
         const auto status = controller_.postEvent(std::move(event));
-        if (status.ok())
+        if (status.ok()) {
             ROS_INFO("[MecanumUgvRosNode] Command queued: %s on %s", msg->data.c_str(), source);
+        }
         if (!status.ok()) {
             ROS_WARN("[MecanumUgvRosNode] Failed to post command event: %s source=%s CONTROL=%s",
                      status.message.c_str(), source,

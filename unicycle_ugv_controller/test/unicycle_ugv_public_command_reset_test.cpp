@@ -47,8 +47,9 @@ TEST(UnicyclePublicCommandReset, PublicCommandEntersAndHoldsResetFromReadyAndCus
     bool allow_terminal_hold = false, retired = false;
     auto session_sub = nh.subscribe<ugv_reset_msgs::ResetSession>(
         "/ugv_test/reset/session", 10, [&](const ugv_reset_msgs::ResetSession::ConstPtr& report) {
-            if (report->request_generation == 0)
+            if (report->request_generation == 0) {
                 return;
+            }
             if (generation != report->request_generation) {
                 generation = report->request_generation;
                 brake = ++decision;
@@ -70,8 +71,9 @@ TEST(UnicyclePublicCommandReset, PublicCommandEntersAndHoldsResetFromReadyAndCus
             }
             if (report->stop_certified && report->acknowledged_grant_id == brake && terminal &&
                 allow_terminal_hold) {
-                if (completed == 0)
+                if (completed == 0) {
                     completed = ++decision;
+                }
                 g.state = ugv_reset_msgs::ResetGrant::STATE_HOLD;
                 g.grant_id = completed;
             } else {

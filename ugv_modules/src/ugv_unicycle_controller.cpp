@@ -308,8 +308,9 @@ class Instance {
 
         // Commit last: the consumers run right after this step.
         dispatchOutputs(controller_.stateMachine().currentOutputEvents(), now);
-        if (controller_.resetExecutor().needsZeroPublication())
+        if (controller_.resetExecutor().needsZeroPublication()) {
             pending_ = {true, XGC2_UGV_CMD_VEL_ZERO, 0.0, 0.0};
+        }
         publishResetSession(ctx.now_ns);
         publishResetResult(ctx.now_ns);
         publishStatusIfDue(ctx.now_ns);
@@ -517,11 +518,13 @@ class Instance {
 
     void readZeroPublication() {
         const auto sample = host_.latest<xgc2_ugv_reset_zero_publication>(kResetZeroPublication);
-        if (!seen_.fresh(kResetZeroPublication, sample))
+        if (!seen_.fresh(kResetZeroPublication, sample)) {
             return;
+        }
         const auto& p = *sample;
-        if (p.request_generation == 0U || p.acknowledged_grant_id == 0U)
+        if (p.request_generation == 0U || p.acknowledged_grant_id == 0U) {
             return;
+        }
         controller_.notifyResetZeroPublished(secondsOf<ugv::Time>(p.stamp_ns), p.request_generation,
                                              p.acknowledged_grant_id);
     }
@@ -577,8 +580,9 @@ class Instance {
             return;
         }
         Pending twist = pending_;
-        if (controller_.resetExecutor().requiresZeroCommand())
+        if (controller_.resetExecutor().requiresZeroCommand()) {
             twist = {true, XGC2_UGV_CMD_VEL_ZERO, 0.0, 0.0};
+        }
         auto slot = host_.write<xgc2_ugv_cmd_vel>(kCmdVel);
         if (!slot) {
             return;
@@ -588,8 +592,9 @@ class Instance {
         slot->linear_y = 0.0;
         slot->angular_z = twist.angular_z;
         slot->kind = twist.kind;
-        if (slot.commit(now_ns))
+        if (slot.commit(now_ns)) {
             pending_ = {};
+        }
     }
 
     // The vehicle's Session for the coordinator: the executor says when one is due (every 0.2 s and
@@ -633,8 +638,9 @@ class Instance {
         slot->phase = static_cast<uint32_t>(session.phase);
         slot->model = static_cast<uint32_t>(session.spec.model);
         slot->healthy = session.healthy ? 1U : 0U;
-        if (slot.commit(now_ns))
+        if (slot.commit(now_ns)) {
             controller_.resetSessionPublished();
+        }
     }
 
     void publishResetResult(int64_t now_ns) {
@@ -646,8 +652,9 @@ class Instance {
         if (!slot) {
             return;  // the queue is full: the result stays pending for the next step
         }
-        if (!controller_.peekResetResult(&result))
+        if (!controller_.peekResetResult(&result)) {
             return;
+        }
         slot->stamp_ns = now_ns;
         slot->final_planar_error = result.final_planar_error;
         slot->final_yaw_error = result.final_yaw_error;
@@ -656,8 +663,9 @@ class Instance {
         slot->outcome = static_cast<uint32_t>(result.outcome);
         slot->reason = static_cast<uint32_t>(result.reason);
         std::strncpy(slot->detail, result.detail.c_str(), sizeof(slot->detail) - 1U);
-        if (slot.commit(now_ns))
+        if (slot.commit(now_ns)) {
             controller_.resetResultPublished();
+        }
     }
 
     void publishStatusIfDue(int64_t now_ns) {

@@ -188,8 +188,9 @@ ugv_reset_client::Measurement MecanumUgvController::resetMeasurement() const {
 
 void MecanumUgvController::beginResetSession(const ResetTarget& target) {
     // Admission refused exhaustion before accepting the input; never reuse an old S.
-    if (reset_session_counter_ == std::numeric_limits<uint32_t>::max())
+    if (reset_session_counter_ == std::numeric_limits<uint32_t>::max()) {
         return;
+    }
     reset_ever_started_ = true;
     reset_executor_.begin(++reset_session_counter_, {target.x, target.y, target.yaw},
                           target.valid && std::isfinite(target.x) && std::isfinite(target.y) &&
@@ -199,8 +200,9 @@ void MecanumUgvController::beginResetSession(const ResetTarget& target) {
 
 void MecanumUgvController::onResetGrant(const ugv_reset_client::Grant& grant) {
     reset_executor_.onGrant(grant, resetMeasurement());
-    if (reset_executor_.requiresZeroCommand())
+    if (reset_executor_.requiresZeroCommand()) {
         clearCommand();
+    }
 }
 
 bool MecanumUgvController::takeResetSession(ugv_reset_client::Session* session) {
@@ -227,8 +229,9 @@ void MecanumUgvController::resetSessionPublished() {
 }
 void MecanumUgvController::notifyResetZeroPublished(double now, uint32_t generation,
                                                     uint32_t brake) {
-    if (resetMeasurement().external_command_zero)
+    if (resetMeasurement().external_command_zero) {
         reset_executor_.onZeroPublished(now, generation, brake);
+    }
 }
 
 // What the coordinator says while it holds the vehicle, once per change.

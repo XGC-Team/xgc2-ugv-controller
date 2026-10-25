@@ -35,10 +35,11 @@ void postCommand(MecanumUgvController& controller, ::state_machine::EventId id, 
     event.category = ::state_machine::EventCategory::kInput;
     const auto posted = controller.postEvent(std::move(event));
     if (id == event_type::CUSTOM1_REQUESTED &&
-        (controller.resetExecutor().permissionPending() || controller.resetExecutor().active()))
+        (controller.resetExecutor().permissionPending() || controller.resetExecutor().active())) {
         EXPECT_EQ(posted.code, ::state_machine::ErrorCode::kTransitionRejected);
-    else
+    } else {
         ASSERT_TRUE(posted.ok());
+    }
 }
 
 void goReady(MecanumUgvController& controller, UgvState& state, double t) {

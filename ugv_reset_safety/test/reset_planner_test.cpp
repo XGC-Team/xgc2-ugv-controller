@@ -289,10 +289,13 @@ TEST(ResetPlanner, AParkedBodyThatBlocksTheRestOfAHeldRouteRevokesItAndTheVehicl
     two.phase = rc::Phase::Waiting;
     two.pose = {0.0, -3.0, 1.5708};
     std::vector<PlannerDecision> revoked;
-    for (double t = 0.3; t < 1.0 && revoked.empty(); t += 0.1) {
-        for (const auto& d : planner.update(t, {one, two}))
-            if (d.id == "ugv2")
+    for (int tick = 0; (0.3 + tick * 0.1) < 1.0 && revoked.empty(); ++tick) {
+        const double t = 0.3 + tick * 0.1;
+        for (const auto& d : planner.update(t, {one, two})) {
+            if (d.id == "ugv2") {
                 revoked.push_back(d);
+            }
+        }
     }
     ASSERT_FALSE(revoked.empty());
     EXPECT_EQ(revoked[0].id, "ugv2");
@@ -404,7 +407,8 @@ TEST(ResetPlanner, MoversThatNobodyAdvancesAreRejectedAsStalledAfterTenSeconds) 
     ASSERT_EQ(planner.update(0.0, {v}).at(0).state, rc::GrantState::Go);
     v.phase = rc::Phase::Waiting;  // never moves
     std::vector<PlannerDecision> last;
-    for (double t = 0.2; t < 12.0; t += 0.1) {
+    for (int tick = 0; (0.2 + tick * 0.1) < 12.0; ++tick) {
+        const double t = 0.2 + tick * 0.1;
         auto d = planner.update(t, {v});
         if (!d.empty()) {
             last = d;

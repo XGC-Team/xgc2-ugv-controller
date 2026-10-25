@@ -59,9 +59,10 @@ void CommandInputProducer::post(::state_machine::EventId id, const char* source)
     event.source = source;
     event.category = ::state_machine::EventCategory::kInput;
     const auto status = event_sink_(std::move(event));
-    if (status.ok())
+    if (status.ok()) {
         ROS_INFO("[UgvCommandInputProducer] Command event queued: %u on %s",
                  static_cast<unsigned>(id), source);
+    }
     if (!status.ok()) {
         ROS_WARN("[UgvCommandInputProducer] Failed to post command event: %s",
                  status.message.c_str());

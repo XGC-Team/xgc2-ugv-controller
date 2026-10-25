@@ -125,9 +125,10 @@ class CoordinatorNode {
         CoordinatorConfig config;
         const char* scope_text = std::getenv("XGC_RESET_EXPECTED_SCOPE");
         config.expected_namespaces = expectedResetNamespaces(scope_text ? scope_text : "");
-        if (config.expected_namespaces.empty())
+        if (config.expected_namespaces.empty()) {
             ROS_WARN(
                 "Reset expected scope missing/empty: observing bodies, no fleet motion admitted");
+        }
         private_.param("pair_margin", config.planner.pair_margin, config.planner.pair_margin);
         private_.param("static_margin", config.planner.static_margin, config.planner.static_margin);
         private_.param("hold_margin", config.planner.hold_margin, config.planner.hold_margin);
@@ -167,8 +168,9 @@ class CoordinatorNode {
         core_->setScene(scene_authored_, !scene_authored_);
         // Subscribe the declared names immediately; first data still gates admission.
         // Master-topic discovery remains observational and never substitutes for this scope.
-        for (const auto& name : config.expected_namespaces)
+        for (const auto& name : config.expected_namespaces) {
             observe(name);
+        }
         ROS_INFO("Reset coordinator ready: scene %s, fence %s",
                  scene_authored_ ? scene_namespace_.c_str() : "none authored",
                  fence_.enabled ? "set" : "none");
@@ -217,8 +219,9 @@ class CoordinatorNode {
     };
 
     void observe(const std::string& vehicle) {
-        if (vehicle.empty() || vehicles_.count(vehicle))
+        if (vehicle.empty() || vehicles_.count(vehicle)) {
             return;
+        }
         grant_pubs_[vehicle] = nh_.advertise<msgs::ResetGrant>("/" + vehicle + "/reset/grant", 5);
         vehicles_[vehicle].sub = nh_.subscribe<msgs::ResetSession>(
             "/" + vehicle + "/reset/session", 10,

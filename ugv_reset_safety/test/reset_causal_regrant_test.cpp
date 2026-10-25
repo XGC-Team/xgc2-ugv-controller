@@ -47,9 +47,11 @@ struct WireRig {
     }
     static rc::Grant get(const std::vector<rs::OutgoingGrant>& out, const std::string& id,
                          rc::GrantState state) {
-        for (const auto& g : out)
-            if (g.vehicle == id && g.grant.state == state)
+        for (const auto& g : out) {
+            if (g.vehicle == id && g.grant.state == state) {
                 return g.grant;
+            }
+        }
         ADD_FAILURE() << "missing decision for " << id << " state " << int(state);
         return {};
     }
@@ -77,9 +79,11 @@ struct WireRig {
         return go;
     }
     rs::FleetMember a() {
-        for (auto& r : c.fleet(t).members)
-            if (r.vehicle == "a")
+        for (auto& r : c.fleet(t).members) {
+            if (r.vehicle == "a") {
                 return r;
+            }
+        }
         return {};
     }
 };
@@ -89,18 +93,20 @@ TEST(ResetCausal, ScopeAndDelayedFirstPeerNeverAssumeAnEmptySafeFleet) {
     auto b = WireRig::get(r.tick(), "a", rc::GrantState::Brake);
     r.certify("a", b);
     auto held = r.tick();
-    for (auto& g : held)
+    for (auto& g : held) {
         EXPECT_NE(g.grant.state, rc::GrantState::Go);
+    }
     EXPECT_EQ(r.c.stats().admissions, 0);
     r.body("b", {0, 6, 0}, {0, 6, 0});
     auto go = WireRig::get(r.tick(), "a", rc::GrantState::Go);
     EXPECT_GT(go.grant_id, b.grant_id);
-    WireRig missing({});
+    WireRig missing(std::vector<std::string>{});
     missing.body("a", {-4, 0, 0}, {4, 0, 0}, 11, 1);
     b = WireRig::get(missing.tick(), "a", rc::GrantState::Brake);
     missing.certify("a", b);
-    for (auto& g : missing.tick())
+    for (auto& g : missing.tick()) {
         EXPECT_NE(g.grant.state, rc::GrantState::Go);
+    }
     EXPECT_EQ(missing.c.stats().admissions, 0);
 }
 TEST(ResetCausal, ExactBarrierRetiresOnceAndOnlyAfterReceipt) {
@@ -209,11 +215,12 @@ TEST(ResetCausal, OneLaterInvalidDeclarationDoesNotRejectAnAlreadyValidPeer) {
     r.s["b"].spec.footprint.half_length = -1;
     r.publish("b");
     auto out = r.tick(.45);
-    for (const auto& d : out)
+    for (const auto& d : out) {
         if (d.vehicle == "a") {
             EXPECT_EQ(d.grant.state, rc::GrantState::Go);
             EXPECT_EQ(d.grant.grant_id, go.grant_id);
         }
+    }
     EXPECT_EQ(r.c.stats().admissions, 1);
 }
 TEST(ResetCausal, AValidBodySurvivesABadReportBeforeTheFirstPlannerTick) {
@@ -426,9 +433,11 @@ TEST(ResetCausal, NoDetourNeverGrantsThroughOrRetiresTheFrozenSweep) {
     r.narrowFence();
     auto out = r.requestB();
     for (int k = 0; k < 12; ++k) {
-        for (const auto& d : out)
-            if (d.vehicle == "b")
+        for (const auto& d : out) {
+            if (d.vehicle == "b") {
                 EXPECT_NE(d.grant.state, rc::GrantState::Go);
+            }
+        }
         EXPECT_DOUBLE_EQ(r.a().remaining, r.retained);
         r.publish("a");
         r.publish("b");
@@ -442,9 +451,10 @@ TEST(ResetCausal, OnlyFrozenPlansDoNotHideTheOriginalNoMoverDeadlock) {
     r.narrowFence();
     auto out = r.requestB();
     bool deadlock = false;
-    for (const auto& d : out)
+    for (const auto& d : out) {
         deadlock = deadlock || (d.vehicle == "b" && d.grant.state == rc::GrantState::Reject &&
                                 d.grant.reason == rc::Reason::Deadlock);
+    }
     EXPECT_TRUE(deadlock);
     EXPECT_DOUBLE_EQ(r.a().remaining, r.retained);
     EXPECT_EQ(r.c.stats().admissions, 1);
@@ -465,9 +475,11 @@ TEST(ResetCausal, FrozenOnlyTimeDoesNotStallAnUnrelatedNewMover) {
     v.stop_certified = false;
     v.phase = rc::Phase::Waiting;
     r.publish("b");
-    for (const auto& d : r.tick(.25))
-        if (d.vehicle == "b")
+    for (const auto& d : r.tick(.25)) {
+        if (d.vehicle == "b") {
             EXPECT_NE(d.grant.reason, rc::Reason::Stalled);
+        }
+    }
     EXPECT_DOUBLE_EQ(r.a().remaining, r.retained);
 }
 
@@ -495,8 +507,9 @@ TEST(ResetCausal, AnExactStopProofDoesNotOpenGoWhileTheSceneIsUnavailable) {
     r.certify("a", brake);
     for (int k = 0; k < 4; ++k) {
         r.publish("a");
-        for (const auto& d : r.tick(.1))
+        for (const auto& d : r.tick(.1)) {
             EXPECT_NE(d.grant.state, rc::GrantState::Go);
+        }
     }
     EXPECT_DOUBLE_EQ(r.a().remaining, 0);  // exact stop proof retired it; availability did not
     rs::ConvexObstacle wall;

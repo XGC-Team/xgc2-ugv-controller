@@ -14,22 +14,28 @@ ResetCoordinator::ResetCoordinator(const CoordinatorConfig& config)
     : config_(config), planner_(config.planner) {
     std::sort(config_.expected_namespaces.begin(), config_.expected_namespaces.end());
     if (std::adjacent_find(config_.expected_namespaces.begin(),
-                           config_.expected_namespaces.end()) != config_.expected_namespaces.end())
+                           config_.expected_namespaces.end()) !=
+        config_.expected_namespaces.end()) {
         throw std::invalid_argument("Reset expected namespaces must be unique");
-    for (const auto& name : config_.expected_namespaces)
+    }
+    for (const auto& name : config_.expected_namespaces) {
         if (name.empty() || name.front() == '/' || name.back() == '/' ||
-            name.find("//") != std::string::npos)
+            name.find("//") != std::string::npos) {
             throw std::invalid_argument(
                 "Reset expected namespaces must be normalized nonempty names");
+        }
+    }
 }
 
 bool ResetCoordinator::scopeReady() const {
-    if (config_.expected_namespaces.empty())
+    if (config_.expected_namespaces.empty()) {
         return false;
+    }
     for (const auto& name : config_.expected_namespaces) {
         auto found = entries_.find(name);
-        if (found == entries_.end() || !found->second.scope_seen)
+        if (found == entries_.end() || !found->second.scope_seen) {
             return false;
+        }
     }
     return true;
 }
@@ -61,11 +67,12 @@ bool ResetCoordinator::validSpec(const rc::VehicleSpec& spec) {
 void ResetCoordinator::onSession(const std::string& vehicle, const rc::Session& s, double now) {
     Entry& e = entries_[vehicle];
     // Source publication freshness is checked before health, phase, pose, receipt time or cache.
-    if (e.have &&
-        (s.publication_seq <= e.session.publication_seq ||
-         s.request_generation < e.session.request_generation ||
-         (s.request_generation == e.session.request_generation && s.session != e.session.session)))
+    if (e.have && (s.publication_seq <= e.session.publication_seq ||
+                   s.request_generation < e.session.request_generation ||
+                   (s.request_generation == e.session.request_generation &&
+                    s.session != e.session.session))) {
         return;
+    }
     const bool participant = participantPhase(s.phase);
     std::string why;
     if (vehicle.empty()) {
@@ -136,12 +143,14 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
     std::vector<PlannerVehicle> vehicles;
     for (auto& entry : entries_) {
         Entry& e = entry.second;
-        if (!e.have)
+        if (!e.have) {
             continue;
+        }
         e.lost = now - e.received > config_.lost_after;
         e.participant = participantPhase(e.session.phase) && !e.lost;
-        if (e.bad && !e.scope_seen)
+        if (e.bad && !e.scope_seen) {
             continue;
+        }
         PlannerVehicle v;
         v.id = entry.first;
         v.session = e.session.session;
@@ -158,8 +167,9 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
         const bool outside = !config_.expected_namespaces.empty() &&
                              !std::binary_search(config_.expected_namespaces.begin(),
                                                  config_.expected_namespaces.end(), entry.first);
-        if (outside || e.bad)
+        if (outside || e.bad) {
             v.phase = rc::Phase::Idle;
+        }
         v.uncontrolled_moving =
             !participantPhase(v.phase) && !e.lost && e.speed > config_.moving_speed;
         vehicles.push_back(std::move(v));
@@ -170,8 +180,9 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
     std::map<std::string, bool> sent;
     auto send = [&](const std::string& id, rc::Grant g) {
         Entry& e = entries_.at(id);
-        if (e.next_publication_seq == std::numeric_limits<uint32_t>::max())
+        if (e.next_publication_seq == std::numeric_limits<uint32_t>::max()) {
             throw std::overflow_error("Reset grant publication sequence exhausted");
+        }
         g.publication_seq = e.next_publication_seq++;
         g.stamp = now;
         g.ttl = config_.ttl;
@@ -184,24 +195,28 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
     for (const PlannerDecision& d : planner_.update(now, vehicles, admit)) {
         auto found = entries_.find(d.id);
         if (found == entries_.end() || d.session != found->second.session.session ||
-            d.request_generation != found->second.session.request_generation)
+            d.request_generation != found->second.session.request_generation) {
             continue;
-        if (d.state == rc::GrantState::Reject && found->second.first_reject < 0.0)
+        }
+        if (d.state == rc::GrantState::Reject && found->second.first_reject < 0.0) {
             found->second.first_reject = now;
+        }
         send(d.id, grantOf(d, now));
     }
     // No scene/scope observation can synthesize a Go, clear an outstanding reservation, or
     // substitute for the correlated Brake. Once no route remains, report the local hold.
-    if (!admit)
+    if (!admit) {
         for (const PlannerBodyReport& r : planner_.report()) {
             Entry& e = entries_[r.id];
             if (!e.participant || r.has_route || sent.count(r.id) || !e.session.stop_certified ||
-                e.session.request_generation == 0)
+                e.session.request_generation == 0) {
                 continue;
+            }
             const rc::Reason reason =
                 scene ? rc::Reason::WaitingForPeer : rc::Reason::SceneUnavailable;
-            if (e.has_last && e.last.state == rc::GrantState::Hold && e.last.reason == reason)
+            if (e.has_last && e.last.state == rc::GrantState::Hold && e.last.reason == reason) {
                 continue;
+            }
             rc::Grant g;
             g.session = e.session.session;
             g.request_generation = e.session.request_generation;
@@ -212,10 +227,12 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
                              : "a Scene is authored but its live snapshot is unavailable";
             send(r.id, g);
         }
+    }
     for (auto& entry : entries_) {
         Entry& e = entry.second;
-        if (!e.have || e.lost || sent.count(entry.first) || e.session.request_generation == 0)
+        if (!e.have || e.lost || sent.count(entry.first) || e.session.request_generation == 0) {
             continue;
+        }
         const bool outside = !config_.expected_namespaces.empty() &&
                              !std::binary_search(config_.expected_namespaces.begin(),
                                                  config_.expected_namespaces.end(), entry.first);
@@ -223,8 +240,9 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
             const std::string detail =
                 e.bad ? e.bad_reason : "namespace is outside the declared Reset scope";
             if (e.has_last && e.last.state == rc::GrantState::Reject && e.last.detail == detail) {
-                if (now - e.last_sent >= config_.refresh_period)
+                if (now - e.last_sent >= config_.refresh_period) {
                     send(entry.first, e.last);
+                }
                 continue;
             }
             rc::Grant g;
@@ -237,15 +255,17 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
             send(entry.first, g);
             continue;
         }
-        if (!e.has_last || now - e.last_sent < config_.refresh_period)
+        if (!e.has_last || now - e.last_sent < config_.refresh_period) {
             continue;
+        }
         // Terminal Hold receipts are sent until the vehicle echoes them. They do not depend on
         // an Idle/Done heartbeat being classified as an active Reset participant.
         const bool pending = e.last.state == rc::GrantState::Brake ||
                              (e.last.state == rc::GrantState::Hold &&
                               e.session.acknowledged_grant_id != e.last.grant_id);
-        if (!e.participant && !pending)
+        if (!e.participant && !pending) {
             continue;
+        }
         send(entry.first, e.last);
     }
     return out;

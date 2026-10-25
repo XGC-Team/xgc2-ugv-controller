@@ -74,8 +74,9 @@ class SoloRig {
         if (grant.state == rc::GrantState::Go) {
             const auto logical = grant.grant_id;
             auto found = fixture_go_ids_.find(logical);
-            if (found == fixture_go_ids_.end())
+            if (found == fixture_go_ids_.end()) {
                 found = fixture_go_ids_.emplace(logical, ++fixture_id_).first;
+            }
             grant.grant_id = found->second;
             if (fixture_generation_ > 1 && request.stop_certified &&
                 std::hypot(grant.start.x - m.pose.x, grant.start.y - m.pose.y) > .1) {
@@ -83,8 +84,9 @@ class SoloRig {
                 grant.via.clear();
                 grant.ell_plan = exec_.ell().ell();
             }
-        } else
+        } else {
             grant.grant_id = ++fixture_id_;
+        }
         exec_.onGrant(grant, m);
     }
     const rc::Pose& pose() const {
@@ -130,8 +132,9 @@ class SoloRig {
             if (t_ + 1e-12 >= next_publish_) {
                 next_publish_ = t_ + 1.0 / plant_.publish_hz;
                 cmd_ = manual_set_ ? manual_ : out.command;
-                if (cmd_.zero())
+                if (cmd_.zero()) {
                     exec_.onZeroPublished(m.ros_now);
+                }
             }
             if (hook) {
                 hook(*this, out);

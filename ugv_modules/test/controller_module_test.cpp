@@ -734,8 +734,9 @@ TEST_F(ResetTest, LifecycleStopRetainsOutcomeWithoutPortFlushAndARealStepCanDeli
     EXPECT_EQ(rig_.session().acknowledged_grant_id, go.grant_id);
     EXPECT_EQ(rig_.session().stop_certified, 0u);
     bool drove = false;
-    for (const auto& cmd : rig_.twists())
+    for (const auto& cmd : rig_.twists()) {
         drove = drove || std::abs(cmd.linear_x) > 1e-6;
+    }
     ASSERT_TRUE(drove);
     rig_.host().limitOutput("reset_result", 0);
     const auto sessions = rig_.host().outputs("reset_session").size();

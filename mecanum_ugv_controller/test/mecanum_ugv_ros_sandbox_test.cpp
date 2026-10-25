@@ -53,8 +53,9 @@ TEST(MecanumRosSandbox, PoseCommandFenceAndDrop) {
     ugv_reset_msgs::ResetGrant frozen_go;
     ros::Subscriber session_sub = nh.subscribe<ugv_reset_msgs::ResetSession>(
         "/ugv_test/reset/session", 5, [&](const ugv_reset_msgs::ResetSession::ConstPtr& session) {
-            if (!grant_response || session->request_generation == 0)
+            if (!grant_response || session->request_generation == 0) {
                 return;
+            }
             if (session->session != station_session || session->request_generation != generation) {
                 station_session = session->session;
                 generation = session->request_generation;
@@ -72,8 +73,9 @@ TEST(MecanumRosSandbox, PoseCommandFenceAndDrop) {
             grant.ttl = 1.0;
             if (session->acknowledged_grant_id == brake && session->stop_certified) {
                 if (terminal) {
-                    if (hold == 0)
+                    if (hold == 0) {
                         hold = ++decision;
+                    }
                     grant.state = ugv_reset_msgs::ResetGrant::STATE_HOLD;
                     grant.grant_id = hold;
                 } else {

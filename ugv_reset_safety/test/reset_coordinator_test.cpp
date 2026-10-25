@@ -23,7 +23,7 @@ class StoppedCoordinatorFixture : public ugv_reset_safety::ResetCoordinator {
    public:
     explicit StoppedCoordinatorFixture(std::vector<std::string> names = {"ugv1"})
         : ugv_reset_safety::ResetCoordinator(config(std::move(names))) {}
-    explicit StoppedCoordinatorFixture(CoordinatorConfig c)
+    explicit StoppedCoordinatorFixture(const CoordinatorConfig& c)
         : ugv_reset_safety::ResetCoordinator(c) {}
     static CoordinatorConfig config(std::vector<std::string> names) {
         CoordinatorConfig c;
@@ -71,8 +71,9 @@ class StoppedCoordinatorFixture : public ugv_reset_safety::ResetCoordinator {
                     }
                 }
             }
-            if (!barrier)
+            if (!barrier) {
                 break;
+            }
         }
         return result;
     }
@@ -122,7 +123,8 @@ TEST(ResetCoordinator,
     EXPECT_EQ(only(first, "ugv2").size(), 0U) << "an idle vehicle is a body, not a participant";
     // The unchanged grant is repeated as the heartbeat, no more often than the refresh period.
     int repeats = 0;
-    for (t = 0.05; t < 2.0; t += 0.05) {
+    for (int tick = 0; (0.05 + tick * 0.05) < 2.0; ++tick) {
+        t = 0.05 + tick * 0.05;
         c.onSession("ugv1", session(1, rc::Phase::Moving, {-4, 0, 0}, {4, 0, 0}, t), t);
         c.onSession("ugv2", session(1, rc::Phase::Idle, {0, 6, 0}, {0, 0, 0}, t), t);
         repeats += static_cast<int>(only(c.step(t), "ugv1").size());
@@ -156,7 +158,8 @@ TEST(ResetCoordinator, AFaultAfterValidDiscoveryNeverTouchesTheOthers) {
     EXPECT_EQ(only(out, "ugv3")[0].grant.state, rc::GrantState::Reject);
     // ugv1 keeps its grant (no brake, no re-plan) while the faulty ones are refused again.
     uint32_t id = only(out, "ugv1")[0].grant.grant_id;
-    for (double t = 0.1; t < 1.5; t += 0.1) {
+    for (int tick = 0; (0.1 + tick * 0.1) < 1.5; ++tick) {
+        const double t = 0.1 + tick * 0.1;
         c.onSession("ugv1", session(1, rc::Phase::Moving, {-4 + t * 0.3, 0, 0}, {4, 0, 0}, t), t);
         c.onSession("ugv2", bad, t);
         c.onSession("ugv3", nan_target, t);
@@ -174,7 +177,8 @@ TEST(ResetCoordinator, ANewSessionOfOneVehicleDoesNotDisturbAMover) {
     c.onSession("ugv2", session(1, rc::Phase::Idle, {0, 5, 0}, {0, 5, 0}, 0.0), 0.0);
     const uint32_t id = only(c.step(0.0), "ugv1").at(0).grant.grant_id;
     // ugv2 starts a session (a second click on one vehicle): ugv1 neither brakes nor is re-planned.
-    for (double t = 0.1; t < 1.2; t += 0.1) {
+    for (int tick = 0; (0.1 + tick * 0.1) < 1.2; ++tick) {
+        const double t = 0.1 + tick * 0.1;
         c.onSession("ugv1", session(5, rc::Phase::Moving, {-4 + t * 0.3, 0, 0}, {4, 0, 0}, t), t);
         c.onSession("ugv2", session(2, rc::Phase::Requesting, {0, 5, 0}, {0, 5, 0}, t), t);
         for (const auto& g : only(c.step(t), "ugv1")) {
@@ -207,7 +211,8 @@ TEST(ResetCoordinator, ASilentVehicleStaysABodyAndAMovingOutsiderHoldsNewRoutes)
     for (const auto& g : only(out, "ugv1")) {
         granted = granted || g.grant.state == rc::GrantState::Go;
     }
-    for (t = 0.7; t < 1.5 && !granted; t += 0.1) {
+    for (int tick = 0; (0.7 + tick * 0.1) < 1.5 && !granted; ++tick) {
+        t = 0.7 + tick * 0.1;
         c.onSession("ugv2", session(1, rc::Phase::Idle, {0.1, 0, 0}, {0, 0, 0}, t), t);
         c.onSession("ugv1", session(1, rc::Phase::Requesting, {-4, 4, 0}, {4, 4, 0}, t), t);
         for (const auto& g : only(c.step(t), "ugv1")) {
@@ -243,7 +248,8 @@ TEST(ResetCoordinator, AnAuthoredSceneThatIsNotAvailableHoldsNewGrantsAndSaysWhy
     EXPECT_EQ(only(out, "ugv1")[0].grant.reason, rc::Reason::SceneUnavailable);
     // The hold is repeated as the heartbeat, and lifted when the scene arrives.
     int holds = 0;
-    for (double t = 0.1; t < 1.0; t += 0.1) {
+    for (int tick = 0; (0.1 + tick * 0.1) < 1.0; ++tick) {
+        const double t = 0.1 + tick * 0.1;
         c.onSession("ugv1", session(1, rc::Phase::Waiting, {-4, 0, 0}, {4, 0, 0}, t), t);
         for (const auto& g : only(c.step(t), "ugv1")) {
             holds += g.grant.state == rc::GrantState::Hold ? 1 : 0;
@@ -272,7 +278,8 @@ TEST(ResetCoordinator, ARejectionIsRepeatedUntilTheVehicleEndsItsSessionAndThenF
     c.onSession("ugv1", session(1, rc::Phase::Requesting, {-4, 0, 0}, {std::nan(""), 0, 0}, 0.0),
                 0.0);
     int rejects = 0;
-    for (double t = 0.0; t < 2.0; t += 0.1) {
+    for (int tick = 0; (tick * 0.1) < 2.0; ++tick) {
+        const double t = tick * 0.1;
         c.onSession("ugv1", session(1, rc::Phase::Requesting, {-4, 0, 0}, {std::nan(""), 0, 0}, t),
                     t);
         for (const auto& g : only(c.step(t), "ugv1")) {
@@ -302,8 +309,9 @@ TEST(ResetCoordinator, ClosedLoopWithIdealFollowersOnTheTaseFamily) {
     for (size_t index = 0; index < world.scenarios.size(); index += 4) {
         const Scenario& sc = world.scenarios[index];
         CoordinatorConfig config;
-        for (size_t i = 0; i < sc.starts.size(); ++i)
+        for (size_t i = 0; i < sc.starts.size(); ++i) {
             config.expected_namespaces.push_back("ugv" + std::to_string(i + 1));
+        }
         ugv_reset_safety::ResetCoordinator c(config);
         std::vector<ugv_reset_safety::ConvexObstacle> statics;
         for (const auto& p : world.obstacles) {
@@ -323,7 +331,8 @@ TEST(ResetCoordinator, ClosedLoopWithIdealFollowersOnTheTaseFamily) {
         }
         double min_clear = 1e9;
         bool all = false;
-        for (double t = 0.0; t < 90.0 && !all; t += 0.002) {
+        for (int tick = 0; (tick * 0.002) < 90.0 && !all; ++tick) {
+            const double t = tick * 0.002;
             if (std::fmod(t + 1e-9, 0.1) < 0.002) {
                 for (auto& r : robots) {
                     c.onSession(r.id(), r.session(), t);

@@ -83,7 +83,7 @@ inline Polygon rect(double x, double y, double yaw, double half_length, double h
                     double offset_x = 0.0, double offset_y = 0.0) {
     const double c = std::cos(yaw), s = std::sin(yaw);
     Polygon r;
-    for (auto corner :
+    for (const auto& corner :
          {Eigen::Vector2d(-half_length, -half_width), Eigen::Vector2d(half_length, -half_width),
           Eigen::Vector2d(half_length, half_width), Eigen::Vector2d(-half_length, half_width)}) {
         const Eigen::Vector2d b = corner + Eigen::Vector2d(offset_x, offset_y);
@@ -170,8 +170,9 @@ class IdealFollower {
         }
         switch (d.state) {
             case rc::GrantState::Go:
-                if (done_)
+                if (done_) {
                     return;
+                }
                 acknowledged_ = d.grant_id;
                 certified_ = false;
                 if (!have_route_ || route_start_.x != d.start.x || route_start_.y != d.start.y ||
@@ -187,8 +188,9 @@ class IdealFollower {
                 moving_ = false;
                 acknowledged_ = d.grant_id;
                 certified_ = true;
-                if (!done_)
+                if (!done_) {
                     phase_ = rc::Phase::Requesting;
+                }
                 break;
             case rc::GrantState::Reject:
                 done_ = true;
@@ -408,8 +410,9 @@ class StoppedPlannerFixture : public ugv_reset_safety::ResetPlanner {
                     w.ack = d.grant_id;
                     w.cert = true;
                     barrier = true;
-                    if (!initial[d.id])
+                    if (!initial[d.id]) {
                         result.push_back(d);
+                    }
                 } else {
                     result.push_back(d);
                     if (d.state == rc::GrantState::Go || d.state == rc::GrantState::Hold) {
@@ -418,8 +421,9 @@ class StoppedPlannerFixture : public ugv_reset_safety::ResetPlanner {
                     }
                 }
             }
-            if (!barrier)
+            if (!barrier) {
                 break;
+            }
         }
         return result;
     }
@@ -503,7 +507,8 @@ inline DriveResult drive(const ScenarioFile& world, const Scenario& scenario,
     DriveResult result;
     std::vector<std::pair<double, std::vector<ugv_reset_safety::PlannerDecision>>> in_flight;
     double next_coordinator = 0.0;
-    for (double t = 0.0; t < opt.horizon; t += opt.plant_dt) {
+    for (int tick = 0; (tick * opt.plant_dt) < opt.horizon; ++tick) {
+        const double t = tick * opt.plant_dt;
         if (t + 1e-12 >= next_coordinator) {
             next_coordinator += opt.coordinator_period;
             std::vector<ugv_reset_safety::PlannerVehicle> vehicles;
