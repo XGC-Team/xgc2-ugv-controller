@@ -66,12 +66,12 @@ ResetState::ResetState(UnicycleUgvController& controller) : controller_(controll
         // Left without an outcome of its own: Stop, or the health monitor.
         const bool healthy = controller_.healthReady();
         controller_.resetExecutor().abort(
-            healthy ? ugv_reset_client::Outcome::Stopped : ugv_reset_client::Outcome::AbortedUnhealthy,
+            healthy ? ugv_reset_client::Outcome::Stopped
+                    : ugv_reset_client::Outcome::AbortedUnhealthy,
             healthy ? "stop command" : "the vehicle state is lost or outside the fence",
             controller_.resetMeasurement());
         UGV_LOG_WARN("[UnicycleUgvController] Reset ended after %.1f s: %s",
-                     controller_.currentTime() - enter_time_,
-                     healthy ? "stopped" : "unhealthy");
+                     controller_.currentTime() - enter_time_, healthy ? "stopped" : "unhealthy");
     }
     controller_.resetExecutor().finish();
     emitZero(ctx, true);
@@ -109,11 +109,13 @@ void ResetState::postDone(::state_machine::StateContext& ctx, ::state_machine::E
     // Every outcome is on the log with its reason: Ready alone does not say how Reset ended.
     const double seconds = result.duration;
     if (result.outcome == ugv_reset_client::Outcome::Arrived) {
-        UGV_LOG_INFO("[UnicycleUgvController] Reset arrived after %.1f s (%.3f m, %.1f deg)", seconds,
-                     result.final_planar_error, result.final_yaw_error * 180.0 / 3.14159265358979);
+        UGV_LOG_INFO("[UnicycleUgvController] Reset arrived after %.1f s (%.3f m, %.1f deg)",
+                     seconds, result.final_planar_error,
+                     result.final_yaw_error * 180.0 / 3.14159265358979);
     } else if (result.outcome == ugv_reset_client::Outcome::Timeout) {
         UGV_LOG_ERROR(
-            "[UnicycleUgvController] Reset timed out after %.1f s without arriving (%.3f m, %.1f deg "
+            "[UnicycleUgvController] Reset timed out after %.1f s without arriving (%.3f m, %.1f "
+            "deg "
             "from the target)",
             seconds, result.final_planar_error, result.final_yaw_error * 180.0 / 3.14159265358979);
     } else {

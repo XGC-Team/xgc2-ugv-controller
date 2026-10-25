@@ -6,21 +6,21 @@
 // route tube by construction, so any collision it sees is the planner's.
 
 #include <gtest/gtest.h>
+#include <ugv_reset_client/reset_protocol.h>
+#include <ugv_reset_client/reset_route.h>
+#include <ugv_reset_safety/reset_planner.h>
 
 #include <Eigen/Core>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <functional>
 #include <fstream>
+#include <functional>
 #include <limits>
 #include <map>
 #include <memory>
 #include <sstream>
 #include <string>
-#include <ugv_reset_client/reset_protocol.h>
-#include <ugv_reset_client/reset_route.h>
-#include <ugv_reset_safety/reset_planner.h>
 #include <vector>
 
 namespace reset_test {
@@ -83,15 +83,17 @@ inline Polygon rect(double x, double y, double yaw, double half_length, double h
                     double offset_x = 0.0, double offset_y = 0.0) {
     const double c = std::cos(yaw), s = std::sin(yaw);
     Polygon r;
-    for (auto corner : {Eigen::Vector2d(-half_length, -half_width), Eigen::Vector2d(half_length, -half_width),
-                        Eigen::Vector2d(half_length, half_width), Eigen::Vector2d(-half_length, half_width)}) {
+    for (auto corner :
+         {Eigen::Vector2d(-half_length, -half_width), Eigen::Vector2d(half_length, -half_width),
+          Eigen::Vector2d(half_length, half_width), Eigen::Vector2d(-half_length, half_width)}) {
         const Eigen::Vector2d b = corner + Eigen::Vector2d(offset_x, offset_y);
         r.emplace_back(x + c * b.x() - s * b.y(), y + s * b.x() + c * b.y());
     }
     return r;
 }
 
-inline double segmentDistance(const Eigen::Vector2d& p, const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+inline double segmentDistance(const Eigen::Vector2d& p, const Eigen::Vector2d& a,
+                              const Eigen::Vector2d& b) {
     const Eigen::Vector2d e = b - a;
     const double t = std::clamp((p - a).dot(e) / e.squaredNorm(), 0.0, 1.0);
     return (p - a - t * e).norm();
@@ -145,7 +147,11 @@ class IdealFollower {
    public:
     IdealFollower(const std::string& id, const rc::VehicleSpec& spec, const rc::Pose& start,
                   const rc::Pose& target, double ell_true, bool ell_known)
-        : id_(id), spec_(spec), pose_(start), target_(target), ell_true_(ell_true),
+        : id_(id),
+          spec_(spec),
+          pose_(start),
+          target_(target),
+          ell_true_(ell_true),
           ell_known_(ell_known) {}
 
     void beginSession(uint32_t session) {
@@ -164,8 +170,10 @@ class IdealFollower {
         }
         switch (d.state) {
             case rc::GrantState::Go:
-                if (done_) return;
-                acknowledged_ = d.grant_id; certified_ = false;
+                if (done_)
+                    return;
+                acknowledged_ = d.grant_id;
+                certified_ = false;
                 if (!have_route_ || route_start_.x != d.start.x || route_start_.y != d.start.y ||
                     goal_.x != d.goal.x || goal_.y != d.goal.y || via_.size() != d.via.size()) {
                     startRoute(d);
@@ -175,9 +183,12 @@ class IdealFollower {
             case rc::GrantState::Brake:
                 // This ideal geometry fixture has no inertia: receiving Brake is its
                 // explicit zero/stop certificate, not evidence about a real plant.
-                have_route_ = false; moving_ = false;
-                acknowledged_ = d.grant_id; certified_ = true;
-                if (!done_) phase_ = rc::Phase::Requesting;
+                have_route_ = false;
+                moving_ = false;
+                acknowledged_ = d.grant_id;
+                certified_ = true;
+                if (!done_)
+                    phase_ = rc::Phase::Requesting;
                 break;
             case rc::GrantState::Reject:
                 done_ = true;
@@ -185,7 +196,8 @@ class IdealFollower {
                 phase_ = rc::Phase::Done;
                 break;
             case rc::GrantState::Hold:
-                acknowledged_ = d.grant_id; certified_ = false;
+                acknowledged_ = d.grant_id;
+                certified_ = false;
                 break;
         }
     }
@@ -247,12 +259,17 @@ class IdealFollower {
                     phase_ = rc::Phase::Done;
                     done_ = true;
                     arrived_ = true;
-                    ++generation_; acknowledged_ = 0; certified_ = false;
+                    ++generation_;
+                    acknowledged_ = 0;
+                    certified_ = false;
                     have_route_ = false;
                 }
             } else if (have_route_) {
-                ++generation_; acknowledged_ = 0; certified_ = false;
-                have_route_ = false; phase_ = rc::Phase::Requesting;
+                ++generation_;
+                acknowledged_ = 0;
+                certified_ = false;
+                have_route_ = false;
+                phase_ = rc::Phase::Requesting;
             }
         } else {
             phase_ = moved ? rc::Phase::Moving : rc::Phase::Waiting;
@@ -309,7 +326,8 @@ class IdealFollower {
         final_ = d.final_move;
         // The vehicle's true rotation-centre offset, not the planned one.
         const rc::Route route(d.start, d.via, d.goal, ell_true_);
-        const auto raw = route.sample(0.01, 1.0 * rc::kPi / 180.0, spec_.model == rc::Model::Unicycle);
+        const auto raw =
+            route.sample(0.01, 1.0 * rc::kPi / 180.0, spec_.model == rc::Model::Unicycle);
         path_.assign(raw.begin(), raw.end());
         time_.clear();
         for (size_t i = 0; i + 1 < path_.size(); ++i) {
@@ -348,32 +366,60 @@ class IdealFollower {
 // returned with its exact certificate in a later update call, without simulating inertia.
 // It is deliberately not used by the causal-retirement tests or the real Executor probe.
 class StoppedPlannerFixture : public ugv_reset_safety::ResetPlanner {
-    struct Wire { uint32_t session{0}, generation{0}, ack{0}; bool cert{false}; rc::Phase phase{rc::Phase::Idle}; };
+    struct Wire {
+        uint32_t session{0}, generation{0}, ack{0};
+        bool cert{false};
+        rc::Phase phase{rc::Phase::Idle};
+    };
     std::map<std::string, Wire> wires_;
+
    public:
     using ugv_reset_safety::ResetPlanner::ResetPlanner;
-    std::vector<ugv_reset_safety::PlannerDecision> update(double now,
-            std::vector<ugv_reset_safety::PlannerVehicle> vehicles) {
-        std::map<std::string,bool> initial;
+    std::vector<ugv_reset_safety::PlannerDecision> update(
+        double now, std::vector<ugv_reset_safety::PlannerVehicle> vehicles) {
+        std::map<std::string, bool> initial;
         for (auto& v : vehicles) {
-            auto& w=wires_[v.id];
-            const bool participating=v.phase!=rc::Phase::Idle && v.phase!=rc::Phase::Done;
-            const bool was_participating=w.phase!=rc::Phase::Idle && w.phase!=rc::Phase::Done;
-            initial[v.id]=w.generation==0;
-            if ((participating && w.generation==0) || (w.generation && v.session!=w.session) || (!participating && was_participating))
-                { ++w.generation; w.ack=0; w.cert=false; }
-            w.session=v.session;w.phase=v.phase;
+            auto& w = wires_[v.id];
+            const bool participating = v.phase != rc::Phase::Idle && v.phase != rc::Phase::Done;
+            const bool was_participating = w.phase != rc::Phase::Idle && w.phase != rc::Phase::Done;
+            initial[v.id] = w.generation == 0;
+            if ((participating && w.generation == 0) || (w.generation && v.session != w.session) ||
+                (!participating && was_participating)) {
+                ++w.generation;
+                w.ack = 0;
+                w.cert = false;
+            }
+            w.session = v.session;
+            w.phase = v.phase;
         }
         std::vector<ugv_reset_safety::PlannerDecision> result;
-        for (unsigned turn=0;turn<4;++turn) {
-            for(auto& v:vehicles) {const auto& w=wires_.at(v.id);v.request_generation=w.generation;v.acknowledged_grant_id=w.ack;v.stop_certified=w.cert;}
-            auto ds=ugv_reset_safety::ResetPlanner::update(now,vehicles);bool barrier=false;
-            for(const auto& d:ds) {
-                auto& w=wires_.at(d.id);
-                if(d.state==rc::GrantState::Brake) {w.ack=d.grant_id;w.cert=true;barrier=true;if(!initial[d.id]) result.push_back(d);}
-                else {result.push_back(d);if(d.state==rc::GrantState::Go || d.state==rc::GrantState::Hold) {w.ack=d.grant_id;w.cert=false;}}
+        for (unsigned turn = 0; turn < 4; ++turn) {
+            for (auto& v : vehicles) {
+                const auto& w = wires_.at(v.id);
+                v.request_generation = w.generation;
+                v.acknowledged_grant_id = w.ack;
+                v.stop_certified = w.cert;
             }
-            if(!barrier) break;
+            auto ds = ugv_reset_safety::ResetPlanner::update(now, vehicles);
+            bool barrier = false;
+            for (const auto& d : ds) {
+                auto& w = wires_.at(d.id);
+                if (d.state == rc::GrantState::Brake) {
+                    w.ack = d.grant_id;
+                    w.cert = true;
+                    barrier = true;
+                    if (!initial[d.id])
+                        result.push_back(d);
+                } else {
+                    result.push_back(d);
+                    if (d.state == rc::GrantState::Go || d.state == rc::GrantState::Hold) {
+                        w.ack = d.grant_id;
+                        w.cert = false;
+                    }
+                }
+            }
+            if (!barrier)
+                break;
         }
         return result;
     }
@@ -384,9 +430,9 @@ struct DriveResult {
     bool all_arrived{false};
     double finished_at{-1.0};
     int rejected{0};
-    double min_pair_clearance{1e9};    // planning footprints, pairs that started clear
-    double min_static_clearance{1e9};  // planning footprints, pairs that started clear
-    double min_chassis_clearance{1e9}; // physical chassis (smaller than the planning footprint)
+    double min_pair_clearance{1e9};     // planning footprints, pairs that started clear
+    double min_static_clearance{1e9};   // planning footprints, pairs that started clear
+    double min_chassis_clearance{1e9};  // physical chassis (smaller than the planning footprint)
     double plan_ms_max{0.0};
     std::vector<double> plan_ms;
     std::vector<double> work_ms;  // only the calls that planned (an admission or an extension)
@@ -408,7 +454,8 @@ struct DriveOptions {
     std::function<void(double, const std::vector<ugv_reset_safety::PlannerDecision>&)> observer;
 };
 
-inline DriveResult drive(const ScenarioFile& world, const Scenario& scenario, const DriveOptions& opt,
+inline DriveResult drive(const ScenarioFile& world, const Scenario& scenario,
+                         const DriveOptions& opt,
                          ugv_reset_safety::Fence fence = ugv_reset_safety::Fence()) {
     using ugv_reset_safety::ConvexObstacle;
     ugv_reset_safety::ResetPlanner planner(opt.planner);
@@ -424,10 +471,11 @@ inline DriveResult drive(const ScenarioFile& world, const Scenario& scenario, co
     const size_t n = scenario.starts.size();
     std::vector<IdealFollower> robots;
     for (size_t i = 0; i < n; ++i) {
-        robots.emplace_back("ugv" + std::to_string(i + 1), opt.spec,
-                            rc::Pose{scenario.starts[i].x(), scenario.starts[i].y(), scenario.starts[i].z()},
-                            rc::Pose{scenario.goals[i].x(), scenario.goals[i].y(), scenario.goals[i].z()},
-                            opt.spec.model == rc::Model::Unicycle ? opt.ell_true : 0.0, opt.ell_known);
+        robots.emplace_back(
+            "ugv" + std::to_string(i + 1), opt.spec,
+            rc::Pose{scenario.starts[i].x(), scenario.starts[i].y(), scenario.starts[i].z()},
+            rc::Pose{scenario.goals[i].x(), scenario.goals[i].y(), scenario.goals[i].z()},
+            opt.spec.model == rc::Model::Unicycle ? opt.ell_true : 0.0, opt.ell_known);
         robots.back().beginSession(1);
     }
     auto planning = [&](size_t i) {
@@ -448,7 +496,8 @@ inline DriveResult drive(const ScenarioFile& world, const Scenario& scenario, co
             pair_ok[i][j] = clearance(planning(i), planning(j)) >= opt.planner.pair_margin;
         }
         for (size_t k = 0; k < statics.size(); ++k) {
-            static_ok[i][k] = clearance(planning(i), statics[k].vertices) >= opt.planner.static_margin;
+            static_ok[i][k] =
+                clearance(planning(i), statics[k].vertices) >= opt.planner.static_margin;
         }
     }
     DriveResult result;
@@ -477,7 +526,9 @@ inline DriveResult drive(const ScenarioFile& world, const Scenario& scenario, co
             const auto t0 = std::chrono::steady_clock::now();
             const long before = planner.stats().events + planner.stats().extensions;
             auto decisions = planner.update(t, vehicles);
-            const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+            const double ms =
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0)
+                    .count();
             if (opt.observer) {
                 opt.observer(t, decisions);
             }
@@ -512,19 +563,20 @@ inline DriveResult drive(const ScenarioFile& world, const Scenario& scenario, co
             for (size_t i = 0; i < n; ++i) {
                 for (size_t j = i + 1; j < n; ++j) {
                     if (pair_ok[i][j] && (robots[i].hasMoved() || robots[j].hasMoved())) {
-                        result.min_pair_clearance =
-                            std::min(result.min_pair_clearance, clearance(planning(i), planning(j)));
+                        result.min_pair_clearance = std::min(result.min_pair_clearance,
+                                                             clearance(planning(i), planning(j)));
                     }
                     result.min_chassis_clearance =
                         std::min(result.min_chassis_clearance, clearance(chassis(i), chassis(j)));
                 }
                 for (size_t k = 0; k < statics.size(); ++k) {
                     if (static_ok[i][k] && robots[i].hasMoved()) {
-                        result.min_static_clearance = std::min(
-                            result.min_static_clearance, clearance(planning(i), statics[k].vertices));
+                        result.min_static_clearance =
+                            std::min(result.min_static_clearance,
+                                     clearance(planning(i), statics[k].vertices));
                     }
-                    result.min_chassis_clearance =
-                        std::min(result.min_chassis_clearance, clearance(chassis(i), statics[k].vertices));
+                    result.min_chassis_clearance = std::min(
+                        result.min_chassis_clearance, clearance(chassis(i), statics[k].vertices));
                 }
             }
             if (opt.stop_on_collision && result.min_chassis_clearance < -1e-6) {

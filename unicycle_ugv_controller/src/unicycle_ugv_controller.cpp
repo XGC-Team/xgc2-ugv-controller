@@ -57,12 +57,15 @@ void UnicycleUgvController::update(double now_sec) {
 ::state_machine::Status UnicycleUgvController::postEvent(::state_machine::Event event) {
     const auto id = event.id;
     const std::string source = event.source;
-    if (id == event_type::CUSTOM1_REQUESTED && (reset_executor_.permissionPending() || reset_executor_.active())) {
-        return sm::Status::error(sm::ErrorCode::kTransitionRejected,
-                                 "Reset permission is active or retirement is not acknowledged; motion refused");
+    if (id == event_type::CUSTOM1_REQUESTED &&
+        (reset_executor_.permissionPending() || reset_executor_.active())) {
+        return sm::Status::error(
+            sm::ErrorCode::kTransitionRejected,
+            "Reset permission is active or retirement is not acknowledged; motion refused");
     }
     if (id == event_type::RESET_REQUESTED) {
-        if (pending_reset_requested_ || reset_session_counter_ == std::numeric_limits<uint32_t>::max() ||
+        if (pending_reset_requested_ ||
+            reset_session_counter_ == std::numeric_limits<uint32_t>::max() ||
             !reset_executor_.reserveBegin()) {
             return sm::Status::error(sm::ErrorCode::kLimitReached,
                                      "Reset result credit or authority counter unavailable");
@@ -225,7 +228,8 @@ ugv_reset_client::Measurement UnicycleUgvController::resetMeasurement() const {
 
 void UnicycleUgvController::beginResetSession(const ResetTarget& target) {
     // Admission refused exhaustion before accepting the input; never reuse an old S.
-    if (reset_session_counter_ == std::numeric_limits<uint32_t>::max()) return;
+    if (reset_session_counter_ == std::numeric_limits<uint32_t>::max())
+        return;
     reset_ever_started_ = true;
     reset_executor_.begin(++reset_session_counter_, {target.x, target.y, target.yaw},
                           target.valid && std::isfinite(target.x) && std::isfinite(target.y) &&
@@ -235,7 +239,8 @@ void UnicycleUgvController::beginResetSession(const ResetTarget& target) {
 
 void UnicycleUgvController::onResetGrant(const ugv_reset_client::Grant& grant) {
     reset_executor_.onGrant(grant, resetMeasurement());
-    if (reset_executor_.requiresZeroCommand()) clearCommand();
+    if (reset_executor_.requiresZeroCommand())
+        clearCommand();
 }
 
 bool UnicycleUgvController::takeResetSession(ugv_reset_client::Session* session) {
@@ -254,12 +259,17 @@ bool UnicycleUgvController::takeResetResult(ugv_reset_client::Result* result) {
 bool UnicycleUgvController::peekResetResult(ugv_reset_client::Result* result) const {
     return reset_executor_.peekResult(result);
 }
-void UnicycleUgvController::resetResultPublished() { reset_executor_.commitResult(); }
-void UnicycleUgvController::resetSessionPublished() { reset_executor_.markSessionPublished(resetMeasurement()); }
-void UnicycleUgvController::notifyResetZeroPublished(double now, uint32_t generation, uint32_t brake) {
-    if (resetMeasurement().external_command_zero) reset_executor_.onZeroPublished(now,generation,brake);
+void UnicycleUgvController::resetResultPublished() {
+    reset_executor_.commitResult();
 }
-
+void UnicycleUgvController::resetSessionPublished() {
+    reset_executor_.markSessionPublished(resetMeasurement());
+}
+void UnicycleUgvController::notifyResetZeroPublished(double now, uint32_t generation,
+                                                     uint32_t brake) {
+    if (resetMeasurement().external_command_zero)
+        reset_executor_.onZeroPublished(now, generation, brake);
+}
 
 // What the coordinator says while it holds the vehicle, once per change.
 void UnicycleUgvController::logResetHold() {
@@ -283,7 +293,8 @@ void UnicycleUgvController::logResetHold() {
 }
 
 CmdVel UnicycleUgvController::cmdVel() const {
-    if (reset_executor_.requiresZeroCommand()) return CmdVel{};
+    if (reset_executor_.requiresZeroCommand())
+        return CmdVel{};
     const ControllerConfig cfg = config();
     const ControlCommand current = command();
     CmdVel out;
@@ -465,7 +476,8 @@ void UnicycleUgvController::setupMachine() {
 
 void UnicycleUgvController::maybeAutoStartCustom1() {
     const auto cfg = config();
-    if (reset_ever_started_ || reset_executor_.permissionPending() || !cfg.auto_start_tracking || !healthReady() || !referenceReady() || !machine_) {
+    if (reset_ever_started_ || reset_executor_.permissionPending() || !cfg.auto_start_tracking ||
+        !healthReady() || !referenceReady() || !machine_) {
         return;
     }
     if (machine_->currentState(region_type::CONTROL) != state_type::Ready) {

@@ -91,13 +91,15 @@ class MecanumUgvRosNode {
             for (const auto& event : controller_.stateMachine().currentOutputEvents()) {
                 if (event.id == output_event_type::PUBLISH_CMD_VEL) {
                     const auto command = controller_.resetExecutor().requiresZeroCommand()
-                        ? geometry_msgs::Twist{} : makeTwist(controller_.command());
+                                             ? geometry_msgs::Twist{}
+                                             : makeTwist(controller_.command());
                     publishTwist(command);
                 } else if (event.id == output_event_type::PUBLISH_ZERO_CMD_VEL) {
                     publishTwist(geometry_msgs::Twist{});
                 }
             }
-            if (controller_.resetExecutor().needsZeroPublication()) publishTwist(geometry_msgs::Twist{});
+            if (controller_.resetExecutor().needsZeroPublication())
+                publishTwist(geometry_msgs::Twist{});
             ugv_reset_client::Session session;
             if (controller_.takeResetSession(&session)) {
                 reset_edge_.publish(session);
@@ -185,8 +187,10 @@ class MecanumUgvRosNode {
         config_.reset_footprint_width = finitePositiveOr(config_.reset_footprint_width, 0.64);
         config_.reset_max_linear_speed = finitePositiveOr(config_.reset_max_linear_speed, 0.35);
         config_.reset_max_yaw_rate = finitePositiveOr(config_.reset_max_yaw_rate, 0.5);
-        config_.reset_linear_acceleration = finitePositiveOr(config_.reset_linear_acceleration, 0.35);
-        config_.reset_angular_acceleration = finitePositiveOr(config_.reset_angular_acceleration, 0.6);
+        config_.reset_linear_acceleration =
+            finitePositiveOr(config_.reset_linear_acceleration, 0.35);
+        config_.reset_angular_acceleration =
+            finitePositiveOr(config_.reset_angular_acceleration, 0.6);
         config_.track_kp_yaw = finitePositiveOr(config_.track_kp_yaw, 1.2);
         config_.max_linear_speed = finitePositiveOr(config_.max_linear_speed, 1.0);
         config_.max_yaw_rate = finitePositiveOr(config_.max_yaw_rate, 1.0);
@@ -240,7 +244,8 @@ class MecanumUgvRosNode {
         event.source = source;
         event.category = ::state_machine::EventCategory::kInput;
         const auto status = controller_.postEvent(std::move(event));
-        if (status.ok()) ROS_INFO("[MecanumUgvRosNode] Command queued: %s on %s", msg->data.c_str(), source);
+        if (status.ok())
+            ROS_INFO("[MecanumUgvRosNode] Command queued: %s on %s", msg->data.c_str(), source);
         if (!status.ok()) {
             ROS_WARN("[MecanumUgvRosNode] Failed to post command event: %s source=%s CONTROL=%s",
                      status.message.c_str(), source,

@@ -62,8 +62,8 @@ UnicycleUgvRosNode::UnicycleUgvRosNode(ros::NodeHandle& nh)
     : nh_(nh),
       private_nh_("~"),
       controller_(state_),
-      reset_edge_(nh_,
-                  [this](const ugv_reset_client::Grant& grant) { controller_.onResetGrant(grant); }),
+      reset_edge_(
+          nh_, [this](const ugv_reset_client::Grant& grant) { controller_.onResetGrant(grant); }),
       output_executor_(nh_) {
     loadParams();
     controller_.setConfig(config_);

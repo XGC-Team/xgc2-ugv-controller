@@ -48,41 +48,57 @@ TEST(MecanumRosSandbox, PoseCommandFenceAndDrop) {
     // G/Brake receipt and the real node's post-zero stop certificate.
     ros::Publisher grant_pub = nh.advertise<ugv_reset_msgs::ResetGrant>("/ugv_test/reset/grant", 5);
     bool grant_response = false;
-    uint32_t station_session=0,generation=0,decision=0,publication=0,brake=0,go=0,hold=0;
+    uint32_t station_session = 0, generation = 0, decision = 0, publication = 0, brake = 0, go = 0,
+             hold = 0;
     ugv_reset_msgs::ResetGrant frozen_go;
     ros::Subscriber session_sub = nh.subscribe<ugv_reset_msgs::ResetSession>(
         "/ugv_test/reset/session", 5, [&](const ugv_reset_msgs::ResetSession::ConstPtr& session) {
-            if (!grant_response || session->request_generation==0) return;
-            if (session->session!=station_session || session->request_generation!=generation) {
-                station_session=session->session;generation=session->request_generation;
-                brake=++decision;go=0;hold=0;
+            if (!grant_response || session->request_generation == 0)
+                return;
+            if (session->session != station_session || session->request_generation != generation) {
+                station_session = session->session;
+                generation = session->request_generation;
+                brake = ++decision;
+                go = 0;
+                hold = 0;
             }
-            const bool terminal=session->phase==ugv_reset_msgs::ResetSession::PHASE_IDLE ||
-                                session->phase==ugv_reset_msgs::ResetSession::PHASE_DONE;
+            const bool terminal = session->phase == ugv_reset_msgs::ResetSession::PHASE_IDLE ||
+                                  session->phase == ugv_reset_msgs::ResetSession::PHASE_DONE;
             ugv_reset_msgs::ResetGrant grant;
-            grant.session=station_session;grant.request_generation=generation;
-            grant.state=ugv_reset_msgs::ResetGrant::STATE_BRAKE;grant.grant_id=brake;
-            grant.ttl=1.0;
-            if (session->acknowledged_grant_id==brake && session->stop_certified) {
+            grant.session = station_session;
+            grant.request_generation = generation;
+            grant.state = ugv_reset_msgs::ResetGrant::STATE_BRAKE;
+            grant.grant_id = brake;
+            grant.ttl = 1.0;
+            if (session->acknowledged_grant_id == brake && session->stop_certified) {
                 if (terminal) {
-                    if (hold==0) hold=++decision;
-                    grant.state=ugv_reset_msgs::ResetGrant::STATE_HOLD;grant.grant_id=hold;
+                    if (hold == 0)
+                        hold = ++decision;
+                    grant.state = ugv_reset_msgs::ResetGrant::STATE_HOLD;
+                    grant.grant_id = hold;
                 } else {
-                    if (go==0) {
-                        go=++decision;frozen_go=grant;
-                        frozen_go.state=ugv_reset_msgs::ResetGrant::STATE_GO;frozen_go.grant_id=go;
-                        frozen_go.start=session->pose;frozen_go.goal=session->target;
-                        frozen_go.final_move=true;frozen_go.s_limit=1.0e9;
+                    if (go == 0) {
+                        go = ++decision;
+                        frozen_go = grant;
+                        frozen_go.state = ugv_reset_msgs::ResetGrant::STATE_GO;
+                        frozen_go.grant_id = go;
+                        frozen_go.start = session->pose;
+                        frozen_go.goal = session->target;
+                        frozen_go.final_move = true;
+                        frozen_go.s_limit = 1.0e9;
                     }
-                    grant=frozen_go;
+                    grant = frozen_go;
                 }
-            } else if (!terminal && go!=0 && session->acknowledged_grant_id==go && !session->stop_certified) {
-                grant=frozen_go; // Repeat the identical decision, never mutate its frozen route.
-            } else if (terminal && hold!=0 && session->acknowledged_grant_id==hold && !session->stop_certified) {
+            } else if (!terminal && go != 0 && session->acknowledged_grant_id == go &&
+                       !session->stop_certified) {
+                grant = frozen_go;  // Repeat the identical decision, never mutate its frozen route.
+            } else if (terminal && hold != 0 && session->acknowledged_grant_id == hold &&
+                       !session->stop_certified) {
                 return;
             }
-            grant.header.stamp=ros::Time::now();grant.header.frame_id="world";
-            grant.header.seq=++publication;
+            grant.header.stamp = ros::Time::now();
+            grant.header.frame_id = "world";
+            grant.header.seq = ++publication;
             grant_pub.publish(grant);
         });
     std::string control_state;
@@ -143,14 +159,17 @@ TEST(MecanumRosSandbox, PoseCommandFenceAndDrop) {
             return last_cmd.linear.x == 0.0;
         },
         3.0))
-        << "a lapsed grant heartbeat must stop (it brakes from a second after the last message and the "
+        << "a lapsed grant heartbeat must stop (it brakes from a second after the last message and "
+           "the "
            "session ends with an exact zero at two seconds of silence)";
-    EXPECT_TRUE(waitFor([&]() {
-        // Keep localization healthy while isolating coordinator loss. The final
-        // section below deliberately drops this stream to test pose health.
-        pose_pub.publish(makePose(0.0,0.0,0.0,ros::Time::now()));
-        return control_state == "Ready";
-    }, 3.0))
+    EXPECT_TRUE(waitFor(
+        [&]() {
+            // Keep localization healthy while isolating coordinator loss. The final
+            // section below deliberately drops this stream to test pose health.
+            pose_pub.publish(makePose(0.0, 0.0, 0.0, ros::Time::now()));
+            return control_state == "Ready";
+        },
+        3.0))
         << "the vehicle ends its own session when the heartbeat lapses";
 
     ASSERT_TRUE(waitFor(

@@ -1,3 +1,4 @@
+#include <ugv_reset_safety/reset_path.h>
 #include <ugv_reset_safety/reset_planner.h>
 
 #include <algorithm>
@@ -5,9 +6,8 @@
 #include <cmath>
 #include <limits>
 #include <set>
-#include <stdexcept>
 #include <sstream>
-#include <ugv_reset_safety/reset_path.h>
+#include <stdexcept>
 #include <utility>
 
 namespace ugv_reset_safety {
@@ -21,10 +21,10 @@ using rc::Reason;
 using rc::Route;
 
 constexpr double kInf = std::numeric_limits<double>::infinity();
-constexpr int kChunk = 8;     // samples per broadphase box
-constexpr int kBehind = 6;   // samples kept reserved behind a mover's cursor
+constexpr int kChunk = 8;            // samples per broadphase box
+constexpr int kBehind = 6;           // samples kept reserved behind a mover's cursor
 constexpr double kCycleReach = 2.0;  // m of free prefix that justify breaking a cycle of precedence
-constexpr int kWindow = 160;  // cursor search window [samples]
+constexpr int kWindow = 160;         // cursor search window [samples]
 
 // ---------------------------------------------------------------------------------------------
 // Geometry: convex polygons, separating-axis clearance.
@@ -109,13 +109,15 @@ double exactDistance(const View& a, const View& b) {
     for (int i = 0; i < a.n; ++i) {
         for (int e = 0; e < b.n; ++e) {
             const int e2 = (e + 1) % b.n;
-            best = std::min(best, segmentDistance(a.x[i], a.y[i], b.x[e], b.y[e], b.x[e2], b.y[e2]));
+            best =
+                std::min(best, segmentDistance(a.x[i], a.y[i], b.x[e], b.y[e], b.x[e2], b.y[e2]));
         }
     }
     for (int i = 0; i < b.n; ++i) {
         for (int e = 0; e < a.n; ++e) {
             const int e2 = (e + 1) % a.n;
-            best = std::min(best, segmentDistance(b.x[i], b.y[i], a.x[e], a.y[e], a.x[e2], a.y[e2]));
+            best =
+                std::min(best, segmentDistance(b.x[i], b.y[i], a.x[e], a.y[e], a.x[e2], a.y[e2]));
         }
     }
     return best;
@@ -422,9 +424,10 @@ struct ResetPlanner::Impl {
                 const Aabb& cb = set.chunks[c];
                 const size_t first = std::max(c * kChunk, from[v]);
                 const size_t last = std::min(set.pts.size(), (c + 1) * kChunk);
-                bool inside_fence = !fence.enabled ||
-                                    (cb.minx >= fence.xmin + m_fence && cb.maxx <= fence.xmax - m_fence &&
-                                     cb.miny >= fence.ymin + m_fence && cb.maxy <= fence.ymax - m_fence);
+                bool inside_fence =
+                    !fence.enabled ||
+                    (cb.minx >= fence.xmin + m_fence && cb.maxx <= fence.xmax - m_fence &&
+                     cb.miny >= fence.ymin + m_fence && cb.maxy <= fence.ymax - m_fence);
                 rel_statics.clear();
                 rel_parked.clear();
                 rel_movers.clear();
@@ -458,7 +461,8 @@ struct ResetPlanner::Impl {
                     }
                     for (size_t w = 0; w < other.plan.sets.size(); ++w) {
                         const SampleSet& reserved = other.plan.sets[w];
-                        const size_t lo = other.plan.cursor[w] > kBehind ? other.plan.cursor[w] - kBehind : 0;
+                        const size_t lo =
+                            other.plan.cursor[w] > kBehind ? other.plan.cursor[w] - kBehind : 0;
                         if (other.plan.hi[w] <= lo) {
                             continue;
                         }
@@ -469,8 +473,8 @@ struct ResetPlanner::Impl {
                         }
                     }
                 }
-                if (inside_fence && rel_statics.empty() && rel_parked.empty() && rel_movers.empty() &&
-                    now_bodies.empty()) {
+                if (inside_fence && rel_statics.empty() && rel_parked.empty() &&
+                    rel_movers.empty() && now_bodies.empty()) {
                     continue;
                 }
                 for (size_t i = first; i < last; ++i) {
@@ -516,26 +520,33 @@ struct ResetPlanner::Impl {
                     auto reservedConflict = [&](bool retiring, std::string& who) {
                         for (size_t k = 0; k < now_bodies.size(); ++k) {
                             const Body& other = *now_bodies[k];
-                            if (other.plan_retiring != retiring) continue;
+                            if (other.plan_retiring != retiring)
+                                continue;
                             const double m = cfg.pair_margin + self.delta + other.delta;
                             if (!sampleClear(self, q, other, rel_mover_now[k], m)) {
-                                who = other.id; return true;
+                                who = other.id;
+                                return true;
                             }
                         }
                         for (const MoverChunk& mc : rel_movers) {
                             const Body& other = *mc.body;
-                            if (other.plan_retiring != retiring) continue;
+                            if (other.plan_retiring != retiring)
+                                continue;
                             const double m = cfg.pair_margin + self.delta + other.delta;
-                            if (separated(q.box, other.plan.sets[mc.variant].chunks[mc.chunk], m)) continue;
+                            if (separated(q.box, other.plan.sets[mc.variant].chunks[mc.chunk], m))
+                                continue;
                             const SampleSet& reserved = other.plan.sets[mc.variant];
                             const size_t lo = std::max(mc.chunk * kChunk,
-                                other.plan.cursor[mc.variant] > kBehind
-                                    ? other.plan.cursor[mc.variant] - kBehind : size_t{0});
-                            const size_t hi = std::min({(mc.chunk + 1) * kChunk, reserved.pts.size(),
-                                                      other.plan.hi[mc.variant]});
+                                                       other.plan.cursor[mc.variant] > kBehind
+                                                           ? other.plan.cursor[mc.variant] - kBehind
+                                                           : size_t{0});
+                            const size_t hi =
+                                std::min({(mc.chunk + 1) * kChunk, reserved.pts.size(),
+                                          other.plan.hi[mc.variant]});
                             for (size_t r = lo; r < hi; ++r) {
                                 if (!sampleClear(self, q, other, reserved.pts[r], m)) {
-                                    who = other.id; return true;
+                                    who = other.id;
+                                    return true;
                                 }
                             }
                         }
@@ -548,7 +559,8 @@ struct ResetPlanner::Impl {
                         result.blockers = {who};
                         return result;
                     }
-                    if (soft_found) continue;
+                    if (soft_found)
+                        continue;
                     const bool bad = reservedConflict(false, who);
                     if (bad) {
                         soft_found = true;
@@ -591,29 +603,44 @@ struct ResetPlanner::Impl {
     static ConvexObstacle retiringRoutingObstacle(const Body& body) {
         std::vector<Eigen::Vector2d> points;
         auto append = [&](const Pose& pose) {
-            Verts verts; place(body.shape, pose.x, pose.y, pose.yaw, &verts);
-            for (int k=0;k<verts.n;++k) points.emplace_back(verts.x[k], verts.y[k]);
+            Verts verts;
+            place(body.shape, pose.x, pose.y, pose.yaw, &verts);
+            for (int k = 0; k < verts.n; ++k)
+                points.emplace_back(verts.x[k], verts.y[k]);
         };
-        append(body.pose); // the original verifier also checks the current reported footprint
-        for (size_t variant=0;variant<body.plan.sets.size();++variant) {
-            const auto& set=body.plan.sets[variant];
-            const size_t hi=std::min(set.pts.size(),body.plan.hi[variant]);
-            const size_t lo=body.plan.cursor[variant]>kBehind?body.plan.cursor[variant]-kBehind:0;
-            if (hi<=lo) continue; // the exact existing retained interval is empty
-            for (size_t i=lo;i<hi;++i) {
-                const auto& q=set.pts[i];append({q.x,q.y,q.yaw});
+        append(body.pose);  // the original verifier also checks the current reported footprint
+        for (size_t variant = 0; variant < body.plan.sets.size(); ++variant) {
+            const auto& set = body.plan.sets[variant];
+            const size_t hi = std::min(set.pts.size(), body.plan.hi[variant]);
+            const size_t lo =
+                body.plan.cursor[variant] > kBehind ? body.plan.cursor[variant] - kBehind : 0;
+            if (hi <= lo)
+                continue;  // the exact existing retained interval is empty
+            for (size_t i = lo; i < hi; ++i) {
+                const auto& q = set.pts[i];
+                append({q.x, q.y, q.yaw});
             }
         }
         // Four support halfspaces aligned with the frozen nominal route chord: a routing-only
         // outer rectangle with bounded visibility vertices. Every retained variant/corner is
         // projected; neither downsampling nor a last-pose/last-ack prefix substitutes for it.
-        const double angle=std::atan2(body.plan.goal.y-body.plan.route.start().y,
-                                      body.plan.goal.x-body.plan.route.start().x);
-        const Eigen::Vector2d u(std::cos(angle),std::sin(angle)),v(-u.y(),u.x());
-        double xmin=kInf,xmax=-kInf,ymin=kInf,ymax=-kInf;
-        for(const auto&p:points){const double x=u.dot(p),y=v.dot(p);xmin=std::min(xmin,x);xmax=std::max(xmax,x);ymin=std::min(ymin,y);ymax=std::max(ymax,y);}
-        std::vector<Eigen::Vector2d> hull={xmin*u+ymin*v,xmax*u+ymin*v,xmax*u+ymax*v,xmin*u+ymax*v};
-        ConvexObstacle obstacle;obstacle.id="frozen"+body.id;obstacle.vertices=std::move(hull);return obstacle;
+        const double angle = std::atan2(body.plan.goal.y - body.plan.route.start().y,
+                                        body.plan.goal.x - body.plan.route.start().x);
+        const Eigen::Vector2d u(std::cos(angle), std::sin(angle)), v(-u.y(), u.x());
+        double xmin = kInf, xmax = -kInf, ymin = kInf, ymax = -kInf;
+        for (const auto& p : points) {
+            const double x = u.dot(p), y = v.dot(p);
+            xmin = std::min(xmin, x);
+            xmax = std::max(xmax, x);
+            ymin = std::min(ymin, y);
+            ymax = std::max(ymax, y);
+        }
+        std::vector<Eigen::Vector2d> hull = {xmin * u + ymin * v, xmax * u + ymin * v,
+                                             xmax * u + ymax * v, xmin * u + ymax * v};
+        ConvexObstacle obstacle;
+        obstacle.id = "frozen" + body.id;
+        obstacle.vertices = std::move(hull);
+        return obstacle;
     }
 
     const std::vector<ConvexObstacle>& staticObstacles() const {
@@ -641,7 +668,8 @@ struct ResetPlanner::Impl {
             {true, std::min(body.spec.footprint.half_width, body.spec.footprint.half_length) + 0.05,
              cfg.static_margin},
             {true, rho + 0.05, cfg.static_margin},
-            {true, 0.5 * std::min(body.spec.footprint.half_width, body.spec.footprint.half_length), 0.04},
+            {true, 0.5 * std::min(body.spec.footprint.half_width, body.spec.footprint.half_length),
+             0.04},
             {true, 0.0, 0.02}};
         const std::vector<ConvexObstacle>& base = staticObstacles();
         bool static_route_found = false;
@@ -658,18 +686,20 @@ struct ResetPlanner::Impl {
                         obstacles.push_back(retiringRoutingObstacle(other));
                     } else if (other.plan_active) {
                         // Coarse stand-in for the remaining sweep (the exact verifier follows).
-                        const SampleSet& set = other.plan.sets.size() == 3 ? other.plan.sets[1]
-                                                                           : other.plan.sets[0];
+                        const SampleSet& set =
+                            other.plan.sets.size() == 3 ? other.plan.sets[1] : other.plan.sets[0];
                         const size_t stride = static_cast<size_t>(std::ceil(1.0 / cfg.step));
                         const size_t lo = other.plan.cursor[0];
-                        const size_t hi = std::min(set.pts.size(), other.plan.hi[other.plan.sets.size() == 3 ? 1 : 0]);
+                        const size_t hi = std::min(
+                            set.pts.size(), other.plan.hi[other.plan.sets.size() == 3 ? 1 : 0]);
                         for (size_t i = lo; i < hi; i += stride) {
-                            obstacles.push_back(obstacleOf(other,
-                                {set.pts[i].x, set.pts[i].y, set.pts[i].yaw}, "r" + other.id));
+                            obstacles.push_back(
+                                obstacleOf(other, {set.pts[i].x, set.pts[i].y, set.pts[i].yaw},
+                                           "r" + other.id));
                         }
                         if (hi > lo) {
-                            obstacles.push_back(obstacleOf(other,
-                                {set.pts[hi - 1].x, set.pts[hi - 1].y, set.pts[hi - 1].yaw},
+                            obstacles.push_back(obstacleOf(
+                                other, {set.pts[hi - 1].x, set.pts[hi - 1].y, set.pts[hi - 1].yaw},
                                 "r" + other.id));
                         }
                     } else {
@@ -678,8 +708,8 @@ struct ResetPlanner::Impl {
                 }
             }
             const VisibilityPath path = planVisibilityPath(
-                Eigen::Vector2d(body.pose.x, body.pose.y), Eigen::Vector2d(goal.x, goal.y), obstacles,
-                fence, at.radius, at.clearance);
+                Eigen::Vector2d(body.pose.x, body.pose.y), Eigen::Vector2d(goal.x, goal.y),
+                obstacles, fence, at.radius, at.clearance);
             if (!path.valid) {
                 cand.why = "route: " + path.message;
                 continue;
@@ -705,9 +735,8 @@ struct ResetPlanner::Impl {
             for (double ell : ells) {
                 const Route variant(body.pose, via, goal, ell);
                 plan.sets.push_back(makeSet(variant, body.shape, unicycle, cfg));
-                plan.total = std::max(plan.total, plan.sets.back().pts.empty()
-                                                       ? 0.0
-                                                       : plan.sets.back().pts.back().s);
+                plan.total = std::max(
+                    plan.total, plan.sets.back().pts.empty() ? 0.0 : plan.sets.back().pts.back().s);
             }
             for (const SampleSet& s : plan.sets) {
                 view.push_back(&s);
@@ -885,48 +914,70 @@ struct ResetPlanner::Impl {
             auto found = bodies.find(v.id);
             const bool fresh = found == bodies.end();
             Body& body = bodies[v.id];
-            if (fresh) { body.id = v.id; body.since = now; }
-            if (!fresh && (v.request_generation < body.request_generation ||
-                (v.request_generation == body.request_generation && v.session != body.session))) continue;
+            if (fresh) {
+                body.id = v.id;
+                body.since = now;
+            }
+            if (!fresh &&
+                (v.request_generation < body.request_generation ||
+                 (v.request_generation == body.request_generation && v.session != body.session)))
+                continue;
             const bool new_request = v.request_generation > body.request_generation;
             const bool new_session = v.session != body.session;
-            if (v.available || fresh) body.pose = v.pose;
+            if (v.available || fresh)
+                body.pose = v.pose;
             body.phase = v.phase;
             body.participant = v.phase == Phase::Requesting || v.phase == Phase::Waiting ||
                                v.phase == Phase::Moving || v.phase == Phase::Settling;
             if (!body.plan_active && (v.available || fresh)) {
-                body.spec = v.spec; body.shape = makeShape(v.spec); setDelta(body);
+                body.spec = v.spec;
+                body.shape = makeShape(v.spec);
+                setDelta(body);
             }
-            body.ell_hat = v.ell_hat; body.ell_spread = v.ell_spread;
+            body.ell_hat = v.ell_hat;
+            body.ell_spread = v.ell_spread;
             body.uncontrolled = v.uncontrolled_moving ||
-                (body.participant && !body.plan_active && v.phase == Phase::Moving);
+                                (body.participant && !body.plan_active && v.phase == Phase::Moving);
             if (new_request) {
                 body.session = v.session;
                 body.request_generation = v.request_generation;
                 body.target = v.target;
-                if (new_session || fresh) body.since = now;
-                body.rejected = false; body.emitted = false;
-                body.occupied_since = -1.0; body.no_route_since = -1.0;
-                emitBrake(body, Reason::Replan, "awaiting exact post-zero stopping certificate", {});
+                if (new_session || fresh)
+                    body.since = now;
+                body.rejected = false;
+                body.emitted = false;
+                body.occupied_since = -1.0;
+                body.no_route_since = -1.0;
+                emitBrake(body, Reason::Replan, "awaiting exact post-zero stopping certificate",
+                          {});
                 dirty = true;
             } else if (fresh) {
-                body.session = v.session; body.target = v.target;
+                body.session = v.session;
+                body.target = v.target;
             }
-            if (body.request_generation == 0) continue; // discovery only; no authority
+            if (body.request_generation == 0)
+                continue;  // discovery only; no authority
             if (body.plan_active && (!v.available || !body.participant) && !body.plan_retiring) {
-                emitBrake(body, Reason::Replan, "permission retained until stopping is acknowledged", {});
+                emitBrake(body, Reason::Replan,
+                          "permission retained until stopping is acknowledged", {});
                 dirty = true;
             }
             if (!new_request && v.available && body.awaiting_stop && v.stop_certified &&
                 v.acknowledged_grant_id == body.barrier_id && body.barrier_id != 0) {
                 // The only reservation retirement point. The latest declaration may now replace
                 // the frozen old shape/spec; a repeated certificate cannot clear a later Plan.
-                body.plan_active = false; body.plan_retiring = false;
-                body.awaiting_stop = false; body.certified = true; body.go_received = false;
-                body.spec = v.spec; body.shape = makeShape(v.spec); setDelta(body);
+                body.plan_active = false;
+                body.plan_retiring = false;
+                body.awaiting_stop = false;
+                body.certified = true;
+                body.go_received = false;
+                body.spec = v.spec;
+                body.shape = makeShape(v.spec);
+                setDelta(body);
                 body.target = v.target;
                 if (body.budget_session != v.session) {
-                    body.budget_session = v.session; body.grants = 0;
+                    body.budget_session = v.session;
+                    body.grants = 0;
                 }
                 body.emitted = false;
                 if (!body.participant)
@@ -934,15 +985,15 @@ struct ResetPlanner::Impl {
                 dirty = true;
             }
             if (body.plan_active && !body.plan_retiring && !v.stop_certified &&
-                v.acknowledged_grant_id == body.plan.grant_id &&
-                body.plan.session == v.session && body.plan.request_generation == v.request_generation)
+                v.acknowledged_grant_id == body.plan.grant_id && body.plan.session == v.session &&
+                body.plan.request_generation == v.request_generation)
                 body.go_received = true;
         }
     }
 
     void setDelta(Body& body) const {
-        const double reach =
-            body.shape.radius + (body.spec.model == rc::Model::Unicycle ? body.spec.ell_bound : 0.0);
+        const double reach = body.shape.radius +
+                             (body.spec.model == rc::Model::Unicycle ? body.spec.ell_bound : 0.0);
         body.delta = ResetPlanner::samplingError(cfg, reach);
     }
 
@@ -954,11 +1005,14 @@ struct ResetPlanner::Impl {
             const auto& pts = plan.sets[w].pts;
             size_t best = plan.cursor[w];
             double best_d = kInf;
-            // Unicycle turns repeat positions; Omni's reserved circumscribed disc is heading independent.
-            for (size_t m = plan.cursor[w]; m < std::min(pts.size(), plan.cursor[w] + kWindow); ++m) {
+            // Unicycle turns repeat positions; Omni's reserved circumscribed disc is heading
+            // independent.
+            for (size_t m = plan.cursor[w]; m < std::min(pts.size(), plan.cursor[w] + kWindow);
+                 ++m) {
                 const double d = std::hypot(pts[m].x - body.pose.x, pts[m].y - body.pose.y) +
                                  (body.spec.model == rc::Model::Unicycle
-                                      ? 0.6 * std::abs(wrap(pts[m].yaw - body.pose.yaw)) : 0.0);
+                                      ? 0.6 * std::abs(wrap(pts[m].yaw - body.pose.yaw))
+                                      : 0.0);
                 if (d < best_d) {
                     best_d = d;
                     best = m;
@@ -971,8 +1025,9 @@ struct ResetPlanner::Impl {
     double progressOf(const Body& body) const {
         const Plan& plan = body.plan;
         const size_t w = plan.sets.size() == 3 ? 1 : 0;
-        return plan.sets[w].pts.empty() ? 0.0
-                                        : plan.sets[w].pts[std::min(plan.cursor[w], plan.sets[w].pts.size() - 1)].s;
+        return plan.sets[w].pts.empty()
+                   ? 0.0
+                   : plan.sets[w].pts[std::min(plan.cursor[w], plan.sets[w].pts.size() - 1)].s;
     }
 
     void updateMovers() {
@@ -985,9 +1040,11 @@ struct ResetPlanner::Impl {
                 continue;
             }
             any_mover = true;
-            if (body.plan_retiring || !body.go_received) continue;
+            if (body.plan_retiring || !body.go_received)
+                continue;
             advanceCursor(body);
-            if (std::hypot(body.pose.x - body.progress_pose.x, body.pose.y - body.progress_pose.y) > 0.02 ||
+            if (std::hypot(body.pose.x - body.progress_pose.x, body.pose.y - body.progress_pose.y) >
+                    0.02 ||
                 std::abs(wrap(body.pose.yaw - body.progress_pose.yaw)) > 0.02) {
                 body.progress_pose = body.pose;
                 advanced = true;
@@ -1008,7 +1065,8 @@ struct ResetPlanner::Impl {
             if (!body.plan_active) {
                 continue;
             }
-            if (body.plan_retiring) continue;
+            if (body.plan_retiring)
+                continue;
             const Plan& plan = body.plan;
             const bool prefix_open = plan.s_limit < plan.total - 1e-9;
             if (!prefix_open && !world_changed) {
@@ -1035,8 +1093,10 @@ struct ResetPlanner::Impl {
             if (violation.hard || !prefix_open) {
                 continue;
             }
-            if (!body.go_received) continue; // safety revocation above never waits for a Go receipt
-            const double next = violation.s == kInf ? 1e18 : std::max(plan.s_limit, violation.s - cfg.hold_margin);
+            if (!body.go_received)
+                continue;  // safety revocation above never waits for a Go receipt
+            const double next =
+                violation.s == kInf ? 1e18 : std::max(plan.s_limit, violation.s - cfg.hold_margin);
             if (next > plan.s_limit + 1e-9) {
                 body.plan.s_limit = next;
                 updateHi(body);
@@ -1090,7 +1150,8 @@ struct ResetPlanner::Impl {
         }
         std::string blocker;
         if (!poseClearOfStatics(body, body.target, cfg.static_margin, &blocker)) {
-            emitReject(body, Reason::GoalOccupied, "the target is blocked by " + blocker, {blocker});
+            emitReject(body, Reason::GoalOccupied, "the target is blocked by " + blocker,
+                       {blocker});
             return true;
         }
         // A body outside any session that sits on the target blocks it, if it stays.
@@ -1100,8 +1161,8 @@ struct ResetPlanner::Impl {
             if (&other == &body || other.participant) {
                 continue;
             }
-            if (!sampleClear(body, poseSample(body, body.target), other, poseSample(other, other.pose),
-                             cfg.pair_margin)) {
+            if (!sampleClear(body, poseSample(body, body.target), other,
+                             poseSample(other, other.pose), cfg.pair_margin)) {
                 sitting.push_back(other.id);
             }
         }
@@ -1116,7 +1177,8 @@ struct ResetPlanner::Impl {
                            sitting);
                 return true;
             }
-            emitHold(body, Reason::WaitingForPeer, "the target is occupied by " + sitting[0], sitting);
+            emitHold(body, Reason::WaitingForPeer, "the target is occupied by " + sitting[0],
+                     sitting);
         }
         return false;
     }
@@ -1143,8 +1205,9 @@ struct ResetPlanner::Impl {
     // Ordering rule: defer k while another waiting vehicle's static route passes through k's goal
     // ("that one passes first") or through k's route runs through a start whose owner does not run
     // back through it ("it leaves first"). Returns the vehicles it waits for.
-    std::vector<std::string> deferredBy(const Body& k, const std::vector<Body*>& waiting,
-                                        const std::map<std::string, std::vector<Eigen::Vector2d>>& routes) const {
+    std::vector<std::string> deferredBy(
+        const Body& k, const std::vector<Body*>& waiting,
+        const std::map<std::string, std::vector<Eigen::Vector2d>>& routes) const {
         std::vector<std::string> by;
         for (const Body* j : waiting) {
             if (j == &k || j->rejected) {
@@ -1210,7 +1273,8 @@ struct ResetPlanner::Impl {
                 Body& b = bodies[entry.first];
                 if (!b.rejected && !b.plan_active) {
                     emitReject(b, Reason::GoalOccupied,
-                               "the target overlaps the target of " + entry.second[0], entry.second);
+                               "the target overlaps the target of " + entry.second[0],
+                               entry.second);
                 }
             }
         }
@@ -1229,7 +1293,8 @@ struct ResetPlanner::Impl {
                     }
                 }
                 for (Body* b : waiting) {
-                    emitHold(*b, Reason::NonParticipantMoving, "a body outside Reset is moving", who);
+                    emitHold(*b, Reason::NonParticipantMoving, "a body outside Reset is moving",
+                             who);
                 }
                 return 0;
             }
@@ -1297,12 +1362,14 @@ struct ResetPlanner::Impl {
                 const double predicted = predictedDuration(*b, cand.plan);
                 if (predicted > cfg.refuse_factor * cfg.timeout) {
                     std::ostringstream text;
-                    text << "the route needs about " << static_cast<int>(predicted) << " s, more than "
-                         << cfg.refuse_factor << " x the " << cfg.timeout << " s limit";
+                    text << "the route needs about " << static_cast<int>(predicted)
+                         << " s, more than " << cfg.refuse_factor << " x the " << cfg.timeout
+                         << " s limit";
                     emitReject(*b, Reason::TooSlow, text.str(), {});
                     continue;
                 }
-                if (!installPlan(*b, std::move(cand.plan))) continue;
+                if (!installPlan(*b, std::move(cand.plan)))
+                    continue;
                 emitGo(*b);
                 ++stats.admissions;
                 ++granted;
@@ -1364,7 +1431,8 @@ struct ResetPlanner::Impl {
                         if (&j == &k || !ok) {
                             continue;
                         }
-                        ok = sampleClear(k, poseSample(k, p), j, poseSample(j, j.pose), cfg.pair_margin);
+                        ok = sampleClear(k, poseSample(k, p), j, poseSample(j, j.pose),
+                                         cfg.pair_margin);
                         // Do not park on a goal.
                         if (ok && j.participant) {
                             ok = sampleClear(k, poseSample(k, p), j, poseSample(j, j.target),
@@ -1406,7 +1474,8 @@ struct ResetPlanner::Impl {
         if (best.body == nullptr || best.score <= 0) {
             return false;
         }
-        if (!installPlan(*best.body, std::move(best.cand.plan))) return false;
+        if (!installPlan(*best.body, std::move(best.cand.plan)))
+            return false;
         emitGo(*best.body);
         ++stats.parks;
         return true;
@@ -1415,7 +1484,8 @@ struct ResetPlanner::Impl {
     void deadlock() {
         std::vector<std::string> stuck;
         for (const auto& entry : bodies) {
-            if (entry.second.participant && entry.second.certified && !entry.second.awaiting_stop && !entry.second.plan_active && !entry.second.rejected) {
+            if (entry.second.participant && entry.second.certified && !entry.second.awaiting_stop &&
+                !entry.second.plan_active && !entry.second.rejected) {
                 stuck.push_back(entry.first);
             }
         }
@@ -1441,7 +1511,8 @@ struct ResetPlanner::Impl {
             }
         }
         updateMovers();
-        if (!admit_allowed) return;
+        if (!admit_allowed)
+            return;
         const bool periodic = now - last_replan >= cfg.replan_period;
         if (!dirty && !periodic) {
             return;
@@ -1449,8 +1520,9 @@ struct ResetPlanner::Impl {
         bool waiting = false;
         for (const auto& entry : bodies) {
             const Body& b = entry.second;
-            waiting = waiting || (b.participant && b.certified && !b.awaiting_stop && !b.plan_active && !b.rejected &&
-                                  (b.phase == Phase::Requesting || b.phase == Phase::Waiting));
+            waiting = waiting ||
+                      (b.participant && b.certified && !b.awaiting_stop && !b.plan_active &&
+                       !b.rejected && (b.phase == Phase::Requesting || b.phase == Phase::Waiting));
         }
         dirty = false;
         if (!waiting) {
@@ -1466,7 +1538,8 @@ struct ResetPlanner::Impl {
             bool blocked = false;
             for (const auto& entry : bodies) {
                 const Body& b = entry.second;
-                if (b.participant && b.certified && !b.awaiting_stop && !b.plan_active && !b.rejected && !b.uncontrolled &&
+                if (b.participant && b.certified && !b.awaiting_stop && !b.plan_active &&
+                    !b.rejected && !b.uncontrolled &&
                     (b.phase == Phase::Requesting || b.phase == Phase::Waiting)) {
                     blocked = true;
                 }
@@ -1502,7 +1575,9 @@ struct ResetPlanner::Impl {
 
 ResetPlanner::ResetPlanner(const PlannerConfig& config) : impl_(new Impl(config)) {}
 ResetPlanner::~ResetPlanner() = default;
-uint32_t ResetPlanner::allocateGrantId() { return impl_->allocate(); }
+uint32_t ResetPlanner::allocateGrantId() {
+    return impl_->allocate();
+}
 
 double ResetPlanner::samplingError(const PlannerConfig& config, double radius) {
     return std::max(0.5 * config.step, 0.5 * config.step_yaw * radius);

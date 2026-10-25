@@ -145,11 +145,13 @@ ResetState::ResetState(MecanumUgvController& controller) : controller_(controlle
         // Left without an outcome of its own: Stop, or the health monitor.
         const bool healthy = controller_.healthReady();
         controller_.resetExecutor().abort(
-            healthy ? ugv_reset_client::Outcome::Stopped : ugv_reset_client::Outcome::AbortedUnhealthy,
+            healthy ? ugv_reset_client::Outcome::Stopped
+                    : ugv_reset_client::Outcome::AbortedUnhealthy,
             healthy ? "stop command" : "the vehicle state is lost or outside the fence",
             controller_.resetMeasurement());
         MECANUM_LOG_WARN("[MecanumUgvController] Reset ended after %.1f s: %s",
-                         controller_.currentTime() - enter_time_, healthy ? "stopped" : "unhealthy");
+                         controller_.currentTime() - enter_time_,
+                         healthy ? "stopped" : "unhealthy");
     }
     controller_.resetExecutor().finish();
     emitZero(ctx, true);
@@ -188,10 +190,12 @@ void ResetState::postDone(::state_machine::StateContext& ctx, ::state_machine::E
     const double seconds = result.duration;
     if (result.outcome == ugv_reset_client::Outcome::Arrived) {
         MECANUM_LOG_INFO("[MecanumUgvController] Reset arrived after %.1f s (%.3f m, %.1f deg)",
-                         seconds, result.final_planar_error, result.final_yaw_error * 180.0 / 3.14159265358979);
+                         seconds, result.final_planar_error,
+                         result.final_yaw_error * 180.0 / 3.14159265358979);
     } else if (result.outcome == ugv_reset_client::Outcome::Timeout) {
         MECANUM_LOG_ERROR(
-            "[MecanumUgvController] Reset timed out after %.1f s without arriving (%.3f m, %.1f deg "
+            "[MecanumUgvController] Reset timed out after %.1f s without arriving (%.3f m, %.1f "
+            "deg "
             "from the target)",
             seconds, result.final_planar_error, result.final_yaw_error * 180.0 / 3.14159265358979);
     } else {

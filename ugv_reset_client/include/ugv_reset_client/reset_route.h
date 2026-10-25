@@ -46,8 +46,8 @@ class Route {
             }
             const double bearing = std::atan2(dy, dx);
             const double reverse = wrapAngle(bearing + kPi);
-            const bool forward = std::abs(wrapAngle(bearing - previous)) <=
-                                 std::abs(wrapAngle(reverse - previous));
+            const bool forward =
+                std::abs(wrapAngle(bearing - previous)) <= std::abs(wrapAngle(reverse - previous));
             previous = forward ? bearing : reverse;
             headings_.push_back(previous);
             directions_.push_back(forward ? 1 : -1);

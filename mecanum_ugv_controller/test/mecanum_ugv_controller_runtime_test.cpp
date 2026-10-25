@@ -33,10 +33,12 @@ void postCommand(MecanumUgvController& controller, ::state_machine::EventId id, 
     ::state_machine::Event event(id, ::state_machine::EventTimestamp{t});
     event.source = "test";
     event.category = ::state_machine::EventCategory::kInput;
-    const auto posted=controller.postEvent(std::move(event));
-    if (id==event_type::CUSTOM1_REQUESTED && (controller.resetExecutor().permissionPending() || controller.resetExecutor().active()))
-        EXPECT_EQ(posted.code,::state_machine::ErrorCode::kTransitionRejected);
-    else ASSERT_TRUE(posted.ok());
+    const auto posted = controller.postEvent(std::move(event));
+    if (id == event_type::CUSTOM1_REQUESTED &&
+        (controller.resetExecutor().permissionPending() || controller.resetExecutor().active()))
+        EXPECT_EQ(posted.code, ::state_machine::ErrorCode::kTransitionRejected);
+    else
+        ASSERT_TRUE(posted.ok());
 }
 
 void goReady(MecanumUgvController& controller, UgvState& state, double t) {
@@ -579,13 +581,15 @@ TEST(MecanumLaw, IdealPlantCustom1SaturatesWorldVelocityOnFluBox) {
 namespace {
 
 uint32_t nextResetPublication() {
-    static uint32_t sequence=0;
+    static uint32_t sequence = 0;
     return sequence++;
 }
 
-ugv_reset_client::Grant goFor(const MecanumUgvController& controller, const ugv_reset_client::Pose& start,
+ugv_reset_client::Grant goFor(const MecanumUgvController& controller,
+                              const ugv_reset_client::Pose& start,
                               const std::vector<ugv_reset_client::Point>& via,
-                              const ugv_reset_client::Pose& goal, double s_limit, uint32_t id = 1U) {
+                              const ugv_reset_client::Pose& goal, double s_limit,
+                              uint32_t id = 1U) {
     ugv_reset_client::Grant g;
     g.session = controller.resetExecutor().sessionId();
     g.request_generation = controller.resetExecutor().requestGeneration();
@@ -600,8 +604,8 @@ ugv_reset_client::Grant goFor(const MecanumUgvController& controller, const ugv_
     return g;
 }
 
-ugv_reset_client::Grant rejectFor(const MecanumUgvController& controller, ugv_reset_client::Reason reason,
-                                  const std::string& detail) {
+ugv_reset_client::Grant rejectFor(const MecanumUgvController& controller,
+                                  ugv_reset_client::Reason reason, const std::string& detail) {
     ugv_reset_client::Grant g;
     g.session = controller.resetExecutor().sessionId();
     g.request_generation = controller.resetExecutor().requestGeneration();
@@ -626,14 +630,19 @@ void enterReset(MecanumUgvController& controller, UgvState& state, double goal_x
     // This fixture is the station/output edge: publish an exact all-axis zero and
     // collect fresh acquisition-stamped poses before offering any Go.
     ugv_reset_client::Grant brake;
-    brake.session=controller.resetExecutor().sessionId();
-    brake.request_generation=controller.resetExecutor().requestGeneration();
-    brake.state=ugv_reset_client::GrantState::Brake;brake.grant_id=1;
-    brake.publication_seq=nextResetPublication();controller.onResetGrant(brake);
-    controller.notifyResetZeroPublished(.514,brake.request_generation,brake.grant_id);
-    setPose(state,.52,0,0,0);controller.update(.52);
-    setPose(state,.74,0,0,0);controller.update(.74);
-    setPose(state,1.01,0,0,0);controller.update(1.012);
+    brake.session = controller.resetExecutor().sessionId();
+    brake.request_generation = controller.resetExecutor().requestGeneration();
+    brake.state = ugv_reset_client::GrantState::Brake;
+    brake.grant_id = 1;
+    brake.publication_seq = nextResetPublication();
+    controller.onResetGrant(brake);
+    controller.notifyResetZeroPublished(.514, brake.request_generation, brake.grant_id);
+    setPose(state, .52, 0, 0, 0);
+    controller.update(.52);
+    setPose(state, .74, 0, 0, 0);
+    controller.update(.74);
+    setPose(state, 1.01, 0, 0, 0);
+    controller.update(1.012);
     ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
 }
 
@@ -646,8 +655,9 @@ void captureSink(LogLevel, const char* message) {
     capturedLog().emplace_back(message);
 }
 bool logged(const std::string& needle) {
-    return std::any_of(capturedLog().begin(), capturedLog().end(),
-                       [&](const std::string& line) { return line.find(needle) != std::string::npos; });
+    return std::any_of(capturedLog().begin(), capturedLog().end(), [&](const std::string& line) {
+        return line.find(needle) != std::string::npos;
+    });
 }
 
 }  // namespace
@@ -661,7 +671,8 @@ TEST(MecanumSm, ResetBeginsASessionThatDeclaresTheVehicleToTheCoordinator) {
     ASSERT_TRUE(controller.takeResetSession(&session));
     EXPECT_EQ(session.phase, ugv_reset_client::Phase::Requesting);
     EXPECT_EQ(session.spec.model, ugv_reset_client::Model::Omni);
-    EXPECT_DOUBLE_EQ(session.spec.footprint.half_length, 0.345);  // 0.41 x 0.36 m plus 0.14 m a side
+    EXPECT_DOUBLE_EQ(session.spec.footprint.half_length,
+                     0.345);  // 0.41 x 0.36 m plus 0.14 m a side
     EXPECT_DOUBLE_EQ(session.spec.footprint.half_width, 0.32);
     EXPECT_DOUBLE_EQ(session.spec.ell_bound, 0.0);
     EXPECT_DOUBLE_EQ(session.target.x, 1.0);
@@ -801,27 +812,41 @@ TEST(MecanumSm, ResetOutcomesAreLoggedWithTheirReason) {
     setLogSink(nullptr);
 }
 
-
 TEST(MecanumSm, NewResetReplacesActiveSessionWithoutRetirementOrOutcomeOverwrite) {
-    UgvState state;MecanumUgvController controller(state);enterReset(controller,state,1.0);
-    const auto old_session=controller.resetExecutor().sessionId();
-    const auto old_generation=controller.resetExecutor().requestGeneration();
-    const auto old_go=goFor(controller,{0,0,0},{},{1,0,0},1e9);
-    ASSERT_TRUE(controller.postEvent(::state_machine::Event(event_type::RESET_REQUESTED,
-                    ::state_machine::EventTimestamp{1.02})).ok());
-    setPose(state,1.02,0,0,0);controller.update(1.02);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL),state_type::Reset);
-    EXPECT_NE(controller.resetExecutor().sessionId(),old_session);
-    EXPECT_GT(controller.resetExecutor().requestGeneration(),old_generation);
-    controller.onResetGrant(old_go);EXPECT_FALSE(controller.resetExecutor().tracker().active());
+    UgvState state;
+    MecanumUgvController controller(state);
+    enterReset(controller, state, 1.0);
+    const auto old_session = controller.resetExecutor().sessionId();
+    const auto old_generation = controller.resetExecutor().requestGeneration();
+    const auto old_go = goFor(controller, {0, 0, 0}, {}, {1, 0, 0}, 1e9);
+    ASSERT_TRUE(controller
+                    .postEvent(::state_machine::Event(event_type::RESET_REQUESTED,
+                                                      ::state_machine::EventTimestamp{1.02}))
+                    .ok());
+    setPose(state, 1.02, 0, 0, 0);
+    controller.update(1.02);
+    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
+    EXPECT_NE(controller.resetExecutor().sessionId(), old_session);
+    EXPECT_GT(controller.resetExecutor().requestGeneration(), old_generation);
+    controller.onResetGrant(old_go);
+    EXPECT_FALSE(controller.resetExecutor().tracker().active());
     EXPECT_TRUE(controller.resetExecutor().command().zero());
-    ugv_reset_client::Result result;ASSERT_TRUE(controller.peekResetResult(&result));
-    EXPECT_EQ(result.session,old_session);EXPECT_EQ(result.outcome,ugv_reset_client::Outcome::Stopped);
-    EXPECT_EQ(controller.postEvent(::state_machine::Event(event_type::CUSTOM1_REQUESTED,
-                    ::state_machine::EventTimestamp{1.03})).code,::state_machine::ErrorCode::kTransitionRejected);
-    EXPECT_EQ(controller.postEvent(::state_machine::Event(event_type::RESET_REQUESTED,
-                    ::state_machine::EventTimestamp{1.03})).code,::state_machine::ErrorCode::kLimitReached);
-    ASSERT_TRUE(controller.peekResetResult(&result));EXPECT_EQ(result.session,old_session);
+    ugv_reset_client::Result result;
+    ASSERT_TRUE(controller.peekResetResult(&result));
+    EXPECT_EQ(result.session, old_session);
+    EXPECT_EQ(result.outcome, ugv_reset_client::Outcome::Stopped);
+    EXPECT_EQ(controller
+                  .postEvent(::state_machine::Event(event_type::CUSTOM1_REQUESTED,
+                                                    ::state_machine::EventTimestamp{1.03}))
+                  .code,
+              ::state_machine::ErrorCode::kTransitionRejected);
+    EXPECT_EQ(controller
+                  .postEvent(::state_machine::Event(event_type::RESET_REQUESTED,
+                                                    ::state_machine::EventTimestamp{1.03}))
+                  .code,
+              ::state_machine::ErrorCode::kLimitReached);
+    ASSERT_TRUE(controller.peekResetResult(&result));
+    EXPECT_EQ(result.session, old_session);
 }
 
 }  // namespace mecanum_ugv_controller

@@ -1,7 +1,8 @@
 #pragma once
 
-// The geometric route of the station-side planner: a visibility graph around convex obstacles inside
-// the fence. The vehicle's motion (tracking, speed, stopping) is the vehicle's own: ugv_reset_client.
+// The geometric route of the station-side planner: a visibility graph around convex obstacles
+// inside the fence. The vehicle's motion (tracking, speed, stopping) is the vehicle's own:
+// ugv_reset_client.
 
 #include <ugv_reset_safety/reset_geometry.h>
 

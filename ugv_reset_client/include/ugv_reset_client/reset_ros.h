@@ -97,7 +97,8 @@ class ResetRosEdge {
    public:
     using GrantSink = std::function<void(const Grant&)>;
 
-    ResetRosEdge(ros::NodeHandle& nh, GrantSink sink, const std::string& session_topic = "reset/session",
+    ResetRosEdge(ros::NodeHandle& nh, GrantSink sink,
+                 const std::string& session_topic = "reset/session",
                  const std::string& grant_topic = "reset/grant",
                  const std::string& result_topic = "reset/result")
         : sink_(std::move(sink)) {

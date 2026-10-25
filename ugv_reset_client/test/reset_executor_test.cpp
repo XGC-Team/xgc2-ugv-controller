@@ -99,26 +99,31 @@ TEST(ResetExecutor, TheTrackerConvergesOverLagCouplingNoiseAndDelay) {
                     // The ell of the grant is the vehicle's own estimate: here the truth +- 0.05.
                     const Outcome o = drive(rig, c, ell + (runs % 2 ? 0.05 : -0.05), 1e9, 90.0);
                     ++runs;
-                    ASSERT_TRUE(o.ended) << "lag " << lag << " ell " << ell << " noise " << noise << " known " << known;
+                    ASSERT_TRUE(o.ended) << "lag " << lag << " ell " << ell << " noise " << noise
+                                         << " known " << known;
                     EXPECT_EQ(o.result.outcome, rc::Outcome::Arrived)
-                        << "lag " << lag << " ell " << ell << " noise " << noise << " known " << known << ": "
-                        << o.result.detail;
+                        << "lag " << lag << " ell " << ell << " noise " << noise << " known "
+                        << known << ": " << o.result.detail;
                     EXPECT_LE(o.result.final_planar_error, 0.05);
                     EXPECT_LE(o.result.final_yaw_error, 5.0 * rc::kPi / 180.0);
-                    (known ? worst_known : worst_unknown) = std::max(known ? worst_known : worst_unknown, o.max_cross);
+                    (known ? worst_known : worst_unknown) =
+                        std::max(known ? worst_known : worst_unknown, o.max_cross);
                     slowest = std::max(slowest, o.result.duration);
                 }
             }
         }
     }
-    std::printf("tracker sweep: %d runs, worst cross-track %.3f m with the offset learned, %.3f m "
-                "without, slowest %.1f s\n", runs, worst_known, worst_unknown, slowest);
-    EXPECT_LT(worst_known, 0.15) << "inside the tube budget (0.10 + 2 x spread) once the offset is known";
+    std::printf(
+        "tracker sweep: %d runs, worst cross-track %.3f m with the offset learned, %.3f m "
+        "without, slowest %.1f s\n",
+        runs, worst_known, worst_unknown, slowest);
+    EXPECT_LT(worst_known, 0.15)
+        << "inside the tube budget (0.10 + 2 x spread) once the offset is known";
     EXPECT_LT(slowest, 90.0);
 }
 
-// E2E 20261020T161318 (TASE-4UGVs-Wheeltec): two of four vehicles ended "ABORTED_STALLED: allowed to
-// move but did not for 10 s" 6.1 and 4.9 cm from the slot with the heading right. They drove the
+// E2E 20261020T161318 (TASE-4UGVs-Wheeltec): two of four vehicles ended "ABORTED_STALLED: allowed
+// to move but did not for 10 s" 6.1 and 4.9 cm from the slot with the heading right. They drove the
 // 3.4 m line aligned with it and turned 66 degrees at the end; the tracker had entered its final
 // stage on the distance of the rotation centre it believed in (offset not learned yet, true value
 // +-0.04 m), the turn about the true centre left the origin 4-6 cm to the side, and the final stage
@@ -174,7 +179,7 @@ TEST(ResetExecutor, StopsAtTheEndOfTheGrantedPrefixAndContinuesWhenItGrows) {
         if (r.time() + 1e-12 >= next) {
             next = r.time() + 0.4;
             r.deliver(goGrant(1, s_limit > 5.0 ? 2 : 1, c.start, c.via, c.goal, plant.ell, s_limit),
-                             r.measurement());
+                      r.measurement());
         }
         max_progress = std::max(max_progress, r.exec().tracker().progress());
         if (s_limit < 5.0 && r.time() > 15.0) {
@@ -267,8 +272,9 @@ TEST(ResetExecutor, EveryFailsafeEndsTheSessionWithItsOwnTypedResult) {
         EXPECT_EQ(rig.exec().result().outcome, rc::Outcome::RejectedNoTarget);
         EXPECT_NEAR(rig.exec().result().duration, 2.0, 0.1);
     }
-    {  // the heartbeat lapses while moving: the vehicle brakes from a second after the last message and
-       // the session ends typed once the coordinator has been silent for 2 s (exact zero command)
+    {  // the heartbeat lapses while moving: the vehicle brakes from a second after the last message
+       // and the session ends typed once the coordinator has been silent for 2 s (exact zero
+       // command)
         SoloRig rig(scoutConfig(), c.start, plant);
         fresh(rig);
         double last_message = -1.0;
@@ -278,13 +284,15 @@ TEST(ResetExecutor, EveryFailsafeEndsTheSessionWithItsOwnTypedResult) {
                 last_message = r.time();
                 r.deliver(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
             }
-            if (last_message > 0.0 && r.time() < last_message + 1.0 && r.time() > last_message + 0.9) {
+            if (last_message > 0.0 && r.time() < last_message + 1.0 &&
+                r.time() > last_message + 0.9) {
                 speed_at_lapse = r.speed();
             }
         });
         ASSERT_TRUE(ended);
         EXPECT_EQ(rig.exec().result().outcome, rc::Outcome::AbortedCoordinatorLost);
-        EXPECT_NEAR(rig.time() - last_message, 2.0, 0.15) << "the typed result after 2 s of silence";
+        EXPECT_NEAR(rig.time() - last_message, 2.0, 0.15)
+            << "the typed result after 2 s of silence";
         EXPECT_GT(speed_at_lapse, 0.25) << "it was driving at the lapse";
         EXPECT_LT(rig.speed(), 0.6 * speed_at_lapse) << "and it had been braking for a second";
     }
@@ -297,7 +305,9 @@ TEST(ResetExecutor, EveryFailsafeEndsTheSessionWithItsOwnTypedResult) {
         g.reason = rc::Reason::GoalOccupied;
         g.detail = "target occupied by ugv3";
         g.blockers = {"ugv3"};
-        g.request_generation=rig.exec().requestGeneration();g.grant_id=1;g.publication_seq=0;
+        g.request_generation = rig.exec().requestGeneration();
+        g.grant_id = 1;
+        g.publication_seq = 0;
         rig.exec().onGrant(g, rig.measurement());
         const rc::StepOutput out = rig.exec().step(rig.measurement());
         EXPECT_TRUE(out.ended) << "the controller hears of a rejection at its next step";
@@ -350,18 +360,23 @@ TEST(ResetExecutor, TheDeadlineRunsOnTheWallClockAndOnTheRosClock) {
         m.healthy = true;
         ex.begin(1, c.goal, true, m);
         rc::Grant hold;
-        hold.session=1;hold.request_generation=ex.requestGeneration();hold.grant_id=1;
-        hold.state=rc::GrantState::Brake;hold.publication_seq=0;
-        ex.onGrant(hold,m);  // a real pending stop barrier; no motion authority
+        hold.session = 1;
+        hold.request_generation = ex.requestGeneration();
+        hold.grant_id = 1;
+        hold.state = rc::GrantState::Brake;
+        hold.publication_seq = 0;
+        ex.onGrant(hold, m);  // a real pending stop barrier; no motion authority
         EXPECT_FALSE(ex.step(m).ended);
         // One clock advances 89.9 s, the other not at all: still going (heartbeat renewed).
         m.ros_now = clock == 0 ? 99.9 : 10.0;
         m.wall_now = clock == 0 ? 100.0 : 189.9;
-        ++hold.publication_seq;ex.onGrant(hold,m);
+        ++hold.publication_seq;
+        ex.onGrant(hold, m);
         EXPECT_FALSE(ex.step(m).ended) << "clock " << clock;
         m.ros_now = clock == 0 ? 100.1 : 10.0;
         m.wall_now = clock == 0 ? 100.0 : 190.1;
-        ++hold.publication_seq;ex.onGrant(hold,m);
+        ++hold.publication_seq;
+        ex.onGrant(hold, m);
         const rc::StepOutput out = ex.step(m);
         ASSERT_TRUE(out.ended) << "clock " << clock;
         rc::Result result;
@@ -386,8 +401,10 @@ TEST(ResetExecutor, ARouteIsOnlyChangedFromStandstillAndAStaleGrantIsIgnored) {
             r.deliver(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
             // A different route and a grant of another session arrive while the vehicle drives.
             if (r.time() > 3.0 && r.speed() > 0.1) {
-                r.deliver(goGrant(1, 2, c.start, other_via, c.goal, plant.ell, 1e9), r.measurement());
-                r.deliver(goGrant(2, 3, c.start, other_via, c.goal, plant.ell, 1e9), r.measurement());
+                r.deliver(goGrant(1, 2, c.start, other_via, c.goal, plant.ell, 1e9),
+                          r.measurement());
+                r.deliver(goGrant(2, 3, c.start, other_via, c.goal, plant.ell, 1e9),
+                          r.measurement());
                 checked = true;
                 changed_while_moving = r.exec().tracker().route().vertices().size() != 3;
             }
@@ -415,8 +432,9 @@ TEST(ResetExecutor, ARouteIsOnlyChangedFromStandstillAndAStaleGrantIsIgnored) {
     EXPECT_LT(rig.speed(), 0.02);
     rc::Pose now = rig.pose();
     ASSERT_TRUE(rig.exec().active()) << rig.exec().result().detail;
-    const auto stopped_measurement=rig.measurement();
-    rig.exec().observe(stopped_measurement); // actual controller observes before installing Go in its step
+    const auto stopped_measurement = rig.measurement();
+    rig.exec().observe(
+        stopped_measurement);  // actual controller observes before installing Go in its step
     rig.deliver(goGrant(1, 4, now, other_via, c.goal, plant.ell, 1e9), stopped_measurement);
     rig.exec().step(stopped_measurement);
     EXPECT_EQ(rig.exec().tracker().route().vertices().size(), 4U);
@@ -453,7 +471,8 @@ TEST(ResetExecutor, ALapsedHeartbeatStopsTheVehicleAndAShortOutageIsResumedFrom)
                 }
                 r.deliver(goGrant(1, 1, c.start, c.via, c.goal, plant.ell, 1e9), r.measurement());
             }
-            if (gap_from >= 0.0 && r.time() > gap_from + 1.4 && (gap_to < 0.0 || r.time() < gap_to)) {
+            if (gap_from >= 0.0 && r.time() > gap_from + 1.4 &&
+                (gap_to < 0.0 || r.time() < gap_to)) {
                 result.min_speed_during_gap = std::min(result.min_speed_during_gap, r.speed());
             }
         });

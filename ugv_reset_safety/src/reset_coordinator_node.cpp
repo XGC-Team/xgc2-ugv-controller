@@ -1,17 +1,18 @@
 // The Reset coordinator node: the ROS edge of ResetCoordinator.
 //
 // Event driven: it sleeps in the callback queue (idle CPU about zero) and wakes on a Session, a
-// Scene message or, while a vehicle is in a session or moving, every 100 ms. Its expected scope is declared once from the frozen Session: it
-// observes the vehicles by their `<ns>/reset/session` topics on the master and answers each on
+// Scene message or, while a vehicle is in a session or moving, every 100 ms. Its expected scope is
+// declared once from the frozen Session: it observes the vehicles by their `<ns>/reset/session`
+// topics on the master and answers each on
 // `<ns>/reset/grant`. It never subscribes /command and never publishes cmd_vel.
 //
 // Configuration: XGC_RESET_EXPECTED_SCOPE is frozen Session.robots JSON (required for motion).
 // Other configuration: the environment of the process, because a Session-managed process
-// definition fills every argument and an empty argument is not a parameter. XGC_RESET_SCENE_NAMESPACE
-// (empty: no Scene was authored for this Experiment, and a missing Scene is not an error),
-// XGC_RESET_FENCE (the Session's frozen world boundary as "x_min,x_max,y_min,y_max", empty: no fence);
-// private parameters world_frame, fleet_topic and the planner margins pair_margin / static_margin /
-// hold_margin only tune it.
+// definition fills every argument and an empty argument is not a parameter.
+// XGC_RESET_SCENE_NAMESPACE (empty: no Scene was authored for this Experiment, and a missing Scene
+// is not an error), XGC_RESET_FENCE (the Session's frozen world boundary as
+// "x_min,x_max,y_min,y_max", empty: no fence); private parameters world_frame, fleet_topic and the
+// planner margins pair_margin / static_margin / hold_margin only tune it.
 //
 // A startup error is the node's own non-zero exit, so a Session-managed instance that is
 // misconfigured fails its Run instead of idling.
@@ -46,7 +47,8 @@ namespace rc = ugv_reset_client;
 namespace msgs = ugv_reset_msgs;
 
 double wallSeconds() {
-    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
 }
 
 rc::Session toSession(const msgs::ResetSession& m) {
@@ -60,10 +62,12 @@ rc::Session toSession(const msgs::ResetSession& m) {
     s.pose_stamp = m.pose_stamp.toSec();
     s.pose = {m.pose.x, m.pose.y, m.pose.theta};
     s.target = {m.target.x, m.target.y, m.target.theta};
-    s.phase = m.phase <= msgs::ResetSession::PHASE_DONE ? static_cast<rc::Phase>(m.phase) : rc::Phase::Idle;
+    s.phase = m.phase <= msgs::ResetSession::PHASE_DONE ? static_cast<rc::Phase>(m.phase)
+                                                        : rc::Phase::Idle;
     s.progress = m.progress;
     s.cross_track = m.cross_track;
-    s.spec.model = m.model == msgs::ResetSession::MODEL_OMNI ? rc::Model::Omni : rc::Model::Unicycle;
+    s.spec.model =
+        m.model == msgs::ResetSession::MODEL_OMNI ? rc::Model::Omni : rc::Model::Unicycle;
     s.spec.footprint = {m.half_length, m.half_width, m.offset_x, m.offset_y};
     s.spec.max_v = m.max_v;
     s.spec.max_vy = m.max_vy;
@@ -122,7 +126,8 @@ class CoordinatorNode {
         const char* scope_text = std::getenv("XGC_RESET_EXPECTED_SCOPE");
         config.expected_namespaces = expectedResetNamespaces(scope_text ? scope_text : "");
         if (config.expected_namespaces.empty())
-            ROS_WARN("Reset expected scope missing/empty: observing bodies, no fleet motion admitted");
+            ROS_WARN(
+                "Reset expected scope missing/empty: observing bodies, no fleet motion admitted");
         private_.param("pair_margin", config.planner.pair_margin, config.planner.pair_margin);
         private_.param("static_margin", config.planner.static_margin, config.planner.static_margin);
         private_.param("hold_margin", config.planner.hold_margin, config.planner.hold_margin);
@@ -133,11 +138,12 @@ class CoordinatorNode {
         if (fence_.enabled) {
             double bounds[4];
             char tail = 0;
-            if (std::sscanf(fence_text, "%lf,%lf,%lf,%lf%c", &bounds[0], &bounds[1], &bounds[2], &bounds[3],
-                            &tail) != 4 ||
+            if (std::sscanf(fence_text, "%lf,%lf,%lf,%lf%c", &bounds[0], &bounds[1], &bounds[2],
+                            &bounds[3], &tail) != 4 ||
                 !std::isfinite(bounds[0] + bounds[1] + bounds[2] + bounds[3])) {
                 throw std::invalid_argument(
-                    std::string("XGC_RESET_FENCE must be \"x_min,x_max,y_min,y_max\", got: ") + fence_text);
+                    std::string("XGC_RESET_FENCE must be \"x_min,x_max,y_min,y_max\", got: ") +
+                    fence_text);
             }
             fence_.xmin = bounds[0];
             fence_.xmax = bounds[1];
@@ -151,7 +157,8 @@ class CoordinatorNode {
         }
         scene_authored_ = !scene_namespace_.empty();
         if (scene_authored_) {
-            scene_sub_ = nh_.subscribe(scene_namespace_ + "/snapshot", 1, &CoordinatorNode::scene, this);
+            scene_sub_ =
+                nh_.subscribe(scene_namespace_ + "/snapshot", 1, &CoordinatorNode::scene, this);
             scene_state_sub_ =
                 nh_.subscribe(scene_namespace_ + "/state", 1, &CoordinatorNode::sceneState, this);
         }
@@ -160,7 +167,8 @@ class CoordinatorNode {
         core_->setScene(scene_authored_, !scene_authored_);
         // Subscribe the declared names immediately; first data still gates admission.
         // Master-topic discovery remains observational and never substitutes for this scope.
-        for (const auto& name : config.expected_namespaces) observe(name);
+        for (const auto& name : config.expected_namespaces)
+            observe(name);
         ROS_INFO("Reset coordinator ready: scene %s, fence %s",
                  scene_authored_ ? scene_namespace_.c_str() : "none authored",
                  fence_.enabled ? "set" : "none");
@@ -209,7 +217,8 @@ class CoordinatorNode {
     };
 
     void observe(const std::string& vehicle) {
-        if (vehicle.empty() || vehicles_.count(vehicle)) return;
+        if (vehicle.empty() || vehicles_.count(vehicle))
+            return;
         grant_pubs_[vehicle] = nh_.advertise<msgs::ResetGrant>("/" + vehicle + "/reset/grant", 5);
         vehicles_[vehicle].sub = nh_.subscribe<msgs::ResetSession>(
             "/" + vehicle + "/reset/session", 10,
@@ -260,8 +269,9 @@ class CoordinatorNode {
         last = key;
         switch (g.grant.state) {
             case rc::GrantState::Go:
-                ROS_INFO("Reset %s session %u: GO %zu via point(s), prefix %.2f m%s", g.vehicle.c_str(),
-                         g.grant.session, g.grant.via.size(), g.grant.s_limit > 1e6 ? -1.0 : g.grant.s_limit,
+                ROS_INFO("Reset %s session %u: GO %zu via point(s), prefix %.2f m%s",
+                         g.vehicle.c_str(), g.grant.session, g.grant.via.size(),
+                         g.grant.s_limit > 1e6 ? -1.0 : g.grant.s_limit,
                          g.grant.final_move ? "" : " (parking move)");
                 break;
             case rc::GrantState::Hold:
@@ -301,7 +311,8 @@ class CoordinatorNode {
         fleet_pub_.publish(m);
     }
 
-    // ---- the Scene (kept as it was: scene_projection.h is correct and tested) --------------------
+    // ---- the Scene (kept as it was: scene_projection.h is correct and tested)
+    // --------------------
 
     void pushWorld() {
         core_->setWorld(occupancy_.empty() ? obstacles_ : occupancy_, fence_);
@@ -340,7 +351,8 @@ class CoordinatorNode {
                     moved = geometry.live[i].id != obstacles_[i].id ||
                             geometry.live[i].vertices.size() != obstacles_[i].vertices.size();
                     for (std::size_t j = 0; !moved && j < geometry.live[i].vertices.size(); ++j) {
-                        moved = (geometry.live[i].vertices[j] - obstacles_[i].vertices[j]).norm() > 1e-3;
+                        moved = (geometry.live[i].vertices[j] - obstacles_[i].vertices[j]).norm() >
+                                1e-3;
                     }
                 }
             }
@@ -366,7 +378,8 @@ class CoordinatorNode {
         }
         if (scene_parsed_ && snapshot->epoch == snapshot_.epoch &&
             snapshot->revision == snapshot_.revision) {
-            if (snapshot->obstacles == snapshot_.obstacles && snapshot->scene_id == snapshot_.scene_id &&
+            if (snapshot->obstacles == snapshot_.obstacles &&
+                snapshot->scene_id == snapshot_.scene_id &&
                 snapshot->header.frame_id == snapshot_.header.frame_id) {
                 return;
             }

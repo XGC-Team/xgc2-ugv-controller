@@ -1,8 +1,9 @@
 #pragma once
 
+#include <ugv_reset_client/reset_protocol.h>
+
 #include <state_machine/state_machine.hpp>
 #include <string>
-#include <ugv_reset_client/reset_protocol.h>
 
 #include "unicycle_ugv_controller/common/types.h"
 #include "unicycle_ugv_controller/state_machine/periodic_gate.h"

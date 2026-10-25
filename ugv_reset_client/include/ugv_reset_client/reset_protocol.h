@@ -157,7 +157,8 @@ struct VehicleSpec {
     double max_w{0.5};
     double acc_v{0.35};
     double acc_w{0.6};
-    double ell_bound{0.25};  // |rotation-centre offset| bound of a unicycle (Scout lateral coupling)
+    double ell_bound{
+        0.25};  // |rotation-centre offset| bound of a unicycle (Scout lateral coupling)
 };
 
 // ResetSession. G and publication sequence continue across S within one live owner;
@@ -169,7 +170,7 @@ struct Session {
     uint32_t acknowledged_grant_id{0};
     bool stop_certified{false};
     uint32_t publication_seq{0};  // preserve ROS Header.seq; not an additional wire field
-    double stamp{0.0};  // the vehicle's clock when it was made [s]
+    double stamp{0.0};            // the vehicle's clock when it was made [s]
     uint32_t session{0};
     double pose_stamp{0.0};
     Pose pose;
@@ -187,13 +188,13 @@ struct Session {
 struct Grant {
     uint32_t request_generation{0};
     uint32_t publication_seq{0};  // preserve ROS Header.seq before heartbeat validation
-    double stamp{0.0};  // the coordinator's clock when it was published [s]
-    double ttl{1.0};    // heartbeat: the grant holds for this long after it is received [s]
+    double stamp{0.0};            // the coordinator's clock when it was published [s]
+    double ttl{1.0};  // heartbeat: the grant holds for this long after it is received [s]
     uint32_t session{0};
     GrantState state{GrantState::Hold};
     uint32_t grant_id{0};
-    Pose start;       // the pose the route was planned from
-    Pose goal;        // where the route ends (the target for a final move, a parking pose otherwise)
+    Pose start;  // the pose the route was planned from
+    Pose goal;   // where the route ends (the target for a final move, a parking pose otherwise)
     bool final_move{true};
     double ell_plan{0.0};
     std::vector<Point> via;  // interior waypoints of the rotation-centre polyline
@@ -215,12 +216,12 @@ struct Result {
 };
 
 // The numbers of the decided requirements (T14): arrival is the same for every vehicle.
-constexpr double kResetTimeout = 90.0;           // s, total
-constexpr double kArrivePosition = 0.05;         // m
-constexpr double kArriveYaw = 5.0 * kPi / 180.0; // rad
-constexpr double kNoCoordinatorTimeout = 2.0;    // s without any answer
-constexpr double kHeartbeatLoss = 1.0;           // s moving without a refresh
-constexpr double kSessionPeriod = 0.2;           // s between Session messages (5 Hz)
+constexpr double kResetTimeout = 90.0;            // s, total
+constexpr double kArrivePosition = 0.05;          // m
+constexpr double kArriveYaw = 5.0 * kPi / 180.0;  // rad
+constexpr double kNoCoordinatorTimeout = 2.0;     // s without any answer
+constexpr double kHeartbeatLoss = 1.0;            // s moving without a refresh
+constexpr double kSessionPeriod = 0.2;            // s between Session messages (5 Hz)
 // A route has at most this many interior vertices (the module payload holds that many).
 constexpr size_t kMaxVia = 24;
 

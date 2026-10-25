@@ -87,34 +87,39 @@ TEST(Payloads, CAndCppSeeTheSameLayout) {
 }
 
 TEST(Payloads, ResetCausalFieldsMatchThePublishedSchemaLayout) {
-    static_assert(std::is_same<decltype(xgc2_ugv_reset_session::request_generation),uint32_t>::value, "G is uint32");
-    static_assert(std::is_same<decltype(xgc2_ugv_reset_session::acknowledged_grant_id),uint32_t>::value, "ack is uint32");
-    static_assert(std::is_same<decltype(xgc2_ugv_reset_session::stop_certified),uint32_t>::value, "POD cert is uint32");
-    static_assert(std::is_same<decltype(xgc2_ugv_reset_grant::grant_id),uint32_t>::value, "decision identity is uint32");
-    EXPECT_EQ(offsetof(xgc2_ugv_reset_session,request_generation),192u);
-    EXPECT_EQ(offsetof(xgc2_ugv_reset_session,acknowledged_grant_id),196u);
-    EXPECT_EQ(offsetof(xgc2_ugv_reset_session,stop_certified),200u);
-    EXPECT_EQ(offsetof(xgc2_ugv_reset_session,publication_seq),204u);
-    EXPECT_EQ(offsetof(xgc2_ugv_reset_grant,request_generation),584u);
-    EXPECT_EQ(offsetof(xgc2_ugv_reset_grant,publication_seq),588u);
-    EXPECT_EQ(offsetof(xgc2_ugv_planar_state,pose_stamp_trusted),74u);
-    EXPECT_EQ(offsetof(xgc2_ugv_reset_zero_publication,stamp_ns),0u);
-    EXPECT_EQ(offsetof(xgc2_ugv_reset_zero_publication,request_generation),8u);
-    EXPECT_EQ(offsetof(xgc2_ugv_reset_zero_publication,acknowledged_grant_id),12u);
+    static_assert(
+        std::is_same<decltype(xgc2_ugv_reset_session::request_generation), uint32_t>::value,
+        "G is uint32");
+    static_assert(
+        std::is_same<decltype(xgc2_ugv_reset_session::acknowledged_grant_id), uint32_t>::value,
+        "ack is uint32");
+    static_assert(std::is_same<decltype(xgc2_ugv_reset_session::stop_certified), uint32_t>::value,
+                  "POD cert is uint32");
+    static_assert(std::is_same<decltype(xgc2_ugv_reset_grant::grant_id), uint32_t>::value,
+                  "decision identity is uint32");
+    EXPECT_EQ(offsetof(xgc2_ugv_reset_session, request_generation), 192u);
+    EXPECT_EQ(offsetof(xgc2_ugv_reset_session, acknowledged_grant_id), 196u);
+    EXPECT_EQ(offsetof(xgc2_ugv_reset_session, stop_certified), 200u);
+    EXPECT_EQ(offsetof(xgc2_ugv_reset_session, publication_seq), 204u);
+    EXPECT_EQ(offsetof(xgc2_ugv_reset_grant, request_generation), 584u);
+    EXPECT_EQ(offsetof(xgc2_ugv_reset_grant, publication_seq), 588u);
+    EXPECT_EQ(offsetof(xgc2_ugv_planar_state, pose_stamp_trusted), 74u);
+    EXPECT_EQ(offsetof(xgc2_ugv_reset_zero_publication, stamp_ns), 0u);
+    EXPECT_EQ(offsetof(xgc2_ugv_reset_zero_publication, request_generation), 8u);
+    EXPECT_EQ(offsetof(xgc2_ugv_reset_zero_publication, acknowledged_grant_id), 12u);
 }
 
 TEST(Payloads, EveryPayloadIsAMultipleOfItsAlignmentAndPlainData) {
     // the static asserts of the header fix the numbers; the schema ids are unique
     const char* schemas[] = {
-        XGC2_UGV_SCHEMA_PLANAR_STATE,         XGC2_UGV_SCHEMA_COMMAND,
-        XGC2_UGV_SCHEMA_RESET_TARGET,         XGC2_UGV_SCHEMA_RESET_GRANT,
-        XGC2_UGV_SCHEMA_RESET_SESSION,        XGC2_UGV_SCHEMA_RESET_RESULT,
-        XGC2_UGV_SCHEMA_CMD_VEL,
-        XGC2_UGV_SCHEMA_CONTROLLER_STATUS,    XGC2_UGV_SCHEMA_PLANAR_PVA,
-        XGC2_UGV_SCHEMA_ANALYTIC_REFERENCE,   XGC2_UGV_SCHEMA_SAMPLED_REFERENCE,
-        XGC2_UGV_SCHEMA_POLYNOMIAL_REFERENCE, XGC2_UGV_SCHEMA_WAYPOINT_REQUEST,
-        XGC2_UGV_SCHEMA_REFERENCE_STATUS,     XGC2_UGV_SCHEMA_REFERENCE_RESET,
-        XGC2_UGV_SCHEMA_RESET_ZERO_PUBLICATION};
+        XGC2_UGV_SCHEMA_PLANAR_STATE,      XGC2_UGV_SCHEMA_COMMAND,
+        XGC2_UGV_SCHEMA_RESET_TARGET,      XGC2_UGV_SCHEMA_RESET_GRANT,
+        XGC2_UGV_SCHEMA_RESET_SESSION,     XGC2_UGV_SCHEMA_RESET_RESULT,
+        XGC2_UGV_SCHEMA_CMD_VEL,           XGC2_UGV_SCHEMA_CONTROLLER_STATUS,
+        XGC2_UGV_SCHEMA_PLANAR_PVA,        XGC2_UGV_SCHEMA_ANALYTIC_REFERENCE,
+        XGC2_UGV_SCHEMA_SAMPLED_REFERENCE, XGC2_UGV_SCHEMA_POLYNOMIAL_REFERENCE,
+        XGC2_UGV_SCHEMA_WAYPOINT_REQUEST,  XGC2_UGV_SCHEMA_REFERENCE_STATUS,
+        XGC2_UGV_SCHEMA_REFERENCE_RESET,   XGC2_UGV_SCHEMA_RESET_ZERO_PUBLICATION};
     for (size_t i = 0; i < sizeof schemas / sizeof schemas[0]; ++i) {
         EXPECT_EQ(std::strncmp(schemas[i], "xgc2.ugv.", 9), 0) << schemas[i];
         EXPECT_NE(std::strstr(schemas[i], ".v"), nullptr) << schemas[i];

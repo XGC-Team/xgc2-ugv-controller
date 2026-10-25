@@ -8,14 +8,16 @@
 //   PoseStamped)
 //            command and /command                -> command          (std_msgs/String, parsed here)
 //            reset_pose                          -> reset_target     (geometry_msgs/Pose2D)
-//            reset/grant                         -> reset_grant      (the coordinator's messages, in order)
-//            alg/reference/pva                   -> pva              (flatness strategy only)
+//            reset/grant                         -> reset_grant      (the coordinator's messages,
+//            in order) alg/reference/pva                   -> pva              (flatness strategy
+//            only)
 //            .../request/{analytic,sampled,waypoint}, .../reset -> the generator's request ports
 //            /clock                              -> clock            (simulation time only)
 //   ROS out  cmd_vel                             <- cmd_vel          (geometry_msgs/Twist)
 //            custom/statustext                   <- controller_status
-//            reset/session                       <- reset_session    (the vehicle's side of its session)
-//            reset/result                        <- reset_result     (latched: the one outcome)
+//            reset/session                       <- reset_session    (the vehicle's side of its
+//            session) reset/result                        <- reset_result     (latched: the one
+//            outcome)
 //            .../status, .../active/{analytic,polynomial,sampled} <- the generator's outputs
 //
 // ROS runs on a private callback queue served by one thread. That thread is the only writer of the
@@ -154,7 +156,7 @@ const xgc2_port_desc kPorts[kPortCount] = {
                                    XGC2_UGV_SCHEMA_REFERENCE_RESET, 2U, kAsync),
     port<int64_t>("clock", XGC2_PORT_OUT, XGC2_PORT_STATE, kClockSchema, 0U, kAsync),
     port<xgc2_ugv_reset_zero_publication>("reset_zero_publication", XGC2_PORT_OUT, XGC2_PORT_STATE,
-        XGC2_UGV_SCHEMA_RESET_ZERO_PUBLICATION),
+                                          XGC2_UGV_SCHEMA_RESET_ZERO_PUBLICATION),
 };
 
 // ---- configuration
@@ -759,7 +761,8 @@ class Instance {
         if (twist.linear.x == 0.0 && twist.linear.y == 0.0 && twist.linear.z == 0.0 &&
             twist.angular.x == 0.0 && twist.angular.y == 0.0 && twist.angular.z == 0.0) {
             const auto session = host_.latest<xgc2_ugv_reset_session>(kResetSession);
-            if (session && session->request_generation != 0 && session->acknowledged_grant_id != 0) {
+            if (session && session->request_generation != 0 &&
+                session->acknowledged_grant_id != 0) {
                 auto receipt = host_.write<xgc2_ugv_reset_zero_publication>(kResetZeroPublication);
                 if (receipt) {
                     // now_ns in step ctx is the step's start, which precedes this publish.

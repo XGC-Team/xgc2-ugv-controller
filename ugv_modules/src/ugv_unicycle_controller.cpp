@@ -11,16 +11,16 @@
 //   in  state            state  xgc2.ugv.planar_state.v2                      required
 //   in  command          event  xgc2.ugv.command.v1
 //   in  reset_target     state  xgc2.ugv.reset_target.v1
-//   in  reset_grant      event  xgc2.ugv.reset_grant.v2, 16     (the coordinator's messages, in order)
-//   in  reset_zero_publication state xgc2.ugv.reset_zero_publication.v1     (actual publisher receipt)
-//   in  active_analytic  state  xgc2.ugv.unicycle_reference.analytic.v1       (NMPC)
+//   in  reset_grant      event  xgc2.ugv.reset_grant.v2, 16     (the coordinator's messages, in
+//   order) in  reset_zero_publication state xgc2.ugv.reset_zero_publication.v1     (actual
+//   publisher receipt) in  active_analytic  state  xgc2.ugv.unicycle_reference.analytic.v1 (NMPC)
 //   in  active_polynomial state xgc2.ugv.unicycle_reference.polynomial.v1     (NMPC)
 //   in  active_sampled   state  xgc2.ugv.unicycle_reference.sampled.v1        (NMPC)
 //   in  pva              state  xgc2.ugv.planar_pva.v1                        (flatness)
 //   out cmd_vel          state  xgc2.ugv.cmd_vel.v1
 //   out status           state  xgc2.ugv.controller_status.v1
-//   out reset_session    state  xgc2.ugv.reset_session.v3      (the executor decides when it is due)
-//   out reset_result     event  xgc2.ugv.reset_result.v1, 4    (the one outcome of a session)
+//   out reset_session    state  xgc2.ugv.reset_session.v3      (the executor decides when it is
+//   due) out reset_result     event  xgc2.ugv.reset_result.v1, 4    (the one outcome of a session)
 //
 // The configuration is a JSON object with the keys of config/unicycle_ugv_controller.yaml
 // (state_source, tracking_strategy, limits/*, nmpc/*, flatness/*, fence/*, reset/*, chassis/*,
@@ -93,7 +93,7 @@ const xgc2_port_desc kPorts[kPortCount] = {
     port<xgc2_ugv_reset_grant>("reset_grant", XGC2_PORT_IN, XGC2_PORT_EVENT,
                                XGC2_UGV_SCHEMA_RESET_GRANT, 16U),
     port<xgc2_ugv_reset_zero_publication>("reset_zero_publication", XGC2_PORT_IN, XGC2_PORT_STATE,
-                                         XGC2_UGV_SCHEMA_RESET_ZERO_PUBLICATION),
+                                          XGC2_UGV_SCHEMA_RESET_ZERO_PUBLICATION),
     port<xgc2_ugv_analytic_reference>("active_analytic", XGC2_PORT_IN, XGC2_PORT_STATE,
                                       XGC2_UGV_SCHEMA_ANALYTIC_REFERENCE),
     port<xgc2_ugv_polynomial_reference>("active_polynomial", XGC2_PORT_IN, XGC2_PORT_STATE,
@@ -278,7 +278,8 @@ class Instance {
         shutDown();  // Join the existing producer worker before changing local Reset state.
         auto measurement = controller_.resetMeasurement();
         measurement.ros_now = secondsOf<ugv::Time>(host_.nowNs());
-        controller_.resetExecutor().abort(rc::Outcome::Stopped, "controller module stop", measurement);
+        controller_.resetExecutor().abort(rc::Outcome::Stopped, "controller module stop",
+                                          measurement);
         controller_.clearCommand();
         pending_ = {true, XGC2_UGV_CMD_VEL_ZERO, 0.0, 0.0};
         // No port flush here: stop is not a real step. Preserve any uncommitted outcome.
@@ -516,11 +517,13 @@ class Instance {
 
     void readZeroPublication() {
         const auto sample = host_.latest<xgc2_ugv_reset_zero_publication>(kResetZeroPublication);
-        if (!seen_.fresh(kResetZeroPublication, sample)) return;
+        if (!seen_.fresh(kResetZeroPublication, sample))
+            return;
         const auto& p = *sample;
-        if (p.request_generation == 0U || p.acknowledged_grant_id == 0U) return;
-        controller_.notifyResetZeroPublished(secondsOf<ugv::Time>(p.stamp_ns),
-                                              p.request_generation, p.acknowledged_grant_id);
+        if (p.request_generation == 0U || p.acknowledged_grant_id == 0U)
+            return;
+        controller_.notifyResetZeroPublished(secondsOf<ugv::Time>(p.stamp_ns), p.request_generation,
+                                             p.acknowledged_grant_id);
     }
 
     void readCommands(int64_t now_ns, double now) {
@@ -585,7 +588,8 @@ class Instance {
         slot->linear_y = 0.0;
         slot->angular_z = twist.angular_z;
         slot->kind = twist.kind;
-        if (slot.commit(now_ns)) pending_ = {};
+        if (slot.commit(now_ns))
+            pending_ = {};
     }
 
     // The vehicle's Session for the coordinator: the executor says when one is due (every 0.2 s and
@@ -629,7 +633,8 @@ class Instance {
         slot->phase = static_cast<uint32_t>(session.phase);
         slot->model = static_cast<uint32_t>(session.spec.model);
         slot->healthy = session.healthy ? 1U : 0U;
-        if (slot.commit(now_ns)) controller_.resetSessionPublished();
+        if (slot.commit(now_ns))
+            controller_.resetSessionPublished();
     }
 
     void publishResetResult(int64_t now_ns) {
@@ -641,7 +646,8 @@ class Instance {
         if (!slot) {
             return;  // the queue is full: the result stays pending for the next step
         }
-        if (!controller_.peekResetResult(&result)) return;
+        if (!controller_.peekResetResult(&result))
+            return;
         slot->stamp_ns = now_ns;
         slot->final_planar_error = result.final_planar_error;
         slot->final_yaw_error = result.final_yaw_error;
@@ -650,7 +656,8 @@ class Instance {
         slot->outcome = static_cast<uint32_t>(result.outcome);
         slot->reason = static_cast<uint32_t>(result.reason);
         std::strncpy(slot->detail, result.detail.c_str(), sizeof(slot->detail) - 1U);
-        if (slot.commit(now_ns)) controller_.resetResultPublished();
+        if (slot.commit(now_ns))
+            controller_.resetResultPublished();
     }
 
     void publishStatusIfDue(int64_t now_ns) {

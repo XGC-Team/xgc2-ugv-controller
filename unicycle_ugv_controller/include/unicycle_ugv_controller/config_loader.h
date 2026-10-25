@@ -196,8 +196,10 @@ void loadControllerConfig(const Source& source, ControllerConfig& config) {
     }
     if (!std::isfinite(config.reset_footprint_offset_x) ||
         !std::isfinite(config.reset_footprint_offset_y) ||
-        !std::isfinite(config.reset_lateral_offset_bound) || config.reset_lateral_offset_bound < 0.0) {
-        throw std::invalid_argument("reset footprint offset and lateral offset bound must be finite");
+        !std::isfinite(config.reset_lateral_offset_bound) ||
+        config.reset_lateral_offset_bound < 0.0) {
+        throw std::invalid_argument(
+            "reset footprint offset and lateral offset bound must be finite");
     }
 }
 

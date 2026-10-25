@@ -72,7 +72,9 @@ class Probe {
         std::lock_guard<std::mutex> lock(mutex_);
         return messages_.at(i);
     }
-    bool connected() const { return edge_test::connected(sub_); }
+    bool connected() const {
+        return edge_test::connected(sub_);
+    }
     bool waitFor(size_t n, int timeout_ms = 3000) const {
         return waitUntil([&] { return count() >= n; }, timeout_ms);
     }
@@ -136,8 +138,8 @@ TEST_F(EdgeTest, DescribesItsPortsForTheHost) {
     EXPECT_EQ(d->abi_major, XGC2_MODULE_ABI_MAJOR);
     EXPECT_STREQ(d->name, "ugv_ros_edge");
     ASSERT_EQ(d->port_count, 19u);
-    const char* inputs[] = {"cmd_vel",          "controller_status", "reset_session",
-                            "reset_result",     "reference_status",  "active_analytic",
+    const char* inputs[] = {"cmd_vel",           "controller_status", "reset_session",
+                            "reset_result",      "reference_status",  "active_analytic",
                             "active_polynomial", "active_sampled"};
     const char* outputs[] = {"state",
                              "command",
@@ -163,8 +165,10 @@ TEST_F(EdgeTest, DescribesItsPortsForTheHost) {
         EXPECT_STREQ(p.name, outputs[i]);
         EXPECT_EQ(p.direction, static_cast<uint32_t>(XGC2_PORT_OUT));
         // The publication receipt is written by step, after the zero ROS publish.
-        EXPECT_EQ(p.flags, std::string(p.name) == "reset_zero_publication" ? 0u
-                      : static_cast<uint32_t>(XGC2_PORT_ASYNC_WRITER)) << p.name;
+        EXPECT_EQ(p.flags, std::string(p.name) == "reset_zero_publication"
+                               ? 0u
+                               : static_cast<uint32_t>(XGC2_PORT_ASYNC_WRITER))
+            << p.name;
         EXPECT_EQ(p.align, 8u) << p.name;
         EXPECT_EQ(p.kind, std::string(p.name).find("request") != std::string::npos ||
                                   std::string(p.name) == "command" ||
@@ -575,49 +579,74 @@ TEST_F(EdgeTest, TheControllersTwistAndStatusAreTheChassisTopics) {
 
 TEST_F(EdgeTest, StopPublishesDirectAllAxisZeroWithoutReadingAnUnreadNonzeroPort) {
     startEdge("{\"namespace\":\"stop_callback\"}");
-    Probe<geometry_msgs::Twist> twists(nh_,"/stop_callback/cmd_vel");
+    Probe<geometry_msgs::Twist> twists(nh_, "/stop_callback/cmd_vel");
     ASSERT_TRUE(twists.connected());
-    xgc2_ugv_cmd_vel cmd{};cmd.kind=XGC2_UGV_CMD_VEL_COMMAND;
-    cmd.linear_x=.3;cmd.linear_y=-.2;cmd.angular_z=.4;
-    host_.push("cmd_vel",cmd,host_.now());step();
+    xgc2_ugv_cmd_vel cmd{};
+    cmd.kind = XGC2_UGV_CMD_VEL_COMMAND;
+    cmd.linear_x = .3;
+    cmd.linear_y = -.2;
+    cmd.angular_z = .4;
+    host_.push("cmd_vel", cmd, host_.now());
+    step();
     ASSERT_TRUE(twists.waitFor(1));
-    EXPECT_DOUBLE_EQ(twists.at(0).linear.x,.3);
+    EXPECT_DOUBLE_EQ(twists.at(0).linear.x, .3);
     // Fresh input deliberately left unread. stop() must not publish this command.
-    cmd.linear_x=.8;cmd.linear_y=.6;cmd.angular_z=-.7;
-    host_.push("cmd_vel",cmd,host_.now());
-    const auto receipts=host_.outputs("reset_zero_publication").size();
-    ASSERT_EQ(host_.stop(),XGC2_OK); // Real module callback; no synthetic StepContext.
-    ASSERT_TRUE(twists.waitFor(2)); // Finite in-process ROS observation, not a transport guarantee.
-    for (size_t i=1;i<twists.count();++i) {
-        const auto zero=twists.at(i);
-        EXPECT_DOUBLE_EQ(zero.linear.x,0);EXPECT_DOUBLE_EQ(zero.linear.y,0);EXPECT_DOUBLE_EQ(zero.linear.z,0);
-        EXPECT_DOUBLE_EQ(zero.angular.x,0);EXPECT_DOUBLE_EQ(zero.angular.y,0);EXPECT_DOUBLE_EQ(zero.angular.z,0);
+    cmd.linear_x = .8;
+    cmd.linear_y = .6;
+    cmd.angular_z = -.7;
+    host_.push("cmd_vel", cmd, host_.now());
+    const auto receipts = host_.outputs("reset_zero_publication").size();
+    ASSERT_EQ(host_.stop(), XGC2_OK);  // Real module callback; no synthetic StepContext.
+    ASSERT_TRUE(
+        twists.waitFor(2));  // Finite in-process ROS observation, not a transport guarantee.
+    for (size_t i = 1; i < twists.count(); ++i) {
+        const auto zero = twists.at(i);
+        EXPECT_DOUBLE_EQ(zero.linear.x, 0);
+        EXPECT_DOUBLE_EQ(zero.linear.y, 0);
+        EXPECT_DOUBLE_EQ(zero.linear.z, 0);
+        EXPECT_DOUBLE_EQ(zero.angular.x, 0);
+        EXPECT_DOUBLE_EQ(zero.angular.y, 0);
+        EXPECT_DOUBLE_EQ(zero.angular.z, 0);
     }
-    EXPECT_EQ(host_.outputs("reset_zero_publication").size(),receipts)
+    EXPECT_EQ(host_.outputs("reset_zero_publication").size(), receipts)
         << "disconnect does not invent a causal stop certificate";
 }
 
 TEST_F(EdgeTest, AResetZeroReceiptFollowsTheActualAllAxisZeroPublish) {
     startEdge();
-    xgc2_ugv_reset_session session{};session.request_generation=4;session.acknowledged_grant_id=11;
-    host_.push("reset_session",session,host_.now());
-    xgc2_ugv_cmd_vel cmd{};cmd.kind=XGC2_UGV_CMD_VEL_COMMAND;cmd.linear_y=.02;
-    host_.push("cmd_vel",cmd,host_.now());step();
-    EXPECT_TRUE(host_.outputs("reset_zero_publication").empty()) << "Mecanum lateral motion is not zero";
-    const int64_t before=host_.now();cmd.linear_y=0;
-    host_.push("cmd_vel",cmd,before);step();
-    const auto receipts=host_.outputsAs<xgc2_ugv_reset_zero_publication>("reset_zero_publication");
-    ASSERT_EQ(receipts.size(),1u);
-    EXPECT_EQ(receipts[0].request_generation,4u);
-    EXPECT_EQ(receipts[0].acknowledged_grant_id,11u);
-    EXPECT_GE(receipts[0].stamp_ns,before);EXPECT_LE(receipts[0].stamp_ns,host_.now());
-    step();EXPECT_EQ(host_.outputs("reset_zero_publication").size(),1u);
-    session.request_generation=5;session.acknowledged_grant_id=17;
-    host_.push("reset_session",session,host_.now());
-    host_.push("cmd_vel",cmd,host_.now());step();
-    const auto next=host_.outputsAs<xgc2_ugv_reset_zero_publication>("reset_zero_publication");
-    ASSERT_EQ(next.size(),2u);EXPECT_EQ(next.back().request_generation,5u);
-    EXPECT_EQ(next.back().acknowledged_grant_id,17u);
+    xgc2_ugv_reset_session session{};
+    session.request_generation = 4;
+    session.acknowledged_grant_id = 11;
+    host_.push("reset_session", session, host_.now());
+    xgc2_ugv_cmd_vel cmd{};
+    cmd.kind = XGC2_UGV_CMD_VEL_COMMAND;
+    cmd.linear_y = .02;
+    host_.push("cmd_vel", cmd, host_.now());
+    step();
+    EXPECT_TRUE(host_.outputs("reset_zero_publication").empty())
+        << "Mecanum lateral motion is not zero";
+    const int64_t before = host_.now();
+    cmd.linear_y = 0;
+    host_.push("cmd_vel", cmd, before);
+    step();
+    const auto receipts =
+        host_.outputsAs<xgc2_ugv_reset_zero_publication>("reset_zero_publication");
+    ASSERT_EQ(receipts.size(), 1u);
+    EXPECT_EQ(receipts[0].request_generation, 4u);
+    EXPECT_EQ(receipts[0].acknowledged_grant_id, 11u);
+    EXPECT_GE(receipts[0].stamp_ns, before);
+    EXPECT_LE(receipts[0].stamp_ns, host_.now());
+    step();
+    EXPECT_EQ(host_.outputs("reset_zero_publication").size(), 1u);
+    session.request_generation = 5;
+    session.acknowledged_grant_id = 17;
+    host_.push("reset_session", session, host_.now());
+    host_.push("cmd_vel", cmd, host_.now());
+    step();
+    const auto next = host_.outputsAs<xgc2_ugv_reset_zero_publication>("reset_zero_publication");
+    ASSERT_EQ(next.size(), 2u);
+    EXPECT_EQ(next.back().request_generation, 5u);
+    EXPECT_EQ(next.back().acknowledged_grant_id, 17u);
 }
 
 TEST_F(EdgeTest, TheGeneratorsOutputsAreTheReferenceTopicsInRosTime) {
@@ -725,7 +754,8 @@ TEST_F(EdgeTest, TheGeneratorsOutputsAreTheReferenceTopicsInRosTime) {
 TEST_F(EdgeTest, TheResetSessionResultAndGrantsPassThroughTheEdge) {
     startEdge(
         "{\"namespace\": \"ugv1\", \"reset_session_topic\": \"station/session\", "
-        "\"reset_grant_topic\": \"/coordinator/grants\", \"reset_result_topic\": \"station/result\"}");
+        "\"reset_grant_topic\": \"/coordinator/grants\", \"reset_result_topic\": "
+        "\"station/result\"}");
     Probe<ugv_reset_msgs::ResetSession> sessions(nh_, "ugv1/station/session");
     Probe<ugv_reset_msgs::ResetResult> results(nh_, "ugv1/station/result");
     ros::Publisher grants = nh_.advertise<ugv_reset_msgs::ResetGrant>("/coordinator/grants", 5);

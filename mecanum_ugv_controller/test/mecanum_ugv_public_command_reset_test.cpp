@@ -3,8 +3,8 @@
 #include <gtest/gtest.h>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_msgs/ResetSession.h>
 #include <ugv_reset_msgs/ResetGrant.h>
+#include <ugv_reset_msgs/ResetSession.h>
 
 #include <cmath>
 #include <functional>
@@ -45,27 +45,41 @@ TEST(MecanumPublicCommandReset, PublicCommandEntersAndHoldsResetFromReadyAndCust
         nh.advertise<geometry_msgs::TwistStamped>("/ugv_test/alg/reference/twist", 10);
     // Transport-only station fixture: no Go and no private path. Retirement uses
     // the exact Brake echo + producer stop certificate before a completed Hold.
-    auto grant_pub=nh.advertise<ugv_reset_msgs::ResetGrant>("/ugv_test/reset/grant",10);
-    uint32_t generation=0,decision=0,brake=0,completed=0,publication=0;
-    bool allow_terminal_hold=false,retired=false;
-    auto session_sub=nh.subscribe<ugv_reset_msgs::ResetSession>("/ugv_test/reset/session",10,
-        [&](const ugv_reset_msgs::ResetSession::ConstPtr& report) {
-            if (report->request_generation==0) return;
-            if (generation!=report->request_generation) {
-                generation=report->request_generation;brake=++decision;completed=0;retired=false;
+    auto grant_pub = nh.advertise<ugv_reset_msgs::ResetGrant>("/ugv_test/reset/grant", 10);
+    uint32_t generation = 0, decision = 0, brake = 0, completed = 0, publication = 0;
+    bool allow_terminal_hold = false, retired = false;
+    auto session_sub = nh.subscribe<ugv_reset_msgs::ResetSession>(
+        "/ugv_test/reset/session", 10, [&](const ugv_reset_msgs::ResetSession::ConstPtr& report) {
+            if (report->request_generation == 0)
+                return;
+            if (generation != report->request_generation) {
+                generation = report->request_generation;
+                brake = ++decision;
+                completed = 0;
+                retired = false;
             }
-            ugv_reset_msgs::ResetGrant g;g.session=report->session;g.request_generation=generation;
-            g.header.stamp=ros::Time::now();g.header.seq=++publication;g.ttl=1;
-            const bool terminal=report->phase==ugv_reset_msgs::ResetSession::PHASE_IDLE ||
-                                report->phase==ugv_reset_msgs::ResetSession::PHASE_DONE;
-            if (terminal && completed!=0 && report->acknowledged_grant_id==completed && !report->stop_certified) {
-                retired=true;return;
+            ugv_reset_msgs::ResetGrant g;
+            g.session = report->session;
+            g.request_generation = generation;
+            g.header.stamp = ros::Time::now();
+            g.header.seq = ++publication;
+            g.ttl = 1;
+            const bool terminal = report->phase == ugv_reset_msgs::ResetSession::PHASE_IDLE ||
+                                  report->phase == ugv_reset_msgs::ResetSession::PHASE_DONE;
+            if (terminal && completed != 0 && report->acknowledged_grant_id == completed &&
+                !report->stop_certified) {
+                retired = true;
+                return;
             }
-            if (report->stop_certified && report->acknowledged_grant_id==brake && terminal && allow_terminal_hold) {
-                if (completed==0) completed=++decision;
-                g.state=ugv_reset_msgs::ResetGrant::STATE_HOLD;g.grant_id=completed;
+            if (report->stop_certified && report->acknowledged_grant_id == brake && terminal &&
+                allow_terminal_hold) {
+                if (completed == 0)
+                    completed = ++decision;
+                g.state = ugv_reset_msgs::ResetGrant::STATE_HOLD;
+                g.grant_id = completed;
             } else {
-                g.state=ugv_reset_msgs::ResetGrant::STATE_BRAKE;g.grant_id=brake;
+                g.state = ugv_reset_msgs::ResetGrant::STATE_BRAKE;
+                g.grant_id = brake;
             }
             grant_pub.publish(g);
         });
@@ -124,14 +138,23 @@ TEST(MecanumPublicCommandReset, PublicCommandEntersAndHoldsResetFromReadyAndCust
     reference.twist.linear.x = 0.1;
     reference_pub.publish(reference);
     // Contradictory motion is refused while old permission is still retained.
-    std_msgs::String premature;premature.data="custom1";public_command_pub.publish(premature);
-    const ros::Time refuse_until=ros::Time::now()+ros::Duration(.1);
-    while (ros::ok() && ros::Time::now()<refuse_until) {
-        pose_pub.publish(makePose(0,0,0,ros::Time::now()));ros::spinOnce();
-        EXPECT_EQ(control_state,"Ready");ros::Duration(.01).sleep();
+    std_msgs::String premature;
+    premature.data = "custom1";
+    public_command_pub.publish(premature);
+    const ros::Time refuse_until = ros::Time::now() + ros::Duration(.1);
+    while (ros::ok() && ros::Time::now() < refuse_until) {
+        pose_pub.publish(makePose(0, 0, 0, ros::Time::now()));
+        ros::spinOnce();
+        EXPECT_EQ(control_state, "Ready");
+        ros::Duration(.01).sleep();
     }
-    allow_terminal_hold=true;
-    ASSERT_TRUE(waitFor([&]() {pose_pub.publish(makePose(0,0,0,ros::Time::now()));return retired;},2.0));
+    allow_terminal_hold = true;
+    ASSERT_TRUE(waitFor(
+        [&]() {
+            pose_pub.publish(makePose(0, 0, 0, ros::Time::now()));
+            return retired;
+        },
+        2.0));
     std_msgs::String custom1;
     custom1.data = "custom1";
     public_command_pub.publish(custom1);

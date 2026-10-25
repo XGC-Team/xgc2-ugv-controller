@@ -69,15 +69,15 @@ extern "C" {
 /* State port. Planar projection of the vehicle state, the plain form of the controller's UgvState.
  */
 typedef struct xgc2_ugv_planar_state {
-    int64_t stamp_ns;         /* measurement time (the message stamp, else the receipt time) */
-    double x, y, yaw;         /* world pose */
-    double vx, vy;            /* world velocity; 0 for a pose source */
-    double speed;             /* forward speed in the body frame; 0 for a pose source */
-    double yaw_rate;          /* 0 for a pose source */
-    uint32_t estimator_state; /* RigidStateEstimate.estimator_state; 0 for a pose source */
-    uint32_t estimator_flags; /* RigidStateEstimate.flags; 0 for a pose source */
-    uint8_t source;           /* XGC2_UGV_STATE_SOURCE_* */
-    uint8_t velocity_valid;   /* vx and vy are finite estimator values */
+    int64_t stamp_ns;           /* measurement time (the message stamp, else the receipt time) */
+    double x, y, yaw;           /* world pose */
+    double vx, vy;              /* world velocity; 0 for a pose source */
+    double speed;               /* forward speed in the body frame; 0 for a pose source */
+    double yaw_rate;            /* 0 for a pose source */
+    uint32_t estimator_state;   /* RigidStateEstimate.estimator_state; 0 for a pose source */
+    uint32_t estimator_flags;   /* RigidStateEstimate.flags; 0 for a pose source */
+    uint8_t source;             /* XGC2_UGV_STATE_SOURCE_* */
+    uint8_t velocity_valid;     /* vx and vy are finite estimator values */
     uint8_t pose_stamp_trusted; /* collection stamp supplied, not receipt substitution */
     uint8_t reserved[5];
 } xgc2_ugv_planar_state;
@@ -104,7 +104,8 @@ typedef struct xgc2_ugv_reset_target {
     double x, y, yaw;
 } xgc2_ugv_reset_target;
 
-/* Reset sessions: the numbers are those of ugv_reset_client/reset_protocol.h and of ugv_reset_msgs. */
+/* Reset sessions: the numbers are those of ugv_reset_client/reset_protocol.h and of ugv_reset_msgs.
+ */
 #define XGC2_UGV_RESET_PHASE_IDLE 0u
 #define XGC2_UGV_RESET_PHASE_REQUESTING 1u
 #define XGC2_UGV_RESET_PHASE_WAITING 2u
@@ -115,9 +116,9 @@ typedef struct xgc2_ugv_reset_target {
 #define XGC2_UGV_RESET_MODEL_OMNI 1u
 
 /*
- * State port (controller -> edge). The vehicle's side of its Reset session: what the edge publishes as
- * ResetSession at 5 Hz and on change (the controller's executor decides when it is due). Times are on
- * the host clock.
+ * State port (controller -> edge). The vehicle's side of its Reset session: what the edge publishes
+ * as ResetSession at 5 Hz and on change (the controller's executor decides when it is due). Times
+ * are on the host clock.
  */
 typedef struct xgc2_ugv_reset_session {
     int64_t stamp_ns;
@@ -126,15 +127,15 @@ typedef struct xgc2_ugv_reset_session {
     double target_x, target_y, target_yaw;
     double progress, cross_track;
     double half_length, half_width, offset_x, offset_y; /* the declared footprint */
-    double max_v, max_vy, max_w, acc_v, acc_w;           /* the limits of the Reset tracker */
-    double ell_hat, ell_spread, ell_bound;               /* rotation-centre offset; spread < 0: unknown */
+    double max_v, max_vy, max_w, acc_v, acc_w;          /* the limits of the Reset tracker */
+    double ell_hat, ell_spread, ell_bound; /* rotation-centre offset; spread < 0: unknown */
     uint32_t session;
     uint32_t phase; /* XGC2_UGV_RESET_PHASE_* */
     uint32_t model; /* XGC2_UGV_RESET_MODEL_* */
     uint32_t healthy;
     uint32_t request_generation;
     uint32_t acknowledged_grant_id;
-    uint32_t stop_certified; /* 0/1, post-zero certificate for the exact Brake */
+    uint32_t stop_certified;  /* 0/1, post-zero certificate for the exact Brake */
     uint32_t publication_seq; /* original ROS Header.seq / local publisher sequence */
 } xgc2_ugv_reset_session;
 
@@ -146,9 +147,9 @@ typedef struct xgc2_ugv_reset_session {
 #define XGC2_UGV_RESET_TEXT 96u
 
 /*
- * Event port (edge -> controller, queue 16). One message of the coordinator for the vehicle's session:
- * a frozen route and the prefix of it that may be driven, or a hold, a brake, a rejection. The ttl is
- * counted by the controller on the wall clock from the moment it takes the message.
+ * Event port (edge -> controller, queue 16). One message of the coordinator for the vehicle's
+ * session: a frozen route and the prefix of it that may be driven, or a hold, a brake, a rejection.
+ * The ttl is counted by the controller on the wall clock from the moment it takes the message.
  */
 typedef struct xgc2_ugv_reset_grant {
     int64_t stamp_ns; /* receipt time on the host clock */
@@ -164,7 +165,8 @@ typedef struct xgc2_ugv_reset_grant {
     uint32_t via_count;
     uint32_t reason;     /* ResetGrant.REASON_* */
     uint32_t final_move; /* 1: the route ends at the target */
-    char detail[XGC2_UGV_RESET_TEXT]; /* the coordinator's text, with the blockers' names appended */
+    char
+        detail[XGC2_UGV_RESET_TEXT]; /* the coordinator's text, with the blockers' names appended */
     uint32_t request_generation;
     uint32_t publication_seq; /* original ROS Header.seq, not receipt clock */
 } xgc2_ugv_reset_grant;

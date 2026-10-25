@@ -99,9 +99,9 @@ class EllEstimator {
     // A fresh pose (stamps must increase; the caller filters repeats).
     //
     // Two tracks sample the same turns: a fast one (0.06 rad since its anchor) learns the offset
-    // quickly, a slow one (0.2 rad) measures it well, because the noise of a sample is the pose noise
-    // divided by the turn. The estimate follows both; the spread it reports comes from the slow
-    // samples as soon as there are enough of them.
+    // quickly, a slow one (0.2 rad) measures it well, because the noise of a sample is the pose
+    // noise divided by the turn. The estimate follows both; the spread it reports comes from the
+    // slow samples as soon as there are enough of them.
     void add(const Pose& q) {
         double sample = 0.0, turn = 0.0;
         // The same predicate spread() already uses. Once three slow samples exist, the fast
@@ -170,8 +170,10 @@ class EllEstimator {
             // The origin's displacement in the frame of the mean heading. The offset only explains
             // the lateral part of a turn in place; an interval that also contains a drive (the
             // anchor lies before a stop) says nothing about it and is dropped.
-            const double along = (q.x - t.anchor.x) * std::cos(mid) + (q.y - t.anchor.y) * std::sin(mid);
-            const double lat = -(q.x - t.anchor.x) * std::sin(mid) + (q.y - t.anchor.y) * std::cos(mid);
+            const double along =
+                (q.x - t.anchor.x) * std::cos(mid) + (q.y - t.anchor.y) * std::sin(mid);
+            const double lat =
+                -(q.x - t.anchor.x) * std::sin(mid) + (q.y - t.anchor.y) * std::cos(mid);
             t.anchor = q;
             if (std::abs(along) > 2.0 * bound_ * std::abs(turn) + 0.02) {
                 return false;
@@ -290,9 +292,10 @@ class RouteTracker {
         {
             const double sx = target.x - prevp.x, sy = target.y - prevp.y;
             const double sl = std::hypot(sx, sy);
-            progress_ = cum[segment_] +
-                        (sl > 1e-9 ? std::clamp(((c.x - prevp.x) * sx + (c.y - prevp.y) * sy) / sl, 0.0, sl)
-                                   : 0.0);
+            progress_ =
+                cum[segment_] +
+                (sl > 1e-9 ? std::clamp(((c.x - prevp.x) * sx + (c.y - prevp.y) * sy) / sl, 0.0, sl)
+                           : 0.0);
         }
         const double allowed = s_limit - progress_;
         // In-place rotation: proportional with a square-root profile, no creep offset (a minimum
@@ -303,8 +306,8 @@ class RouteTracker {
             if (std::abs(e) < 0.012) {
                 return 0.0;
             }
-            const double wmag = std::min({spec_.max_w, std::sqrt(2.0 * spec_.acc_w * 0.5 * std::abs(e)),
-                                          1.5 * std::abs(e)});
+            const double wmag = std::min(
+                {spec_.max_w, std::sqrt(2.0 * spec_.acc_w * 0.5 * std::abs(e)), 1.5 * std::abs(e)});
             return std::copysign(wmag, e);
         };
         if (unicycle) {
@@ -325,7 +328,8 @@ class RouteTracker {
                 const double e = wrapAngle(route_.goal().yaw - th);
                 wdes = granted ? rotateTo(route_.goal().yaw) : 0.0;
                 if (granted && std::abs(e) < 0.1) {
-                    const double along = (route_.goal().x - q.x) * std::cos(th) + (route_.goal().y - q.y) * std::sin(th);
+                    const double along = (route_.goal().x - q.x) * std::cos(th) +
+                                         (route_.goal().y - q.y) * std::sin(th);
                     vdes = std::abs(along) > 0.012 ? std::clamp(0.8 * along, -0.06, 0.06) : 0.0;
                 }
             } else {
@@ -353,7 +357,8 @@ class RouteTracker {
                 bool must_stop = last;
                 if (!last) {
                     const Point next = vertex(segment_ + 2);
-                    must_stop = std::abs(wrapAngle(std::atan2(next.y - target.y, next.x - target.x) - psi)) > 0.10;
+                    must_stop = std::abs(wrapAngle(
+                                    std::atan2(next.y - target.y, next.x - target.x) - psi)) > 0.10;
                 }
                 double vcap = must_stop ? stopSpeed(d - 0.015) : spec_.max_v;
                 vcap = std::min(vcap, spec_.max_v);
@@ -369,9 +374,9 @@ class RouteTracker {
                     wdes = 0.0;
                 } else if (std::abs(e_use) > 0.45 || (near_vertex && std::abs(e_use) > 0.10) ||
                            (rotating_ && std::abs(e_use) > (near_vertex ? 0.04 : 0.15))) {
-                    // Large heading error, or any turn at a vertex: stop and rotate in place about c
-                    // until the heading is on the segment (the sweep the planner verified turns to
-                    // the segment heading before it translates; steering through a corner while
+                    // Large heading error, or any turn at a vertex: stop and rotate in place about
+                    // c until the heading is on the segment (the sweep the planner verified turns
+                    // to the segment heading before it translates; steering through a corner while
                     // driving would cut it).
                     rotating_ = true;
                     vdes = 0.0;
@@ -405,7 +410,8 @@ class RouteTracker {
         if (!last) {
             const Point next = vertex(segment_ + 2);
             const double psi = std::atan2(sy, sx);
-            must_stop = std::abs(wrapAngle(std::atan2(next.y - target.y, next.x - target.x) - psi)) > 0.10;
+            must_stop =
+                std::abs(wrapAngle(std::atan2(next.y - target.y, next.x - target.x) - psi)) > 0.10;
         }
         double sp = must_stop ? stopSpeed(dist - 0.01) + (dist > 0.02 ? 0.03 : 0.0) : spec_.max_v;
         sp = std::min({sp, spec_.max_v, stopSpeed(allowed - 0.05)});

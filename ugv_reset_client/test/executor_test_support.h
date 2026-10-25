@@ -8,10 +8,10 @@
 #include <ugv_reset_client/reset_executor.h>
 
 #include <cmath>
-#include <functional>
-#include <random>
 #include <deque>
+#include <functional>
 #include <map>
+#include <random>
 
 namespace reset_test {
 
@@ -42,38 +42,50 @@ class SoloRig {
     // A test station, not a vehicle fallback: each request receives a correlated Brake,
     // real publication/pose stop proof, then the requested ordinary Go.
     void deliver(rc::Grant grant, const rc::Measurement& m) {
-        if (grant.session != exec_.sessionId()) { exec_.onGrant(grant,m); return; }
-        const auto request=exec_.makeSession(m);
-        if (grant.state==rc::GrantState::Reject) {
-            grant.request_generation=request.request_generation;
-            grant.grant_id=++fixture_id_;grant.publication_seq=fixture_seq_++;
-            exec_.onGrant(grant,m);return;
-        }
-        if (fixture_generation_ != request.request_generation) {
-            fixture_generation_=request.request_generation;
-            fixture_go_ids_.clear();
-            fixture_brake_=rc::Grant{};
-            fixture_brake_.session=request.session; fixture_brake_.request_generation=fixture_generation_;
-            fixture_brake_.state=rc::GrantState::Brake;fixture_brake_.grant_id=++fixture_id_;
-        }
-        if (request.acknowledged_grant_id==0 ||
-            (request.acknowledged_grant_id==fixture_brake_.grant_id && !request.stop_certified)) {
-            fixture_brake_.publication_seq=fixture_seq_++;
-            exec_.onGrant(fixture_brake_,m);
+        if (grant.session != exec_.sessionId()) {
+            exec_.onGrant(grant, m);
             return;
         }
-        grant.request_generation=fixture_generation_;grant.publication_seq=fixture_seq_++;
-        if (grant.state==rc::GrantState::Go) {
-            const auto logical=grant.grant_id;
-            auto found=fixture_go_ids_.find(logical);
-            if (found==fixture_go_ids_.end()) found=fixture_go_ids_.emplace(logical,++fixture_id_).first;
-            grant.grant_id=found->second;
-            if (fixture_generation_>1 && request.stop_certified &&
-                std::hypot(grant.start.x-m.pose.x,grant.start.y-m.pose.y)>.1) {
-                grant.start=m.pose;grant.via.clear();grant.ell_plan=exec_.ell().ell();
+        const auto request = exec_.makeSession(m);
+        if (grant.state == rc::GrantState::Reject) {
+            grant.request_generation = request.request_generation;
+            grant.grant_id = ++fixture_id_;
+            grant.publication_seq = fixture_seq_++;
+            exec_.onGrant(grant, m);
+            return;
+        }
+        if (fixture_generation_ != request.request_generation) {
+            fixture_generation_ = request.request_generation;
+            fixture_go_ids_.clear();
+            fixture_brake_ = rc::Grant{};
+            fixture_brake_.session = request.session;
+            fixture_brake_.request_generation = fixture_generation_;
+            fixture_brake_.state = rc::GrantState::Brake;
+            fixture_brake_.grant_id = ++fixture_id_;
+        }
+        if (request.acknowledged_grant_id == 0 ||
+            (request.acknowledged_grant_id == fixture_brake_.grant_id && !request.stop_certified)) {
+            fixture_brake_.publication_seq = fixture_seq_++;
+            exec_.onGrant(fixture_brake_, m);
+            return;
+        }
+        grant.request_generation = fixture_generation_;
+        grant.publication_seq = fixture_seq_++;
+        if (grant.state == rc::GrantState::Go) {
+            const auto logical = grant.grant_id;
+            auto found = fixture_go_ids_.find(logical);
+            if (found == fixture_go_ids_.end())
+                found = fixture_go_ids_.emplace(logical, ++fixture_id_).first;
+            grant.grant_id = found->second;
+            if (fixture_generation_ > 1 && request.stop_certified &&
+                std::hypot(grant.start.x - m.pose.x, grant.start.y - m.pose.y) > .1) {
+                grant.start = m.pose;
+                grant.via.clear();
+                grant.ell_plan = exec_.ell().ell();
             }
-        } else grant.grant_id=++fixture_id_;
-        exec_.onGrant(grant,m);
+        } else
+            grant.grant_id = ++fixture_id_;
+        exec_.onGrant(grant, m);
     }
     const rc::Pose& pose() const {
         return q_;
@@ -104,7 +116,8 @@ class SoloRig {
 
     // Run for `seconds`; the hook is called every control cycle (2 ms) with the output of step().
     // Returns when the session ended or the time is up.
-    bool run(double seconds, const std::function<void(SoloRig&, const rc::StepOutput&)>& hook = {}) {
+    bool run(double seconds,
+             const std::function<void(SoloRig&, const rc::StepOutput&)>& hook = {}) {
         const double end = t_ + seconds;
         while (t_ < end) {
             const rc::Measurement m = measurement();
@@ -117,7 +130,8 @@ class SoloRig {
             if (t_ + 1e-12 >= next_publish_) {
                 next_publish_ = t_ + 1.0 / plant_.publish_hz;
                 cmd_ = manual_set_ ? manual_ : out.command;
-                if (cmd_.zero()) exec_.onZeroPublished(m.ros_now);
+                if (cmd_.zero())
+                    exec_.onZeroPublished(m.ros_now);
             }
             if (hook) {
                 hook(*this, out);
@@ -188,9 +202,9 @@ class SoloRig {
     }
 
     rc::ResetExecutor exec_;
-    uint32_t fixture_generation_{0},fixture_id_{0},fixture_seq_{0};
+    uint32_t fixture_generation_{0}, fixture_id_{0}, fixture_seq_{0};
     rc::Grant fixture_brake_;
-    std::map<uint32_t,uint32_t> fixture_go_ids_;
+    std::map<uint32_t, uint32_t> fixture_go_ids_;
     PlantParams plant_;
     std::mt19937 rng_;
     rc::Pose q_;
@@ -236,8 +250,8 @@ inline rc::ExecutorConfig scoutConfig() {
     return cfg;
 }
 
-// The Wheeltec driven as a unicycle: its 0.41 x 0.36 chassis plus the project's 0.14 m margin a side,
-// and a small bound on the rotation-centre offset.
+// The Wheeltec driven as a unicycle: its 0.41 x 0.36 chassis plus the project's 0.14 m margin a
+// side, and a small bound on the rotation-centre offset.
 inline rc::ExecutorConfig wheeltecConfig() {
     rc::ExecutorConfig cfg = scoutConfig();
     cfg.spec.footprint = {0.345, 0.32, 0.0, 0.0};

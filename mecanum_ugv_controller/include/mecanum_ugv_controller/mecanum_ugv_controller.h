@@ -1,10 +1,11 @@
 #pragma once
 
+#include <ugv_reset_client/reset_executor.h>
+
 #include <memory>
 #include <mutex>
 #include <state_machine/state_machine.hpp>
 #include <string>
-#include <ugv_reset_client/reset_executor.h>
 
 #include "mecanum_ugv_controller/common/types.h"
 

@@ -10,10 +10,11 @@
 // The node (reset_coordinator_node.cpp) only carries messages, the Scene and the clock; everything
 // that decides is here and in the planner, so the closed-loop harness drives exactly this code.
 
-#include <string>
 #include <ugv_reset_client/reset_protocol.h>
 #include <ugv_reset_safety/reset_planner.h>
+
 #include <map>
+#include <string>
 #include <vector>
 
 namespace ugv_reset_safety {
@@ -68,7 +69,8 @@ class ResetCoordinator {
     void setScene(bool authored, bool available);
 
     // A Session message from `vehicle` (its namespace), received at coordinator time `now`.
-    void onSession(const std::string& vehicle, const ugv_reset_client::Session& session, double now);
+    void onSession(const std::string& vehicle, const ugv_reset_client::Session& session,
+                   double now);
 
     // The messages due at `now`: decisions of the planner and the heartbeat of unchanged ones.
     std::vector<OutgoingGrant> step(double now);

@@ -15,13 +15,14 @@
 // Decisions are deterministic in id order, with no per-tick route replanning. Geometry and
 // real-plant acceptance remain separate from the causal-retirement regression tests.
 
+#include <ugv_reset_client/reset_protocol.h>
+#include <ugv_reset_client/reset_route.h>
+#include <ugv_reset_safety/reset_geometry.h>
+
 #include <Eigen/Core>
 #include <map>
 #include <memory>
 #include <string>
-#include <ugv_reset_client/reset_protocol.h>
-#include <ugv_reset_client/reset_route.h>
-#include <ugv_reset_safety/reset_geometry.h>
 #include <vector>
 
 namespace ugv_reset_safety {

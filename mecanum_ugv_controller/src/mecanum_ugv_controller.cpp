@@ -55,12 +55,15 @@ void MecanumUgvController::update(double now_sec) {
 ::state_machine::Status MecanumUgvController::postEvent(::state_machine::Event event) {
     const auto id = event.id;
     const std::string source = event.source;
-    if (id == event_type::CUSTOM1_REQUESTED && (reset_executor_.permissionPending() || reset_executor_.active())) {
-        return sm::Status::error(sm::ErrorCode::kTransitionRejected,
-                                 "Reset permission is active or retirement is not acknowledged; motion refused");
+    if (id == event_type::CUSTOM1_REQUESTED &&
+        (reset_executor_.permissionPending() || reset_executor_.active())) {
+        return sm::Status::error(
+            sm::ErrorCode::kTransitionRejected,
+            "Reset permission is active or retirement is not acknowledged; motion refused");
     }
     if (id == event_type::RESET_REQUESTED) {
-        if (pending_reset_requested_ || reset_session_counter_ == std::numeric_limits<uint32_t>::max() ||
+        if (pending_reset_requested_ ||
+            reset_session_counter_ == std::numeric_limits<uint32_t>::max() ||
             !reset_executor_.reserveBegin()) {
             return sm::Status::error(sm::ErrorCode::kLimitReached,
                                      "Reset result credit or authority counter unavailable");
@@ -178,13 +181,15 @@ ugv_reset_client::Measurement MecanumUgvController::resetMeasurement() const {
     m.healthy = healthReady();
     m.pose_stamp_trusted = state_.pose_stamp_trusted;
     const auto outer = command();
-    m.external_command_zero = outer.linear_x == 0.0 && outer.linear_y == 0.0 && outer.angular_z == 0.0;
+    m.external_command_zero =
+        outer.linear_x == 0.0 && outer.linear_y == 0.0 && outer.angular_z == 0.0;
     return m;
 }
 
 void MecanumUgvController::beginResetSession(const ResetTarget& target) {
     // Admission refused exhaustion before accepting the input; never reuse an old S.
-    if (reset_session_counter_ == std::numeric_limits<uint32_t>::max()) return;
+    if (reset_session_counter_ == std::numeric_limits<uint32_t>::max())
+        return;
     reset_ever_started_ = true;
     reset_executor_.begin(++reset_session_counter_, {target.x, target.y, target.yaw},
                           target.valid && std::isfinite(target.x) && std::isfinite(target.y) &&
@@ -194,7 +199,8 @@ void MecanumUgvController::beginResetSession(const ResetTarget& target) {
 
 void MecanumUgvController::onResetGrant(const ugv_reset_client::Grant& grant) {
     reset_executor_.onGrant(grant, resetMeasurement());
-    if (reset_executor_.requiresZeroCommand()) clearCommand();
+    if (reset_executor_.requiresZeroCommand())
+        clearCommand();
 }
 
 bool MecanumUgvController::takeResetSession(ugv_reset_client::Session* session) {
@@ -213,12 +219,17 @@ bool MecanumUgvController::takeResetResult(ugv_reset_client::Result* result) {
 bool MecanumUgvController::peekResetResult(ugv_reset_client::Result* result) const {
     return reset_executor_.peekResult(result);
 }
-void MecanumUgvController::resetResultPublished() { reset_executor_.commitResult(); }
-void MecanumUgvController::resetSessionPublished() { reset_executor_.markSessionPublished(resetMeasurement()); }
-void MecanumUgvController::notifyResetZeroPublished(double now, uint32_t generation, uint32_t brake) {
-    if (resetMeasurement().external_command_zero) reset_executor_.onZeroPublished(now,generation,brake);
+void MecanumUgvController::resetResultPublished() {
+    reset_executor_.commitResult();
 }
-
+void MecanumUgvController::resetSessionPublished() {
+    reset_executor_.markSessionPublished(resetMeasurement());
+}
+void MecanumUgvController::notifyResetZeroPublished(double now, uint32_t generation,
+                                                    uint32_t brake) {
+    if (resetMeasurement().external_command_zero)
+        reset_executor_.onZeroPublished(now, generation, brake);
+}
 
 // What the coordinator says while it holds the vehicle, once per change.
 void MecanumUgvController::logResetHold() {
@@ -376,7 +387,8 @@ void MecanumUgvController::setupMachine() {
 
 void MecanumUgvController::maybeAutoStartCustom1() {
     const auto cfg = config();
-    if (reset_ever_started_ || reset_executor_.permissionPending() || !cfg.auto_start_tracking || !healthReady() || !worldReferenceReady() || !machine_) {
+    if (reset_ever_started_ || reset_executor_.permissionPending() || !cfg.auto_start_tracking ||
+        !healthReady() || !worldReferenceReady() || !machine_) {
         return;
     }
     if (machine_->currentState(region_type::CONTROL) != state_type::Ready) {

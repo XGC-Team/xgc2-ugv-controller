@@ -1,8 +1,9 @@
+#include <ugv_reset_safety/reset_coordinator.h>
+
 #include <algorithm>
 #include <cmath>
 
 #include "planner_test_support.h"
-#include <ugv_reset_safety/reset_coordinator.h>
 
 namespace reset_test {
 namespace {
@@ -12,40 +13,71 @@ using ugv_reset_safety::OutgoingGrant;
 // Legacy geometry/heartbeat cases use explicitly ideal stopped endpoints. The separate
 // ResetCausal tests and real Executor harness exercise the actual asynchronous barrier.
 class StoppedCoordinatorFixture : public ugv_reset_safety::ResetCoordinator {
-    struct Wire {rc::Session latest;uint32_t generation{0},sequence{0},ack{0};bool cert{false};};
-    std::map<std::string,Wire> wire_;
+    struct Wire {
+        rc::Session latest;
+        uint32_t generation{0}, sequence{0}, ack{0};
+        bool cert{false};
+    };
+    std::map<std::string, Wire> wire_;
+
    public:
-    explicit StoppedCoordinatorFixture(std::vector<std::string> names={"ugv1"})
-        :ugv_reset_safety::ResetCoordinator(config(std::move(names))) {}
-    explicit StoppedCoordinatorFixture(CoordinatorConfig c):ugv_reset_safety::ResetCoordinator(c) {}
-    static CoordinatorConfig config(std::vector<std::string> names) {CoordinatorConfig c;c.expected_namespaces=std::move(names);return c;}
-    void onSession(const std::string& id,rc::Session v,double now) {
-        auto& w=wire_[id];
-        auto active=[](rc::Phase p){return p!=rc::Phase::Idle&&p!=rc::Phase::Done;};
-        if((active(v.phase)&&!w.generation)||(w.generation&&v.session!=w.latest.session)||(!active(v.phase)&&active(w.latest.phase)))
-            {++w.generation;w.ack=0;w.cert=false;}
-        v.request_generation=w.generation;v.publication_seq=++w.sequence;
-        v.acknowledged_grant_id=w.ack;v.stop_certified=w.cert;w.latest=v;
-        ugv_reset_safety::ResetCoordinator::onSession(id,v,now);
+    explicit StoppedCoordinatorFixture(std::vector<std::string> names = {"ugv1"})
+        : ugv_reset_safety::ResetCoordinator(config(std::move(names))) {}
+    explicit StoppedCoordinatorFixture(CoordinatorConfig c)
+        : ugv_reset_safety::ResetCoordinator(c) {}
+    static CoordinatorConfig config(std::vector<std::string> names) {
+        CoordinatorConfig c;
+        c.expected_namespaces = std::move(names);
+        return c;
+    }
+    void onSession(const std::string& id, rc::Session v, double now) {
+        auto& w = wire_[id];
+        auto active = [](rc::Phase p) { return p != rc::Phase::Idle && p != rc::Phase::Done; };
+        if ((active(v.phase) && !w.generation) || (w.generation && v.session != w.latest.session) ||
+            (!active(v.phase) && active(w.latest.phase))) {
+            ++w.generation;
+            w.ack = 0;
+            w.cert = false;
+        }
+        v.request_generation = w.generation;
+        v.publication_seq = ++w.sequence;
+        v.acknowledged_grant_id = w.ack;
+        v.stop_certified = w.cert;
+        w.latest = v;
+        ugv_reset_safety::ResetCoordinator::onSession(id, v, now);
     }
     std::vector<OutgoingGrant> step(double now) {
         std::vector<OutgoingGrant> result;
-        for(unsigned turn=0;turn<4;++turn) {
-            bool barrier=false;
-            for(const auto& out:ugv_reset_safety::ResetCoordinator::step(now)) {
-                auto& w=wire_.at(out.vehicle);const auto& g=out.grant;
-                if(g.state==rc::GrantState::Brake) {
-                    barrier=true;w.ack=g.grant_id;w.cert=true;
-                    auto v=w.latest;v.acknowledged_grant_id=w.ack;v.stop_certified=true;v.publication_seq=++w.sequence;w.latest=v;
-                    ugv_reset_safety::ResetCoordinator::onSession(out.vehicle,v,now);
-                } else {result.push_back(out);if(g.state==rc::GrantState::Go||g.state==rc::GrantState::Hold) {w.ack=g.grant_id;w.cert=false;}}
+        for (unsigned turn = 0; turn < 4; ++turn) {
+            bool barrier = false;
+            for (const auto& out : ugv_reset_safety::ResetCoordinator::step(now)) {
+                auto& w = wire_.at(out.vehicle);
+                const auto& g = out.grant;
+                if (g.state == rc::GrantState::Brake) {
+                    barrier = true;
+                    w.ack = g.grant_id;
+                    w.cert = true;
+                    auto v = w.latest;
+                    v.acknowledged_grant_id = w.ack;
+                    v.stop_certified = true;
+                    v.publication_seq = ++w.sequence;
+                    w.latest = v;
+                    ugv_reset_safety::ResetCoordinator::onSession(out.vehicle, v, now);
+                } else {
+                    result.push_back(out);
+                    if (g.state == rc::GrantState::Go || g.state == rc::GrantState::Hold) {
+                        w.ack = g.grant_id;
+                        w.cert = false;
+                    }
+                }
             }
-            if(!barrier)break;
+            if (!barrier)
+                break;
         }
         return result;
     }
 };
-using ResetCoordinator=StoppedCoordinatorFixture;
+using ResetCoordinator = StoppedCoordinatorFixture;
 
 rc::VehicleSpec scout() {
     rc::VehicleSpec spec;
@@ -77,8 +109,9 @@ std::vector<OutgoingGrant> only(const std::vector<OutgoingGrant>& all, const std
     return out;
 }
 
-TEST(ResetCoordinator, DeclaredVehiclesAreFoundByTheirSessionsAndEveryParticipantHearsWithinTheRefreshPeriod) {
-    ResetCoordinator c({"ugv1","ugv2"});
+TEST(ResetCoordinator,
+     DeclaredVehiclesAreFoundByTheirSessionsAndEveryParticipantHearsWithinTheRefreshPeriod) {
+    ResetCoordinator c({"ugv1", "ugv2"});
     c.setWorld({}, ugv_reset_safety::Fence());
     double t = 0.0;
     c.onSession("ugv1", session(1, rc::Phase::Requesting, {-4, 0, 0}, {4, 0, 0}, t), t);
@@ -99,18 +132,19 @@ TEST(ResetCoordinator, DeclaredVehiclesAreFoundByTheirSessionsAndEveryParticipan
 }
 
 TEST(ResetCoordinator, AFaultAfterValidDiscoveryNeverTouchesTheOthers) {
-    ResetCoordinator c({"ugv1","ugv2","ugv3"});
+    ResetCoordinator c({"ugv1", "ugv2", "ugv3"});
     c.setWorld({}, ugv_reset_safety::Fence());
     // Every declared body is observed first. Initial missing/invalid body data is
     // deliberately covered as a fleet admission hold in ResetCausal.
-    c.onSession("ugv2",session(1,rc::Phase::Idle,{-4,3,0},{4,3,0},0),0);
-    c.onSession("ugv3",session(1,rc::Phase::Idle,{-4,-3,0},{4,-3,0},0),0);
+    c.onSession("ugv2", session(1, rc::Phase::Idle, {-4, 3, 0}, {4, 3, 0}, 0), 0);
+    c.onSession("ugv3", session(1, rc::Phase::Idle, {-4, -3, 0}, {4, -3, 0}, 0), 0);
     // ugv1 drives; ugv2 sends an invalid footprint; ugv3 has a non-finite target.
     c.onSession("ugv1", session(1, rc::Phase::Requesting, {-4, 0, 0}, {4, 0, 0}, 0.0), 0.0);
     rc::Session bad = session(1, rc::Phase::Requesting, {-4, 3, 0}, {4, 3, 0}, 0.0);
     bad.spec.footprint.half_length = -1.0;
     c.onSession("ugv2", bad, 0.0);
-    rc::Session nan_target = session(1, rc::Phase::Requesting, {-4, -3, 0}, {std::nan(""), -3, 0}, 0.0);
+    rc::Session nan_target =
+        session(1, rc::Phase::Requesting, {-4, -3, 0}, {std::nan(""), -3, 0}, 0.0);
     c.onSession("ugv3", nan_target, 0.0);
     const auto out = c.step(0.0);
     ASSERT_EQ(only(out, "ugv1").size(), 1U);
@@ -134,7 +168,7 @@ TEST(ResetCoordinator, AFaultAfterValidDiscoveryNeverTouchesTheOthers) {
 }
 
 TEST(ResetCoordinator, ANewSessionOfOneVehicleDoesNotDisturbAMover) {
-    ResetCoordinator c({"ugv1","ugv2"});
+    ResetCoordinator c({"ugv1", "ugv2"});
     c.setWorld({}, ugv_reset_safety::Fence());
     c.onSession("ugv1", session(5, rc::Phase::Requesting, {-4, 0, 0}, {4, 0, 0}, 0.0), 0.0);
     c.onSession("ugv2", session(1, rc::Phase::Idle, {0, 5, 0}, {0, 5, 0}, 0.0), 0.0);
@@ -153,7 +187,7 @@ TEST(ResetCoordinator, ANewSessionOfOneVehicleDoesNotDisturbAMover) {
 
 TEST(ResetCoordinator, ASilentVehicleStaysABodyAndAMovingOutsiderHoldsNewRoutes) {
     CoordinatorConfig config;
-    config.expected_namespaces={"ugv1","ugv2"};
+    config.expected_namespaces = {"ugv1", "ugv2"};
     ResetCoordinator c(config);
     c.setWorld({}, ugv_reset_safety::Fence());
     // ugv2 sits in the way, in Custom1 (outside any Reset session), and drives about.
@@ -235,10 +269,12 @@ TEST(ResetCoordinator, AnAuthoredSceneThatIsNotAvailableHoldsNewGrantsAndSaysWhy
 TEST(ResetCoordinator, ARejectionIsRepeatedUntilTheVehicleEndsItsSessionAndThenForgotten) {
     ResetCoordinator c;
     c.setWorld({}, ugv_reset_safety::Fence());
-    c.onSession("ugv1", session(1, rc::Phase::Requesting, {-4, 0, 0}, {std::nan(""), 0, 0}, 0.0), 0.0);
+    c.onSession("ugv1", session(1, rc::Phase::Requesting, {-4, 0, 0}, {std::nan(""), 0, 0}, 0.0),
+                0.0);
     int rejects = 0;
     for (double t = 0.0; t < 2.0; t += 0.1) {
-        c.onSession("ugv1", session(1, rc::Phase::Requesting, {-4, 0, 0}, {std::nan(""), 0, 0}, t), t);
+        c.onSession("ugv1", session(1, rc::Phase::Requesting, {-4, 0, 0}, {std::nan(""), 0, 0}, t),
+                    t);
         for (const auto& g : only(c.step(t), "ugv1")) {
             rejects += g.grant.state == rc::GrantState::Reject ? 1 : 0;
         }
@@ -246,9 +282,9 @@ TEST(ResetCoordinator, ARejectionIsRepeatedUntilTheVehicleEndsItsSessionAndThenF
     EXPECT_GE(rejects, 4);
     // It ended; a new session is answered afresh.
     c.onSession("ugv1", session(1, rc::Phase::Idle, {-4, 0, 0}, {0, 0, 0}, 2.1), 2.1);
-    const auto retired=only(c.step(2.1),"ugv1");
-    ASSERT_EQ(retired.size(),1u);
-    EXPECT_EQ(retired[0].grant.state,rc::GrantState::Hold);
+    const auto retired = only(c.step(2.1), "ugv1");
+    ASSERT_EQ(retired.size(), 1u);
+    EXPECT_EQ(retired[0].grant.state, rc::GrantState::Hold);
     c.onSession("ugv1", session(2, rc::Phase::Requesting, {-4, 0, 0}, {4, 0, 0}, 2.2), 2.2);
     const auto out = only(c.step(2.2), "ugv1");
     ASSERT_FALSE(out.empty());
@@ -259,13 +295,15 @@ TEST(ResetCoordinator, ARejectionIsRepeatedUntilTheVehicleEndsItsSessionAndThenF
 // The coordinator against ideal followers over the TASE family: the same soundness and completion
 // as the planner alone, through the message layer (heartbeat, sessions, grants).
 TEST(ResetCoordinator, ClosedLoopWithIdealFollowersOnTheTaseFamily) {
-    const ScenarioFile world = loadScenarios(std::string(RESET_TEST_DATA_DIR) + "/tase_scenarios_subset80.txt");
+    const ScenarioFile world =
+        loadScenarios(std::string(RESET_TEST_DATA_DIR) + "/tase_scenarios_subset80.txt");
     int completed = 0;
     int run = 0;
     for (size_t index = 0; index < world.scenarios.size(); index += 4) {
         const Scenario& sc = world.scenarios[index];
         CoordinatorConfig config;
-        for(size_t i=0;i<sc.starts.size();++i)config.expected_namespaces.push_back("ugv"+std::to_string(i+1));
+        for (size_t i = 0; i < sc.starts.size(); ++i)
+            config.expected_namespaces.push_back("ugv" + std::to_string(i + 1));
         ugv_reset_safety::ResetCoordinator c(config);
         std::vector<ugv_reset_safety::ConvexObstacle> statics;
         for (const auto& p : world.obstacles) {
@@ -279,7 +317,8 @@ TEST(ResetCoordinator, ClosedLoopWithIdealFollowersOnTheTaseFamily) {
         for (size_t i = 0; i < sc.starts.size(); ++i) {
             robots.emplace_back("ugv" + std::to_string(i + 1), scout(),
                                 rc::Pose{sc.starts[i].x(), sc.starts[i].y(), sc.starts[i].z()},
-                                rc::Pose{sc.goals[i].x(), sc.goals[i].y(), sc.goals[i].z()}, -0.229, true);
+                                rc::Pose{sc.goals[i].x(), sc.goals[i].y(), sc.goals[i].z()}, -0.229,
+                                true);
             robots.back().beginSession(1);
         }
         double min_clear = 1e9;
@@ -305,8 +344,10 @@ TEST(ResetCoordinator, ClosedLoopWithIdealFollowersOnTheTaseFamily) {
             if (std::fmod(t + 1e-9, 0.02) < 0.002) {
                 for (size_t i = 0; i < robots.size(); ++i) {
                     for (size_t j = i + 1; j < robots.size(); ++j) {
-                        const auto a = rect(robots[i].pose().x, robots[i].pose().y, robots[i].pose().yaw, 0.31, 0.26);
-                        const auto b = rect(robots[j].pose().x, robots[j].pose().y, robots[j].pose().yaw, 0.31, 0.26);
+                        const auto a = rect(robots[i].pose().x, robots[i].pose().y,
+                                            robots[i].pose().yaw, 0.31, 0.26);
+                        const auto b = rect(robots[j].pose().x, robots[j].pose().y,
+                                            robots[j].pose().yaw, 0.31, 0.26);
                         min_clear = std::min(min_clear, clearance(a, b));
                     }
                 }

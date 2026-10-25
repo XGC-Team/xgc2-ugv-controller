@@ -96,8 +96,8 @@ TEST(ResetPlanner, TheRouteGoesAroundAStaticWithTheRequiredSweepClearance) {
 
 TEST(ResetPlanner, TwoVehiclesCrossingAtTheCentreKeepThePairMargin) {
     ScenarioFile world;
-    const auto s = scenario("cross", {{-3.0, 0.0, 0.0}, {0.0, -3.0, 1.5}},
-                            {{3.0, 0.0, 0.0}, {0.0, 3.0, 1.5}});
+    const auto s =
+        scenario("cross", {{-3.0, 0.0, 0.0}, {0.0, -3.0, 1.5}}, {{3.0, 0.0, 0.0}, {0.0, 3.0, 1.5}});
     const DriveResult r = drive(world, s, scoutOptions());
     EXPECT_TRUE(r.all_arrived);
     EXPECT_GE(r.min_pair_clearance, 0.10 - 1e-6);
@@ -126,8 +126,8 @@ TEST(ResetPlanner, DecisionsAreADeterministicFunctionOfTheInputs) {
                 text.precision(12);
                 for (const auto& d : decisions) {
                     text << t << ' ' << d.id << ' ' << static_cast<int>(d.state) << ' '
-                         << static_cast<int>(d.reason) << ' ' << d.grant_id << ' ' << d.s_limit << ' '
-                         << d.via.size();
+                         << static_cast<int>(d.reason) << ' ' << d.grant_id << ' ' << d.s_limit
+                         << ' ' << d.via.size();
                     for (const auto& p : d.via) {
                         text << ' ' << p.x << ',' << p.y;
                     }
@@ -291,7 +291,8 @@ TEST(ResetPlanner, AParkedBodyThatBlocksTheRestOfAHeldRouteRevokesItAndTheVehicl
     std::vector<PlannerDecision> revoked;
     for (double t = 0.3; t < 1.0 && revoked.empty(); t += 0.1) {
         for (const auto& d : planner.update(t, {one, two}))
-            if (d.id == "ugv2") revoked.push_back(d);
+            if (d.id == "ugv2")
+                revoked.push_back(d);
     }
     ASSERT_FALSE(revoked.empty());
     EXPECT_EQ(revoked[0].id, "ugv2");
@@ -336,9 +337,10 @@ TEST(ResetPlanner, AVehicleMayTurnInPlaceAtItsSlotBesideAParkedNeighbourAtTheSlo
         }
         ASSERT_EQ(by.count("ugv2"), 1U);
         std::ostringstream text;
-        text << "spread " << spread << ": state " << static_cast<int>(by["ugv2"].state) << " reason "
-             << rc::name(by["ugv2"].reason) << " " << by["ugv2"].detail << " s_limit " << by["ugv2"].s_limit
-             << " final " << by["ugv2"].final_move << " goal (" << by["ugv2"].goal.x << "," << by["ugv2"].goal.y << ")";
+        text << "spread " << spread << ": state " << static_cast<int>(by["ugv2"].state)
+             << " reason " << rc::name(by["ugv2"].reason) << " " << by["ugv2"].detail << " s_limit "
+             << by["ugv2"].s_limit << " final " << by["ugv2"].final_move << " goal ("
+             << by["ugv2"].goal.x << "," << by["ugv2"].goal.y << ")";
         EXPECT_EQ(by["ugv2"].state, rc::GrantState::Go) << text.str();
         EXPECT_TRUE(by["ugv2"].final_move) << text.str();
         EXPECT_GE(by["ugv2"].s_limit, 0.8) << text.str();
@@ -461,18 +463,18 @@ TEST(ResetPlannerFamily, EveryGrantOfTheTaseFamilyIsSoundAndMostScenariosComplet
         EXPECT_GE(r.min_static_clearance, options.planner.static_margin - 1e-6) << s.name;
     }
     std::sort(all_ms.begin(), all_ms.end());
-    std::printf("family: %d/%zu completed, collisions %d, min pair %.3f, min static %.3f, "
-                "planning calls ms p50 %.2f p95 %.2f max %.2f (n=%zu)\n",
-                completed, world.scenarios.size(), collisions, min_pair, min_static,
-                all_ms[all_ms.size() / 2], all_ms[all_ms.size() * 95 / 100], all_ms.back(),
-                all_ms.size());
+    std::printf(
+        "family: %d/%zu completed, collisions %d, min pair %.3f, min static %.3f, "
+        "planning calls ms p50 %.2f p95 %.2f max %.2f (n=%zu)\n",
+        completed, world.scenarios.size(), collisions, min_pair, min_static,
+        all_ms[all_ms.size() / 2], all_ms[all_ms.size() * 95 / 100], all_ms.back(), all_ms.size());
     EXPECT_LE(all_ms[all_ms.size() * 95 / 100], 50.0) << "planner budget per event (p95)";
     EXPECT_EQ(collisions, 0);
     EXPECT_GE(completed, static_cast<int>(0.85 * world.scenarios.size()));
 }
 
-// The vehicle's rotation-centre offset is unknown to the planner (it covers +-ell_bound): whatever the
-// true value in that range, the verified sweeps contain the motion.
+// The vehicle's rotation-centre offset is unknown to the planner (it covers +-ell_bound): whatever
+// the true value in that range, the verified sweeps contain the motion.
 TEST(ResetPlannerFamily, TheSweepCoversEveryRotationCentreOffsetWithinTheDeclaredBound) {
     const ScenarioFile world = loadScenarios(dataFile("tase_scenarios_subset80.txt"));
     for (double ell : {-0.25, 0.0, 0.12, 0.25}) {
