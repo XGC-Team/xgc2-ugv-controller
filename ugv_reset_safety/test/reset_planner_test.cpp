@@ -114,6 +114,42 @@ TEST(ResetPlanner, SwappingPlacesHeadOnIsResolvedWithoutAContact) {
     EXPECT_GE(r.min_chassis_clearance, 0.0);
 }
 
+// The four-Scout fleet lawfully ends its drive with neighbours inside the pair margin (the
+// recorded receipt: 3.2 cm / 3.5 cm edge gaps between ugv1-ugv2 and ugv3-ugv4). The parked
+// overlap is inherited, not created by any route: one vehicle of each pair must be able to
+// leave while never closing the inherited gap, then its neighbour follows.
+TEST(ResetPlanner, ScoutsParkedInsideThePairMarginSequenceOutOfTheOverlap) {
+    ScenarioFile world;
+    const auto s =
+        scenario("overlap-start",
+                 {{-4.5613497, -1.6651842, -0.0872233},
+                  {-5.5977380, -2.0857238, 0.6334592},
+                  {-5.4382727, -4.7342245, 0.0046286},
+                  {-4.5565166, -5.4201524, 0.4086611}},
+                 {{-6.0, -1.2, -0.3929740},
+                  {-6.0, -2.8, 1.0791080},
+                  {-6.0, -4.4, -1.5279221},
+                  {-6.0, -6.0, 0.5332720}});
+    const DriveResult r = drive(world, s, scoutOptions());
+    EXPECT_TRUE(r.all_arrived) << "rejections: " << r.rejected;
+    EXPECT_EQ(r.rejected, 0);
+    EXPECT_GE(r.min_chassis_clearance, 0.0);
+}
+
+// The escape allowance never becomes an approach allowance: a start overlap may only shrink,
+// never stay level while another part of the route closes further than the inherited gap.
+TEST(ResetPlanner, TheParkedEscapeNeverClosesTheInheritedGap) {
+    ScenarioFile world;
+    // Both scouts start inside the pair margin (~0.09 m edge gap) with goals pointing away
+    // from each other: both have to pull out of the same overlap without a contact.
+    const auto s = scenario("overlap-escape",
+                            {{-0.94, 0.0, 0.0}, {0.0, 0.0, 1.5707963}},
+                            {{-3.0, 0.0, 0.0}, {2.0, 0.0, 0.0}});
+    const DriveResult r = drive(world, s, scoutOptions());
+    EXPECT_TRUE(r.all_arrived) << "rejections: " << r.rejected;
+    EXPECT_GE(r.min_chassis_clearance, 0.0);
+}
+
 TEST(ResetPlanner, DecisionsAreADeterministicFunctionOfTheInputs) {
     const ScenarioFile world = loadScenarios(dataFile("tase_scenarios.txt"));
     for (size_t pick : {0U, 3U, 160U, 200U}) {

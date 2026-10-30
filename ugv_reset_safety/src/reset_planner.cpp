@@ -401,6 +401,12 @@ struct ResetPlanner::Impl {
         const double m_static = cfg.static_margin + self.delta;
         const double m_fence = cfg.fence_margin + self.delta;
         const double m_parked = cfg.pair_margin + self.delta;
+        // An overlap with a parked body that the route inherits from the body's own
+        // current pose is a pre-existing condition, not a violation the route
+        // creates: the swept path may never close that gap further (pulling out is
+        // the only possible first move), while approaching a parked body below the
+        // pair margin from a clean start still fails outright.
+        std::map<const Body*, double> parked_margins;
         // Chunk of a mover's reservation that may touch the candidate chunk.
         struct MoverChunk {
             const Body* body;
@@ -500,7 +506,17 @@ struct ResetPlanner::Impl {
                         }
                     }
                     for (const Body* p : rel_parked) {
-                        if (!sampleClear(self, q, *p, poseSample(*p, p->pose), m_parked)) {
+                        auto bound = parked_margins.find(p);
+                        if (bound == parked_margins.end()) {
+                            Verts va, vb;
+                            place(self.shape, self.pose.x, self.pose.y, self.pose.yaw, &va);
+                            place(p->shape, p->pose.x, p->pose.y, p->pose.yaw, &vb);
+                            bound = parked_margins
+                                        .emplace(p, std::min(m_parked,
+                                                             exactDistance(va.view(), vb.view())))
+                                        .first;
+                        }
+                        if (!sampleClear(self, q, *p, poseSample(*p, p->pose), bound->second)) {
                             result.hard = true;
                             result.s = q.s;
                             result.blockers = {p->id};
