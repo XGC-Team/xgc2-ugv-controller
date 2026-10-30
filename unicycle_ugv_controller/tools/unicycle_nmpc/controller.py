@@ -216,4 +216,4 @@ class AcadosUnicycleNMPC:
 
     def export_solver_code(self) -> None:
         ocp, AcadosOcpSolver = self._build_ocp()
-        AcadosOcpSolver.generate(ocp, json_file=ocp.json_file, verbose=False)
+        AcadosOcpSolver.generate(ocp, verbose=False)
