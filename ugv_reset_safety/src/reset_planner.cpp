@@ -1234,9 +1234,9 @@ struct ResetPlanner::Impl {
     // Whether the body's current footprint reaches any granted, still-uncrossed
     // swept corridor, at that mover's own parked-peer margin - the same
     // broadphase the sweep applies. It is the relevance gate for changed-fact
-    // invalidation: a quiescent body whose pose is stale against the last
-    // verified anchor forces a recheck only where a certified route can be
-    // affected.
+    // invalidation: a quiescent body whose pose is stale against its own
+    // last-checked anchor forces a recheck only where a certified route can
+    // be affected.
     bool inGrantedCorridor(const Body& peer) const {
         Verts v;
         place(peer.shape, peer.pose.x, peer.pose.y, peer.pose.yaw, &v);
@@ -1279,9 +1279,9 @@ struct ResetPlanner::Impl {
             const bool new_request = v.request_generation > body.request_generation;
             const bool new_session = v.session != body.session;
             // A body that is not a granted mover is stale for proof purposes
-            // when its reported pose differs from the anchor the last route
-            // verification consumed (proof_pose, re-anchored only after a sweep
-            // or admission ran) - or when no verification has covered it yet.
+            // when its reported pose differs from the anchor its own last
+            // staleness check discharged (proof_pose, updated only inside
+            // that check) - or when no check has covered it yet.
             // Both cases invalidate only inside a granted corridor: drift into
             // or appearance inside one raises the same flag setWorld does;
             // drift and new bodies elsewhere do not force a recheck.
