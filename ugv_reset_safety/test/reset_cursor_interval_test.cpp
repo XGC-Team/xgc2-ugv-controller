@@ -110,7 +110,7 @@ rs::Violation query(size_t cursor, size_t hi, double x) {
     SampleSet candidate;
     candidate.pts = {q};
     candidate.chunks = {q.box};
-    return m.firstViolation(self, {&candidate}, {0});
+    return m.firstViolation(self, {&candidate}, {0}, {});
 }
 TEST(Behind, ExactBehindIntervalStillConflictsWhenHiEqualsCursor) {
     auto v = query(50, 50, .90);

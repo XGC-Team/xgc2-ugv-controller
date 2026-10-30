@@ -779,6 +779,79 @@ TEST(ResetPlanner, APendingPeerChangeIsNotErasedByUnrelatedVerifications) {
     EXPECT_EQ(brakes[0].blockers[0], "ugv2");
 }
 
+// Root's scout-certification counterexample on the frozen field geometry: a certified
+// participant whose route is hard at s=0 only because a blocking participant still awaits
+// its post-zero stop certificate is not deadlocked - that certificate can still arrive,
+// and once it does the same blocker is a parking claim (second arm). The irreversible
+// verdict must wait for the in-flight certification.
+TEST(ResetPlanner, ABlockerAwaitingItsStopCertificateDefersTheDeadlockVerdict) {
+    const rc::Pose poses[4] = {{-4.462397, -1.670390, -0.041435},
+                               {-5.523253, -2.032793, 0.586472},
+                               {-5.366939, -4.730242, 0.059541},
+                               {-4.458062, -5.375016, 0.446796}};
+    const rc::Pose goals[4] = {{-6.0, -1.2, -0.392974},
+                               {-6.0, -2.8, 1.079108},
+                               {-6.0, -4.4, -1.527922},
+                               {-6.0, -6.0, 0.533272}};
+    auto run = [&](bool both) {
+        PlannerConfig cfg;
+        cfg.step_yaw = 0.035;
+        ugv_reset_safety::ResetPlanner planner(cfg);
+        Fence fence;
+        fence.xmin = -10;
+        fence.xmax = 10;
+        fence.ymin = -10;
+        fence.ymax = 10;
+        planner.setWorld({}, fence);
+        std::vector<PlannerVehicle> vehicles(4);
+        for (size_t i = 0; i < vehicles.size(); ++i) {
+            PlannerVehicle& v = vehicles[i];
+            v.id = "ugv" + std::to_string(i + 1);
+            v.session = 100 + i;
+            v.request_generation = 1;
+            v.spec = scoutSpec();
+            v.pose = poses[i];
+            v.target = goals[i];
+            v.phase = rc::Phase::Requesting;
+            v.ell_spread = -1.0;
+        }
+        const auto initial = planner.update(0.0, vehicles);
+        for (const auto& d : initial) {
+            for (auto& v : vehicles) {
+                if (v.id == d.id && d.state == rc::GrantState::Brake) {
+                    v.acknowledged_grant_id = d.grant_id;
+                }
+            }
+        }
+        vehicles[0].stop_certified = true;
+        vehicles[1].stop_certified = both;
+        return planner.update(0.268, vehicles);
+    };
+    // Only ugv1 certified: ugv2's certificate is still in flight, so the only fact against
+    // ugv1 is a blocked route - a hold that names the pending peer, never a reject.
+    bool held_by_awaiting = false;
+    for (const auto& d : run(false)) {
+        EXPECT_FALSE(d.state == rc::GrantState::Reject && d.reason == rc::Reason::Deadlock)
+            << d.id << ": a blocker that can still certify is not deadlock evidence";
+        held_by_awaiting =
+            held_by_awaiting ||
+            (d.id == "ugv1" && d.reason == rc::Reason::WaitingForPeer &&
+             std::find(d.blockers.begin(), d.blockers.end(), "ugv2") != d.blockers.end());
+    }
+    EXPECT_TRUE(held_by_awaiting) << "the stuck body must stay held on its awaiting blocker";
+    // Both certified: the identical blocker becomes the parking move that frees ugv1.
+    bool parked = false;
+    for (const auto& d : run(true)) {
+        if (d.id == "ugv2" && d.state == rc::GrantState::Go) {
+            parked = true;
+            EXPECT_FALSE(d.final_move);
+            EXPECT_NEAR(d.goal.x, -7.12325, 1e-3);
+            EXPECT_NEAR(d.goal.y, -2.03279, 1e-3);
+        }
+    }
+    EXPECT_TRUE(parked) << "the certified blocker must be claimable by the parking move";
+}
+
 // The family of the design measurements (235 scenarios on the TASE scene, 4 Scouts, the Reset
 // footprint 0.90 x 0.80): with ideal followers the planner alone must be sound, whatever it
 // completes.

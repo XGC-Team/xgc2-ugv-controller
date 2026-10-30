@@ -1953,7 +1953,30 @@ struct ResetPlanner::Impl {
                     no_route_pending = no_route_pending || (b.participant && !b.plan_active &&
                                                             !b.rejected && b.no_route_since >= 0.0);
                 }
-                if (!settling && !no_route_pending) {
+                // A blocker that is still an awaiting participant has its certificate in
+                // flight: once it lands the parking machinery can claim it, so the only
+                // fact against a body it blocks is a wait, not an irreversible verdict.
+                bool certification_pending = false;
+                for (const auto& entry : bodies) {
+                    const Body& b = entry.second;
+                    if (certification_pending) {
+                        break;
+                    }
+                    if (!b.participant || !b.certified || b.awaiting_stop || b.plan_active ||
+                        b.rejected || (b.phase != Phase::Requesting &&
+                                       b.phase != Phase::Waiting)) {
+                        continue;
+                    }
+                    for (const std::string& id : b.blockers) {
+                        const auto it = bodies.find(id);
+                        if (it != bodies.end() && it->second.participant &&
+                            it->second.awaiting_stop) {
+                            certification_pending = true;
+                            break;
+                        }
+                    }
+                }
+                if (!settling && !no_route_pending && !certification_pending) {
                     deadlock();
                 }
             }
