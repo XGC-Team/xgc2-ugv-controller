@@ -231,6 +231,35 @@ TEST(ResetExecutor, AHeldVehicleDoesNotCountAsStalledAndAFrozenOneDoes) {
     }
 }
 
+// s7/s8 native receipts: a whole-route non-final grant ends with the vehicle standing at the
+// route end while the tracker's terminal rotation creep (|w| = 1.5 |e|, |e| a degree or two)
+// sits below the chassis actuation floor. The command never reads zero, so the whole-route
+// handover could not fire and the executor's own stall watchdog ended the session ("allowed
+// to move but did not for 10 s"). A completed parking leg opens a new request generation.
+TEST(ResetExecutor, ACompletedParkingMoveHandsOverInsteadOfStallingOnItsOwnCreep) {
+    const rc::Pose start{-5.574, -2.064, 0.616};
+    const rc::Pose park{-7.174, -2.064, 0.616};
+    const rc::Pose target{-6.0, -1.2, -0.393};
+    PlantParams plant;
+    plant.ell = 0.0;
+    plant.ang_deadband = 0.04;
+    SoloRig rig(scoutConfig(), start, plant);
+    rig.exec().begin(1, target, true, rig.measurement());
+    double next = 0.0;
+    bool handed_over = false;
+    const bool ended = rig.run(60.0, [&](SoloRig& r, const rc::StepOutput&) {
+        if (r.time() + 1e-12 >= next) {
+            next = r.time() + 0.4;
+            r.deliver(goGrant(1, 1, start, {}, park, plant.ell, 1e9, false), r.measurement());
+        }
+        handed_over = handed_over || r.exec().requestGeneration() > 1;
+    });
+    EXPECT_TRUE(handed_over)
+        << "a finished parking leg must open a new request generation, not wait on its own creep";
+    EXPECT_FALSE(ended) << "it must not die on its own terminal creep: "
+                        << rig.exec().result().detail;
+}
+
 TEST(ResetExecutor, LeavingTheRouteTubeBrakesAndReportsDeviation) {
     const Course c;
     PlantParams plant;

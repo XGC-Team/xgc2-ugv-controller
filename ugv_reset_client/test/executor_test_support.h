@@ -26,6 +26,9 @@ struct PlantParams {
     double yaw_noise{0.0};
     double publish_hz{30.0};
     bool unicycle{true};
+    // The chassis ignores |w| below this stiction floor; the terminal rotation creep of the
+    // tracker (|w| ~ 1.5 |e|) falls under it for residuals of a few degrees.
+    double ang_deadband{0.0};
 };
 
 class SoloRig {
@@ -153,8 +156,15 @@ class SoloRig {
             }
             return;
         }
-        const double cmd[3] = {cmd_.vx, cmd_.vy, cmd_.wz};
+        const double cmd[3] = {cmd_.vx, cmd_.vy,
+                               std::abs(cmd_.wz) >= plant_.ang_deadband ? cmd_.wz : 0.0};
         for (int axis = 0; axis < 3; ++axis) {
+            // Static friction: a yaw command under the floor locks the wheel instead of
+            // dragging the residual rate down through the deadband.
+            if (axis == 2 && plant_.ang_deadband > 0.0 && std::abs(cmd_.wz) < plant_.ang_deadband) {
+                actual_[2] = 0.0;
+                continue;
+            }
             const double lag = axis == 2 ? plant_.ang_lag : plant_.lin_lag;
             const double f = lag > 0.0 ? 1.0 - std::exp(-dt / lag) : 1.0;
             actual_[axis] += f * (cmd[axis] - actual_[axis]);

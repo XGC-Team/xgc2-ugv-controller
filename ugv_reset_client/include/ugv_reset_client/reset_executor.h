@@ -398,6 +398,18 @@ class ResetExecutor {
                 return finished(m);
             const bool complete_prefix =
                 RouteTracker::wholeRouteGranted(tracker_.route(), s_limit_);
+            // A finished parking leg is done the moment the vehicle stands at the route end.
+            // The tracker may still emit its terminal creep toward the granted heading, which a
+            // real chassis can leave unanswered: the command stays nonzero forever, the
+            // handover below never sees command_.zero(), and the stall watchdog would end the
+            // session. For a non-final route the heading precision is not part of completion,
+            // so a measured-stopped vehicle at the route end stops commanding here.
+            if (complete_prefix && !final_ && tracker_.atEnd() && m.healthy &&
+                m.external_command_zero && velocity_.valid() &&
+                velocity_.speed() <= cfg_.stop_speed &&
+                std::abs(velocity_.yawRate()) <= cfg_.stop_yaw_rate) {
+                command_ = {};
+            }
             const double perr = std::hypot(m.pose.x - target_.x, m.pose.y - target_.y);
             const double yerr = std::abs(wrapAngle(target_.yaw - m.pose.yaw));
             if (complete_prefix && stopped(m) && command_.zero() &&
