@@ -1,8 +1,7 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-import ctypes
 import os
-import sys
-from importlib.util import find_spec
 from pathlib import Path
 from typing import List, Optional
 
@@ -52,49 +51,83 @@ class MPCConfig:
         return self.horizon / self.steps
 
 
-def _env_paths(*names: str) -> List[Path]:
-    paths: List[Path] = []
-    for name in names:
-        for raw_path in os.environ.get(name, "").split(os.pathsep):
-            if not raw_path:
-                continue
-            candidate = Path(raw_path).expanduser().resolve()
-            if candidate.exists() and candidate not in paths:
-                paths.append(candidate)
-    return paths
+# The single installed SDK. Discovery, alternate roots, sys.path/library-path
+# rewriting and ctypes preloading are intentionally absent: the released
+# package setup selects the code-generation interpreter and this module only
+# validates the canonical installation read-only.
+ACADOS_ROOT = Path("/opt/xgc2/acados")
+ACADOS_REF = "v0.6.0"
+ACADOS_SHA = "503364817c872d474ab5bed219c26760ac267769"
+ACADOS_PACKAGE_BASE = "0.6.0-1"
 
 
-def configure_acados_environment() -> None:
-    acados_root = None
-    for name in ("XGC2_ACADOS_SOURCE_DIR", "ACADOS_SOURCE_DIR", "ACADOS_ROOT"):
-        raw = os.environ.get(name)
-        if raw and Path(raw).expanduser().exists():
-            acados_root = Path(raw).expanduser().resolve()
-            break
-    if acados_root is None and Path("/opt/xgc2/acados").exists():
-        acados_root = Path("/opt/xgc2/acados")
-    python_paths = _env_paths("XGC2_ACADOS_PYTHONPATH", "ACADOS_PYTHONPATH")
-    if acados_root is not None:
-        os.environ.setdefault("ACADOS_SOURCE_DIR", str(acados_root))
-        template_parent = acados_root / "interfaces" / "acados_template"
-        if template_parent.exists():
-            python_paths.append(template_parent)
-    for path in reversed(python_paths):
-        path_str = str(path)
-        if path_str not in sys.path:
-            sys.path.insert(0, path_str)
-    library_dirs = _env_paths("XGC2_ACADOS_LIBRARY_DIRS", "ACADOS_LIBRARY_DIRS")
-    if acados_root is not None and (acados_root / "lib").exists():
-        library_dirs.append(acados_root / "lib")
-    for lib_dir in library_dirs:
-        current_ld = os.environ.get("LD_LIBRARY_PATH", "")
-        lib_dir_str = str(lib_dir)
-        if lib_dir_str not in current_ld.split(":"):
-            os.environ["LD_LIBRARY_PATH"] = f"{lib_dir_str}:{current_ld}" if current_ld else lib_dir_str
-        for lib_name in ("libblasfeo.so", "libhpipm.so", "libacados.so"):
-            lib_path = lib_dir / lib_name
-            if lib_path.exists():
-                ctypes.CDLL(str(lib_path), mode=ctypes.RTLD_GLOBAL)
+def _installed_acados_status() -> dict[str, bool | str]:
+    """Validate the installed xgc2-acados SDK without mutating the process."""
+
+    root = ACADOS_ROOT
+    status: dict[str, bool | str] = {
+        "acados_root": str(root),
+        "acados_root_exists": root.is_dir(),
+        "casadi": False,
+        "acados_template": False,
+    }
+    conflict = os.environ.get("ACADOS_SOURCE_DIR")
+    if conflict:
+        try:
+            resolved = Path(conflict).expanduser().resolve()
+        except OSError:
+            resolved = None
+        if resolved != root.resolve():
+            status["error"] = (
+                f"ACADOS_SOURCE_DIR={conflict} conflicts with the installed SDK at {root}"
+            )
+            return status
+    if not root.is_dir():
+        status["error"] = f"xgc2-acados is not installed at {root}; install the released package"
+        return status
+    try:
+        lock = dict(
+            line.split("=", 1)
+            for line in (root / "acados.lock").read_text().splitlines()
+            if "=" in line
+        )
+    except OSError as error:
+        status["error"] = f"cannot read the installed SDK lock {root / 'acados.lock'}: {error}"
+        return status
+    lock = {key.strip(): value.strip() for key, value in lock.items()}
+    if (
+        lock.get("ACADOS_REF") != ACADOS_REF
+        or lock.get("ACADOS_SHA") != ACADOS_SHA
+        or lock.get("XGC2_PACKAGE_VERSION") != ACADOS_PACKAGE_BASE
+    ):
+        status["error"] = (
+            f"installed SDK lock is not the selected acados {ACADOS_REF} "
+            f"({ACADOS_SHA}, package base {ACADOS_PACKAGE_BASE})"
+        )
+        return status
+    try:
+        import acados_template
+        import casadi
+    except Exception as error:
+        status["error"] = (
+            f"casadi/acados_template is not importable from the SDK environment: {error}"
+        )
+        return status
+    template_path = Path(acados_template.__file__).resolve()
+    casadi_path = Path(casadi.__file__).resolve()
+    if root.resolve() not in template_path.parents:
+        status["error"] = (
+            f"acados_template is loaded from {template_path}, outside the installed SDK {root}"
+        )
+        return status
+    if (root / "python").resolve() not in casadi_path.parents:
+        status["error"] = (
+            f"casadi is loaded from {casadi_path}, outside the installed SDK {root}/python"
+        )
+        return status
+    status["casadi"] = True
+    status["acados_template"] = True
+    return status
 
 
 class AcadosBackendUnavailable(RuntimeError):
@@ -108,9 +141,12 @@ class AcadosUnicycleNMPC:
         bounds: Optional[Bounds] = None,
         weights: Optional[CostWeights] = None,
     ) -> None:
-        configure_acados_environment()
-        if find_spec("casadi") is None or find_spec("acados_template") is None:
-            raise AcadosBackendUnavailable("casadi/acados_template is not importable")
+        status = _installed_acados_status()
+        if not status["casadi"] or not status["acados_template"]:
+            reason = status.get("error", "the installed xgc2-acados SDK is not available")
+            raise AcadosBackendUnavailable(
+                f"acados backend requires the installed xgc2-acados SDK: {reason}"
+            )
         self.config = config if config is not None else MPCConfig()
         self.bounds = bounds if bounds is not None else Bounds()
         self.weights = weights if weights is not None else CostWeights()

@@ -30,3 +30,21 @@ class UnicycleNmpcConfigTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class SDKOriginTests(unittest.TestCase):
+    def test_sdk_validation_is_read_only_and_rejects_a_conflicting_source(self) -> None:
+        import os
+        import sys
+        from unittest import mock
+
+        from unicycle_nmpc import controller as module
+
+        before_path = list(sys.path)
+        before_ld = os.environ.get("LD_LIBRARY_PATH")
+        with mock.patch.dict(os.environ, {"ACADOS_SOURCE_DIR": "/tmp/other-acados"}):
+            status = module._installed_acados_status()
+        self.assertIn("conflicts", str(status["error"]))
+        self.assertFalse(status["casadi"])
+        self.assertFalse(status["acados_template"])
+        self.assertEqual(sys.path, before_path)
+        self.assertEqual(os.environ.get("LD_LIBRARY_PATH"), before_ld)
