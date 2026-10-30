@@ -164,13 +164,14 @@ class AcadosUnicycleNMPC:
             else Path(__file__).resolve().parent / "results" / "acados_codegen"
         )
         code_export_directory.mkdir(parents=True, exist_ok=True)
-        ocp.code_export_directory = str(code_export_directory)
-        ocp.json_file = (
+        ocp.code_gen_options.code_export_directory = str(code_export_directory)
+        ocp.code_gen_options.json_file = (
             self.config.json_file
             if self.config.json_file
             else str(code_export_directory / f"{self.config.model_name}_acados_ocp.json")
         )
         ocp.model = model
+        ocp.name = self.config.model_name
         ocp.solver_options.N_horizon = self.config.steps
         ocp.solver_options.tf = self.config.horizon
         ocp.cost.cost_type = "NONLINEAR_LS"
