@@ -459,6 +459,13 @@ struct Body {
     double no_route_since{-1.0};
     double last_limit{0.0};
     Pose pose, target, progress_pose;
+    // The pose the most recent route verification actually consumed for this
+    // body (re-anchored only when a sweep or admission ran). Staleness of a
+    // quiescent body is measured against this anchor, never against the
+    // previous observation - drift smaller than any per-tick threshold still
+    // accumulates past the anchor.
+    Pose proof_pose;
+    bool proof_pose_set{false};
     std::vector<std::string> last_blockers, blockers;
     std::string id;
     rc::VehicleSpec spec;
@@ -512,6 +519,9 @@ struct ResetPlanner::Impl {
     double last_extension{-1e9};
     double fleet_progress{0.0};
     bool dirty{true};
+    // Set whenever a route verification ran this update; its end marks the
+    // pose each quiescent body was last proven at (Body::proof_pose).
+    mutable bool sweep_consumed{false};
     uint32_t next_grant{1};
 
     explicit Impl(const PlannerConfig& config) : cfg(config) {}
@@ -1055,6 +1065,7 @@ struct ResetPlanner::Impl {
                     }
                 }
             }
+            sweep_consumed = true;
             const Violation violation =
                 firstViolation(body, view, std::vector<size_t>(view.size(), 0),
                                plan.escape_certs);
@@ -1224,6 +1235,37 @@ struct ResetPlanner::Impl {
 
     // ----------------------------------------------------------------- synchronisation
 
+    // Whether the body's current footprint reaches any granted, still-uncrossed
+    // swept corridor, at that mover's own parked-peer margin - the same
+    // broadphase the sweep applies. It is the relevance gate for changed-fact
+    // invalidation: a quiescent body whose pose is stale against the last
+    // verified anchor forces a recheck only where a certified route can be
+    // affected.
+    bool inGrantedCorridor(const Body& peer) const {
+        Verts v;
+        place(peer.shape, peer.pose.x, peer.pose.y, peer.pose.yaw, &v);
+        const Aabb box = boxOf(v);
+        for (const auto& entry : bodies) {
+            const Body& other = entry.second;
+            if (!other.plan_active || other.plan_retiring) {
+                continue;
+            }
+            const Plan& plan = other.plan;
+            const double m = cfg.pair_margin + other.delta;
+            for (size_t w = 0; w < plan.sets.size(); ++w) {
+                const SampleSet& s = plan.sets[w];
+                const size_t hi = std::min(plan.hi[w], s.pts.size());
+                for (size_t c = plan.cursor[w] / kChunk;
+                     c < s.chunks.size() && c * kChunk < hi; ++c) {
+                    if (!separated(s.chunks[c], box, m)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     void sync(const std::vector<PlannerVehicle>& vehicles) {
         for (const PlannerVehicle& v : vehicles) {
             auto found = bodies.find(v.id);
@@ -1240,19 +1282,17 @@ struct ResetPlanner::Impl {
             }
             const bool new_request = v.request_generation > body.request_generation;
             const bool new_session = v.session != body.session;
+            // A body that is not a granted mover is stale for proof purposes
+            // when its reported pose differs from the anchor the last route
+            // verification consumed (proof_pose, re-anchored only after a sweep
+            // or admission ran) - or when no verification has covered it yet.
+            // Both cases invalidate only inside a granted corridor: drift into
+            // or appearance inside one raises the same flag setWorld does;
+            // drift and new bodies elsewhere do not force a recheck.
+            const bool stale_quiescent =
+                (v.available || fresh) && !(body.plan_active && !body.plan_retiring) &&
+                (!body.proof_pose_set || !samePose(v.pose, body.proof_pose));
             if (v.available || fresh) {
-                // A body the planner believes quiescent (no plan, not braking)
-                // whose reported pose moved is a scene change under every
-                // already-certified route: raise the same flag setWorld does so
-                // the next extension sweep re-verifies against the new pose.
-                // Escape certificates match on the frozen pose and simply stop
-                // applying; the full parked margin then decides.
-                if (!fresh && !body.plan_active && !body.awaiting_stop &&
-                    (std::hypot(v.pose.x - body.pose.x, v.pose.y - body.pose.y) > 0.02 ||
-                     std::abs(wrap(v.pose.yaw - body.pose.yaw)) > 0.02)) {
-                    world_changed = true;
-                    dirty = true;
-                }
                 body.pose = v.pose;
             }
             body.phase = v.phase;
@@ -1262,6 +1302,10 @@ struct ResetPlanner::Impl {
                 body.spec = v.spec;
                 body.shape = makeShape(v.spec);
                 setDelta(body);
+            }
+            if (stale_quiescent && inGrantedCorridor(body)) {
+                world_changed = true;
+                dirty = true;
             }
             body.ell_hat = v.ell_hat;
             body.ell_spread = v.ell_spread;
@@ -1411,6 +1455,7 @@ struct ResetPlanner::Impl {
             for (const SampleSet& s : plan.sets) {
                 rest.push_back(&s);
             }
+            sweep_consumed = true;
             const Violation violation =
                 firstViolation(body, rest, plan.cursor, plan.escape_certs);
             const bool held = body.phase == Phase::Waiting;
@@ -1954,6 +1999,15 @@ std::vector<PlannerDecision> ResetPlanner::update(double now,
     m.out.clear();
     m.sync(vehicles);
     m.step(admit);
+    if (m.sweep_consumed) {
+        // Every verification that ran this update consumed the current poses:
+        // they become the proof anchor for the next round of drift checks.
+        for (auto& entry : m.bodies) {
+            entry.second.proof_pose = entry.second.pose;
+            entry.second.proof_pose_set = true;
+        }
+        m.sweep_consumed = false;
+    }
     const double ms =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     m.stats.plan_ms_max = std::max(m.stats.plan_ms_max, ms);

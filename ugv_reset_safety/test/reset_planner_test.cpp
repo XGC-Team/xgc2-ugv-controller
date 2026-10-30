@@ -669,6 +669,49 @@ TEST(ResetPlanner, AParkedBodyThatMovesIntoAGrantedRouteBrakesTheVehicle) {
     EXPECT_EQ(brakes[0].blockers[0], "ugv2");
 }
 
+TEST(ResetPlanner, ATinyIncrementDriftOfACertPeerInvalidatesTheCertificate) {
+    // The cert peer starts inside the pair margin (admission-owned EscapeCert at
+    // the r7 geometry) and then creeps 0.5e-6 m per observation. Each step is
+    // below the 1e-6 pose authority, but the reference is the last-validated
+    // anchor - never overwritten by observations - so the increments accumulate
+    // and the certificate stops matching. The escape samples then fall back to
+    // the full margin, which the peer violates: Replan.
+    StoppedPlannerFixture planner;
+    planner.setWorld({}, Fence());
+    PlannerVehicle one, two;
+    one.id = "ugv1";
+    one.session = 1;
+    one.spec = scoutSpec();
+    one.pose = {-0.94, 0.0, 0.0};
+    one.target = {-3.0, 0.0, 0.0};
+    one.phase = rc::Phase::Requesting;
+    two.id = "ugv2";
+    two.session = 2;
+    two.spec = scoutSpec();
+    two.pose = {0.0, 0.0, 1.5707963};
+    two.target = {2.0, 0.0, 0.0};
+    two.phase = rc::Phase::Idle;
+    const auto granted = planner.update(0.0, {one, two});
+    ASSERT_EQ(granted.size(), 1U);
+    ASSERT_EQ(granted[0].state, rc::GrantState::Go);
+    one.phase = rc::Phase::Moving;
+    one.pose = {-0.95, 0.0, 0.0};
+    std::vector<PlannerDecision> brakes;
+    for (int k = 1; k <= 8 && brakes.empty(); ++k) {
+        two.pose = {-0.5e-6 * k, 0.0, 1.5707963};
+        for (const auto& d : planner.update(0.05 * k, {one, two})) {
+            if (d.id == "ugv1" && d.state == rc::GrantState::Brake) {
+                brakes.push_back(d);
+            }
+        }
+    }
+    ASSERT_FALSE(brakes.empty())
+        << "0.5e-6 per-observation drift must accumulate past the 1e-6 anchor";
+    EXPECT_EQ(brakes[0].reason, rc::Reason::Replan);
+    ASSERT_EQ(brakes[0].blockers.size(), 1U);
+    EXPECT_EQ(brakes[0].blockers[0], "ugv2");
+}
+
 // The family of the design measurements (235 scenarios on the TASE scene, 4 Scouts, the Reset
 // footprint 0.90 x 0.80): with ideal followers the planner alone must be sound, whatever it
 // completes.
