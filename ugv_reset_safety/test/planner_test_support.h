@@ -437,6 +437,9 @@ struct DriveResult {
     double min_pair_clearance{1e9};     // planning footprints, pairs that started clear
     double min_static_clearance{1e9};   // planning footprints, pairs that started clear
     double min_chassis_clearance{1e9};  // physical chassis (smaller than the planning footprint)
+    // Planning-footprint minimum per unordered robot pair over the whole drive,
+    // including pairs that started inside the margin (unlike min_pair_clearance).
+    std::map<std::pair<size_t, size_t>, double> pair_gaps;
     double plan_ms_max{0.0};
     std::vector<double> plan_ms;
     std::vector<double> work_ms;  // only the calls that planned (an admission or an extension)
@@ -567,9 +570,14 @@ inline DriveResult drive(const ScenarioFile& world, const Scenario& scenario,
         if (static_cast<long>(std::llround(t / opt.plant_dt)) % 5 == 0) {
             for (size_t i = 0; i < n; ++i) {
                 for (size_t j = i + 1; j < n; ++j) {
+                    const double pair_gap = clearance(planning(i), planning(j));
                     if (pair_ok[i][j] && (robots[i].hasMoved() || robots[j].hasMoved())) {
-                        result.min_pair_clearance = std::min(result.min_pair_clearance,
-                                                             clearance(planning(i), planning(j)));
+                        result.min_pair_clearance = std::min(result.min_pair_clearance, pair_gap);
+                    }
+                    auto [it, inserted] =
+                        result.pair_gaps.try_emplace(std::make_pair(i, j), pair_gap);
+                    if (!inserted) {
+                        it->second = std::min(it->second, pair_gap);
                     }
                     result.min_chassis_clearance =
                         std::min(result.min_chassis_clearance, clearance(chassis(i), chassis(j)));

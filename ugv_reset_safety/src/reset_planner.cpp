@@ -137,6 +137,64 @@ bool clearAtLeast(const View& a, const View& b, double margin) {
     return exactDistance(a, b) >= margin;
 }
 
+double segmentClosest(double px, double py, double ax, double ay, double bx, double by,
+                      double* t, double* qx, double* qy) {
+    const double ex = bx - ax, ey = by - ay;
+    const double l2 = ex * ex + ey * ey;
+    *t = l2 > 0.0 ? std::clamp(((px - ax) * ex + (py - ay) * ey) / l2, 0.0, 1.0) : 0.0;
+    *qx = ax + *t * ex;
+    *qy = ay + *t * ey;
+    return std::hypot(px - *qx, py - *qy);
+}
+
+// The closest feature pair of two separated convex polygons: the exact distance, the unit
+// direction peer -> self at that pair, and whether the minimum is achieved by a peer vertex
+// against the INTERIOR of a self edge (the tangent-lock case, where the separating halfspace
+// must live in self's body frame instead of the world frame).
+struct ClosestPair {
+    double d{kInf};
+    double nx{0.0}, ny{0.0};
+    bool peer_v_to_self_e{false};
+};
+
+ClosestPair closestPair(const View& self_v, const View& peer_v) {
+    ClosestPair out;
+    for (int i = 0; i < self_v.n; ++i) {
+        for (int e = 0; e < peer_v.n; ++e) {
+            const int e2 = (e + 1) % peer_v.n;
+            double t, qx, qy;
+            const double d = segmentClosest(self_v.x[i], self_v.y[i], peer_v.x[e], peer_v.y[e],
+                                            peer_v.x[e2], peer_v.y[e2], &t, &qx, &qy);
+            if (d < out.d) {
+                out.d = d;
+                out.nx = self_v.x[i] - qx;
+                out.ny = self_v.y[i] - qy;
+                out.peer_v_to_self_e = false;
+            }
+        }
+    }
+    for (int j = 0; j < peer_v.n; ++j) {
+        for (int e = 0; e < self_v.n; ++e) {
+            const int e2 = (e + 1) % self_v.n;
+            double t, qx, qy;
+            const double d = segmentClosest(peer_v.x[j], peer_v.y[j], self_v.x[e], self_v.y[e],
+                                            self_v.x[e2], self_v.y[e2], &t, &qx, &qy);
+            if (d < out.d) {
+                out.d = d;
+                out.nx = qx - peer_v.x[j];
+                out.ny = qy - peer_v.y[j];
+                out.peer_v_to_self_e = t > 1e-6 && t < 1.0 - 1e-6;
+            }
+        }
+    }
+    const double norm = std::hypot(out.nx, out.ny);
+    if (norm > 1e-12) {
+        out.nx /= norm;
+        out.ny /= norm;
+    }
+    return out;
+}
+
 // A footprint in the body frame: the declared rectangle, or for an omnidirectional vehicle the
 // 16-gon that circumscribes the disc of the rectangle's circumradius (any heading is covered).
 struct Shape {
@@ -209,6 +267,7 @@ struct Sample {
 struct SampleSet {
     std::vector<Sample> pts;
     std::vector<Aabb> chunks;
+    double ell{0.0};  // the variant's rotation-centre offset (Route::ell)
 };
 
 SampleSet makeSet(const Route& route, const Shape& shape, bool unicycle,
@@ -228,7 +287,123 @@ SampleSet makeSet(const Route& route, const Shape& shape, bool unicycle,
         }
         set.chunks.push_back(box);
     }
+    set.ell = route.ell();
     return set;
+}
+
+constexpr size_t kNoEscape = std::numeric_limits<size_t>::max();
+
+// Admission-owned escape certificate for one parked peer the route inherits an
+// inside-margin gap from (0 < d0 < pair margin): the route may leave the
+// overlap, but on the way out it may never close below d0 along a separating
+// halfspace frozen at admission. Once a full-margin separation is achieved the
+// certificate retires and the ordinary pair margin applies; before that every
+// swept step must keep the halfspace, in continuous time, not just at samples.
+struct EscapeCert {
+    std::string peer_id;
+    Pose peer_pose;
+    Verts peer_verts;  // the peer footprint at peer_pose, frozen with the cert
+    // false: n = (nx, ny) is the world-frame separating normal, peer -> self.
+    // true:  n = (ux, uy) is the normal in self's body frame at the admission
+    //        yaw, self -> peer; self's edge is then stationary and the peer's
+    //        vertices swing around it (resolves the s=0 tangent lock).
+    bool body_fixed{false};
+    double nx{0.0}, ny{0.0};
+    double d0{0.0};    // the inherited gap the certificate preserves
+    double rhs{0.0};   // n . self_vertex_min >= rhs  (n . peer_vertex_min >= rhs in body frame)
+    // Per sweep variant: the first route sample whose footprint clears the
+    // peer by the full pair margin (kNoEscape = never). Cached at admission so
+    // the escape state is a pure function of the frozen route index - no
+    // per-tick replay of the driven prefix, and no d0 allowance is regained
+    // when a far peer re-enters the broadphase.
+    std::vector<size_t> escaped_at;
+};
+
+// Exact continuous-time check of one swept step against an escape certificate.
+// pts[i-1] -> pts[i] is one primitive: a pure rotation in place when
+// pts[i].s == pts[i-1].s (vertex projections are sinusoids in yaw; the exact
+// interval minimum sits at an endpoint or the stationary angle atan2(-B,-A)),
+// or a fixed-yaw translation otherwise (projections are affine in s, so the
+// endpoint check already bounds the interval).
+bool escapeStepClear(const Shape& self_shape, const SampleSet& set, size_t i,
+                     const EscapeCert& cert) {
+    constexpr double kTol = 1e-9;
+    const Sample& q = set.pts[i];
+    if (!cert.body_fixed) {
+        Verts va;
+        place(self_shape, q.x, q.y, q.yaw, &va);
+        double m = kInf;
+        for (int k = 0; k < va.n; ++k) {
+            m = std::min(m, cert.nx * va.x[k] + cert.ny * va.y[k]);
+        }
+        if (m < cert.rhs - kTol) {
+            return false;
+        }
+    } else {
+        const double c = std::cos(q.yaw), s = std::sin(q.yaw);
+        double m = kInf;
+        for (int k = 0; k < cert.peer_verts.n; ++k) {
+            const double dx = cert.peer_verts.x[k] - q.x, dy = cert.peer_verts.y[k] - q.y;
+            const double bx = dx * c + dy * s;   // R(-yaw) * (peer_vertex - origin)
+            const double by = -dx * s + dy * c;
+            m = std::min(m, cert.nx * bx + cert.ny * by);
+        }
+        if (m < cert.rhs - kTol) {
+            return false;
+        }
+    }
+    if (i == 0) {
+        return true;
+    }
+    const Sample& prev = set.pts[i - 1];
+    if (q.s != prev.s) {
+        return true;  // fixed-yaw translation: affine in s, endpoints bound it
+    }
+    const double dpsi = rc::wrapAngle(q.yaw - prev.yaw);
+    if (dpsi == 0.0) {
+        return true;
+    }
+    const double lo = std::min(0.0, dpsi), hi = std::max(0.0, dpsi);
+    // The rotation pivot: q sits on the circle about the route vertex,
+    // c = q.origin + ell * (cos yaw, sin yaw).
+    const double cx = q.x + set.ell * std::cos(q.yaw);
+    const double cy = q.y + set.ell * std::sin(q.yaw);
+    auto interior_clear = [&](double A, double B, double C) {
+        const double psi = std::atan2(-B, -A);  // the global-min critical angle
+        const double off = rc::wrapAngle(psi - prev.yaw);
+        return off < lo || off > hi ||
+               C + A * std::cos(psi) + B * std::sin(psi) >= cert.rhs - kTol;
+    };
+    if (!cert.body_fixed) {
+        // World vertex of body corner k: c + R(psi) (bx-ell, by); its
+        // n-projection is C + A cos psi + B sin psi.
+        const int nv = self_shape.rect ? 4 : 16;
+        for (int k = 0; k < nv; ++k) {
+            const double bx = self_shape.bx[k] - set.ell, by = self_shape.by[k];
+            const double A = cert.nx * bx + cert.ny * by;
+            const double B = cert.ny * bx - cert.nx * by;
+            if (std::hypot(A, B) < 1e-12) {
+                continue;  // vertex pinned at the pivot: constant projection
+            }
+            if (!interior_clear(A, B, cert.nx * cx + cert.ny * cy)) {
+                return false;
+            }
+        }
+    } else {
+        // Peer vertex y_m mapped into self's body frame:
+        // (ell, 0) + R(-psi) (y_m - c); its u-projection is C' + A' cos psi +
+        // B' sin psi.
+        for (int k = 0; k < cert.peer_verts.n; ++k) {
+            const double dx = cert.peer_verts.x[k] - cx, dy = cert.peer_verts.y[k] - cy;
+            const double A = cert.nx * dx + cert.ny * dy;
+            const double B = cert.nx * dy - cert.ny * dx;
+            if (std::hypot(A, B) >= 1e-12 &&
+                !interior_clear(A, B, cert.nx * set.ell)) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 struct StaticPoly {
@@ -268,6 +443,12 @@ struct Plan {
     bool final_move{true};
     Pose goal;
     std::vector<rc::Point> via;
+    // Escape certificates owned by THIS route admission: one per parked peer
+    // the route's start pose overlapped inside the pair margin. They bind the
+    // admitted route to its frozen start geometry only - a peer that moved
+    // after admission, a new peer, and any re-admitted route get fresh
+    // certificates or the full margin.
+    std::vector<EscapeCert> escape_certs;
 };
 
 struct Body {
@@ -364,6 +545,25 @@ struct ResetPlanner::Impl {
         return clearAtLeast(va.view(), vb.view(), margin);
     }
 
+    static bool samePose(const Pose& a, const Pose& b) {
+        return std::abs(a.x - b.x) < 1e-6 && std::abs(a.y - b.y) < 1e-6 &&
+               std::abs(wrap(a.yaw - b.yaw)) < 1e-6;
+    }
+
+    // The admission certificate a parked peer carries, if any: peer id AND the
+    // pose the certificate froze must both match. A peer that parked or moved
+    // after this route's admission has no certificate and clears by the full
+    // pair margin.
+    static const EscapeCert* matchCert(const Body& peer,
+                                       const std::vector<EscapeCert>& certs) {
+        for (const EscapeCert& cert : certs) {
+            if (cert.peer_id == peer.id && samePose(cert.peer_pose, peer.pose)) {
+                return &cert;
+            }
+        }
+        return nullptr;
+    }
+
     bool poseClearOfStatics(const Body& body, const Pose& p, double margin,
                             std::string* blocker = nullptr) const {
         Verts v;
@@ -395,18 +595,15 @@ struct ResetPlanner::Impl {
     // First violation of the sweeps `sets` of `self`, from the per-variant start index `from`.
     // Hard: a static, the fence or a parked body (it does not go away by waiting for a mover).
     // Soft: the pose or the remaining reserved sweep of a mover (it shrinks as the mover advances).
+    // A parked peer carrying an admission escape certificate is checked against that
+    // certificate until the frozen escape index; the full pair margin applies after.
     Violation firstViolation(const Body& self, const std::vector<const SampleSet*>& sets,
-                             const std::vector<size_t>& from) const {
+                             const std::vector<size_t>& from,
+                             const std::vector<EscapeCert>& certs) const {
         Violation result;
         const double m_static = cfg.static_margin + self.delta;
         const double m_fence = cfg.fence_margin + self.delta;
         const double m_parked = cfg.pair_margin + self.delta;
-        // An overlap with a parked body that the route inherits from the body's own
-        // current pose is a pre-existing condition, not a violation the route
-        // creates: the swept path may never close that gap further (pulling out is
-        // the only possible first move), while approaching a parked body below the
-        // pair margin from a clean start still fails outright.
-        std::map<const Body*, double> parked_margins;
         // Chunk of a mover's reservation that may touch the candidate chunk.
         struct MoverChunk {
             const Body* body;
@@ -445,7 +642,15 @@ struct ResetPlanner::Impl {
                     }
                     if (!other.plan_active) {
                         const Sample at = poseSample(other, other.pose);
-                        if (!separated(cb, at.box, m_parked)) {
+                        // A separated chunk holds the full margin at every
+                        // sample and therefore lies entirely past the escape
+                        // index; only the chunk still containing index <=
+                        // escaped_at can carry an unverified escape step into
+                        // the first separated sample.
+                        const EscapeCert* cert = matchCert(other, certs);
+                        if (!separated(cb, at.box, m_parked) ||
+                            (cert != nullptr && v < cert->escaped_at.size() &&
+                             first <= cert->escaped_at[v])) {
                             rel_parked.push_back(&other);
                         }
                         continue;
@@ -506,17 +711,22 @@ struct ResetPlanner::Impl {
                         }
                     }
                     for (const Body* p : rel_parked) {
-                        auto bound = parked_margins.find(p);
-                        if (bound == parked_margins.end()) {
-                            Verts va, vb;
-                            place(self.shape, self.pose.x, self.pose.y, self.pose.yaw, &va);
-                            place(p->shape, p->pose.x, p->pose.y, p->pose.yaw, &vb);
-                            bound = parked_margins
-                                        .emplace(p, std::min(m_parked,
-                                                             exactDistance(va.view(), vb.view())))
-                                        .first;
-                        }
-                        if (!sampleClear(self, q, *p, poseSample(*p, p->pose), bound->second)) {
+                        const EscapeCert* cert = matchCert(*p, certs);
+                        // Escape state is a pure function of the frozen route
+                        // index: at or before the admission-cached escape index
+                        // the step into q must keep the certificate's
+                        // halfspace; past it the ordinary pair margin applies.
+                        // The index is evaluated per variant and survives both
+                        // the broadphase skips of far chunks and a from[v] > 0
+                        // extension cursor - no prefix replay, no regained
+                        // allowance.
+                        const bool escaped = cert == nullptr ||
+                                             (v < cert->escaped_at.size() &&
+                                              i > cert->escaped_at[v]);
+                        const bool clear =
+                            escaped ? sampleClear(self, q, *p, poseSample(*p, p->pose), m_parked)
+                                    : escapeStepClear(self.shape, set, i, *cert);
+                        if (!clear) {
                             result.hard = true;
                             result.s = q.s;
                             result.blockers = {p->id};
@@ -688,6 +898,67 @@ struct ResetPlanner::Impl {
              0.04},
             {true, 0.0, 0.02}};
         const std::vector<ConvexObstacle>& base = staticObstacles();
+        // Escape certificates are attempt-independent geometry: which parked
+        // peers the route's start pose overlaps inside the pair margin, the
+        // inherited gap, and the separating halfspace each admission owns.
+        // A start at contact/penetration (d0 <= 0) is a hard reject of every
+        // candidate; a start at or beyond the margin needs no certificate.
+        const double m_parked = cfg.pair_margin + body.delta;
+        std::vector<EscapeCert> cert_base;
+        std::string cert_contact;
+        for (const auto& entry : bodies) {
+            const Body& other = entry.second;
+            if (&other == &body || other.plan_active) {
+                continue;
+            }
+            Verts va0, vb;
+            place(body.shape, body.pose.x, body.pose.y, body.pose.yaw, &va0);
+            place(other.shape, other.pose.x, other.pose.y, other.pose.yaw, &vb);
+            if (separation(va0.view(), vb.view(), m_parked) >= m_parked) {
+                continue;
+            }
+            const ClosestPair cp = closestPair(va0.view(), vb.view());
+            if (cp.d <= 0.0) {
+                cert_contact = other.id;
+                break;
+            }
+            if (cp.d >= m_parked) {
+                continue;
+            }
+            EscapeCert cert;
+            cert.peer_id = other.id;
+            cert.peer_pose = other.pose;
+            cert.peer_verts = vb;
+            cert.d0 = cp.d;
+            cert.body_fixed = cp.peer_v_to_self_e;
+            if (!cert.body_fixed) {
+                // The closest feature is a self vertex or a vertex-vertex
+                // pair: the separating halfspace lives in the world frame.
+                cert.nx = cp.nx;
+                cert.ny = cp.ny;
+                double mx = -kInf;
+                for (int k = 0; k < vb.n; ++k) {
+                    mx = std::max(mx, cp.nx * vb.x[k] + cp.ny * vb.y[k]);
+                }
+                cert.rhs = mx + cp.d;
+            } else {
+                // A peer vertex touches the interior of a self edge: the world
+                // tangent locks every first rotation, so the halfspace is
+                // attached to self's body frame instead - self's edge is then
+                // stationary and only the peer's vertices swing.
+                const double cy = std::cos(body.pose.yaw), sy = std::sin(body.pose.yaw);
+                cert.nx = -cp.nx * cy - cp.ny * sy;
+                cert.ny = cp.nx * sy - cp.ny * cy;
+                const int nv = body.shape.rect ? 4 : 16;
+                double mx = -kInf;
+                for (int k = 0; k < nv; ++k) {
+                    mx = std::max(mx, cert.nx * body.shape.bx[k] +
+                                          cert.ny * body.shape.by[k]);
+                }
+                cert.rhs = mx + cp.d;
+            }
+            cert_base.push_back(std::move(cert));
+        }
         bool static_route_found = false;
         for (size_t a = 0; a < attempts.size(); ++a) {
             const Attempt& at = attempts[a];
@@ -757,8 +1028,36 @@ struct ResetPlanner::Impl {
             for (const SampleSet& s : plan.sets) {
                 view.push_back(&s);
             }
+            if (!cert_contact.empty()) {
+                cand.why = "sweep: parked body in contact at s=0";
+                cand.blockers = {cert_contact};
+                continue;
+            }
+            // Escape certificates become the admission's owned state. The
+            // frozen escape index is derived once here - the first sample
+            // whose swept pose clears the parked peer by the full margin - so
+            // the verifier never replays the prefix.
+            plan.escape_certs = cert_base;
+            for (EscapeCert& cert : plan.escape_certs) {
+                cert.escaped_at.assign(plan.sets.size(), kNoEscape);
+                const auto peer = bodies.find(cert.peer_id);
+                if (peer == bodies.end() || !samePose(cert.peer_pose, peer->second.pose)) {
+                    continue;
+                }
+                const Sample at = poseSample(peer->second, cert.peer_pose);
+                for (size_t v = 0; v < plan.sets.size(); ++v) {
+                    const SampleSet& vs = plan.sets[v];
+                    for (size_t i = 0; i < vs.pts.size(); ++i) {
+                        if (sampleClear(body, vs.pts[i], peer->second, at, m_parked)) {
+                            cert.escaped_at[v] = i;
+                            break;
+                        }
+                    }
+                }
+            }
             const Violation violation =
-                firstViolation(body, view, std::vector<size_t>(view.size(), 0));
+                firstViolation(body, view, std::vector<size_t>(view.size(), 0),
+                               plan.escape_certs);
             if (violation.hard) {
                 std::ostringstream text;
                 text << "sweep: hard at s=" << violation.s;
@@ -942,6 +1241,18 @@ struct ResetPlanner::Impl {
             const bool new_request = v.request_generation > body.request_generation;
             const bool new_session = v.session != body.session;
             if (v.available || fresh) {
+                // A body the planner believes quiescent (no plan, not braking)
+                // whose reported pose moved is a scene change under every
+                // already-certified route: raise the same flag setWorld does so
+                // the next extension sweep re-verifies against the new pose.
+                // Escape certificates match on the frozen pose and simply stop
+                // applying; the full parked margin then decides.
+                if (!fresh && !body.plan_active && !body.awaiting_stop &&
+                    (std::hypot(v.pose.x - body.pose.x, v.pose.y - body.pose.y) > 0.02 ||
+                     std::abs(wrap(v.pose.yaw - body.pose.yaw)) > 0.02)) {
+                    world_changed = true;
+                    dirty = true;
+                }
                 body.pose = v.pose;
             }
             body.phase = v.phase;
@@ -1100,7 +1411,8 @@ struct ResetPlanner::Impl {
             for (const SampleSet& s : plan.sets) {
                 rest.push_back(&s);
             }
-            const Violation violation = firstViolation(body, rest, plan.cursor);
+            const Violation violation =
+                firstViolation(body, rest, plan.cursor, plan.escape_certs);
             const bool held = body.phase == Phase::Waiting;
             if (violation.hard && (held || world_changed)) {
                 // The rest of the frozen route is blocked by a body that will not go away

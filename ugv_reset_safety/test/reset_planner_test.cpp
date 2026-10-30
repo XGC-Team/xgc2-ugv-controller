@@ -148,6 +148,153 @@ TEST(ResetPlanner, TheParkedEscapeNeverClosesTheInheritedGap) {
     const DriveResult r = drive(world, s, scoutOptions());
     EXPECT_TRUE(r.all_arrived) << "rejections: " << r.rejected;
     EXPECT_GE(r.min_chassis_clearance, 0.0);
+    // The escape certificate's bound is the exact inherited gap of THIS pair, not merely
+    // non-penetration: the planning footprints may never come closer than where they started.
+    const double inherited = clearance(rect(-0.94, 0.0, 0.0, 0.45, 0.40),
+                                       rect(0.0, 0.0, 1.5707963, 0.45, 0.40));
+    ASSERT_LT(inherited, scoutOptions().planner.pair_margin);
+    const auto it = r.pair_gaps.find({0, 1});
+    ASSERT_NE(it, r.pair_gaps.end()) << "the start-overlapped pair must still be audited";
+    EXPECT_GE(it->second, inherited - 1e-6);
+}
+
+// The first move of a unicycle route is a rotation about the vehicle's rotation centre. Starting
+// beside a parked edge inside the pair margin, the required turn sweeps a moving vertex across
+// the parked edge's interior while every sampled endpoint still clears the inherited gap - a
+// vertex-only check would grant it. The admission certificate must refuse the sweep (or find an
+// alternative that keeps the gap); here no alternative exists, so admission fails outright.
+TEST(ResetPlanner, ATurnSweepingAVertexAcrossAParkedEdgeIsRefused) {
+    auto turn = [](bool parked_peer) {
+        ResetPlanner planner;
+        planner.setWorld({}, Fence());
+        std::vector<PlannerVehicle> vehicles;
+        PlannerVehicle self;
+        self.id = "ugv1";
+        self.session = 7;
+        self.request_generation = 1;
+        self.stop_certified = true;
+        self.spec = scoutSpec();
+        self.pose = {0.0, 0.0, 0.0};
+        self.target = {2.0, 2.0, 1.5707963};
+        self.phase = rc::Phase::Requesting;
+        self.ell_hat = -0.229;
+        self.ell_spread = 0.0;
+        vehicles.push_back(self);
+        if (parked_peer) {
+            PlannerVehicle peer;
+            peer.id = "ugv2";
+            peer.spec = scoutSpec();
+            peer.pose = {-0.95, 0.0, 0.0};  // right edge 0.05 left of ugv1's left edge
+            peer.phase = rc::Phase::Idle;
+            vehicles.push_back(peer);
+        }
+        return planner.update(0.0, vehicles);
+    };
+    for (const auto& d : turn(true)) {
+        EXPECT_NE(d.state, rc::GrantState::Go) << "the dipping sweep must never be granted";
+    }
+    bool go = false;
+    for (const auto& d : turn(false)) {
+        go = go || d.state == rc::GrantState::Go;
+    }
+    EXPECT_TRUE(go) << "the same turn is freely grantable without the parked edge";
+}
+
+// A start pose already in contact with a parked body (inherited gap <= 0) may not be issued an
+// escape certificate: every candidate is refused and nobody moves.
+TEST(ResetPlanner, AStartInContactWithAParkedBodyIsRefused) {
+    ResetPlanner planner;
+    planner.setWorld({}, Fence());
+    std::vector<PlannerVehicle> vehicles(2);
+    for (int i = 0; i < 2; ++i) {
+        vehicles[i].id = "ugv" + std::to_string(i + 1);
+        vehicles[i].session = 7;
+        vehicles[i].request_generation = 1;
+        vehicles[i].stop_certified = true;
+        vehicles[i].spec = scoutSpec();
+        vehicles[i].pose = {i == 0 ? -0.5 : 0.3, 0.0, 0.0};  // footprints interpenetrate
+        vehicles[i].target = {i == 0 ? -3.0 : 3.0, 0.0, 0.0};
+        vehicles[i].phase = rc::Phase::Requesting;
+        vehicles[i].ell_hat = -0.229;
+        vehicles[i].ell_spread = 0.0;
+    }
+    bool saw_contact = false;
+    for (const auto& d : planner.update(0.0, vehicles)) {
+        EXPECT_NE(d.state, rc::GrantState::Go) << "a contact start may not be escaped";
+        saw_contact = saw_contact || d.detail.find("contact") != std::string::npos;
+    }
+    EXPECT_TRUE(saw_contact) << "the refusal must name the contact, not a generic failure";
+}
+
+// The inherited-gap certificate admits only escape, never a return below the pair margin: a
+// route ending inside the margin of a peer that can never leave is refused, and the pair keeps
+// the inherited gap for the whole drive.
+TEST(ResetPlanner, AReturnInsideThePairMarginIsRefused) {
+    ScenarioFile world;
+    world.obstacles.push_back({{-1.5, 2.0}, {1.5, 2.0}, {1.5, 6.0}, {-1.5, 6.0}});
+    const auto s = scenario("return-inside-margin",
+                            {{-0.94, 0.0, 0.0}, {0.0, 0.0, 1.5707963}},
+                            {{0.90, 0.0, 0.0}, {0.0, 4.0, 1.5707963}});
+    const DriveResult r = drive(world, s, scoutOptions());
+    EXPECT_FALSE(r.arrived.at("ugv1")) << "the route ends inside the margin: refused";
+    const double inherited = clearance(rect(-0.94, 0.0, 0.0, 0.45, 0.40),
+                                       rect(0.0, 0.0, 1.5707963, 0.45, 0.40));
+    const auto it = r.pair_gaps.find({0, 1});
+    ASSERT_NE(it, r.pair_gaps.end());
+    EXPECT_GE(it->second, inherited - 1e-6);
+    EXPECT_GE(r.min_chassis_clearance, 0.0);
+}
+
+// The certificate is owned by its admission: it lives on the admitted plan, matches only the
+// peer id AND the frozen peer pose, and does not survive as a stale entitlement into the next
+// session. After the escape, a new request that would park inside the same peer's margin meets
+// the full pair margin, not the old inherited gap.
+TEST(ResetPlanner, ANewSessionKeepsTheFullMarginAgainstTheSameParkedPeer) {
+    ResetPlanner planner;
+    planner.setWorld({}, Fence());
+    auto vehicle = [](unsigned session, unsigned gen, rc::Phase phase, rc::Pose pose,
+                      rc::Pose target) {
+        PlannerVehicle v;
+        v.id = "ugv1";
+        v.session = session;
+        v.request_generation = gen;
+        v.stop_certified = true;
+        v.spec = scoutSpec();
+        v.pose = pose;
+        v.target = target;
+        v.phase = phase;
+        v.ell_hat = -0.229;
+        v.ell_spread = 0.0;
+        return v;
+    };
+    PlannerVehicle peer;
+    peer.id = "ugv2";
+    peer.spec = scoutSpec();
+    peer.pose = {0.0, 0.0, 1.5707963};
+    peer.phase = rc::Phase::Idle;
+    // Session 7: start overlapped (~0.09 gap), goal away - the escape is granted.
+    const auto first = planner.update(
+        0.0, {vehicle(7, 1, rc::Phase::Requesting, {-0.94, 0.0, 0.0}, {-3.0, 0.0, 0.0}), peer});
+    bool go = false;
+    for (const auto& d : first) {
+        go = go || (d.id == "ugv1" && d.state == rc::GrantState::Go);
+    }
+    ASSERT_TRUE(go) << "the escape itself must be grantable";
+    // Drive the granted route, then close the session out.
+    planner.update(0.3, {vehicle(7, 1, rc::Phase::Moving, {-1.5, 0.0, 0.0}, {-3.0, 0.0, 0.0}), peer});
+    planner.update(0.6, {vehicle(7, 1, rc::Phase::Moving, {-2.2, 0.0, 0.0}, {-3.0, 0.0, 0.0}), peer});
+    planner.update(0.9, {vehicle(7, 1, rc::Phase::Done, {-3.0, 0.0, 0.0}, {-3.0, 0.0, 0.0}), peer});
+    // Session 8: a goal 0.095 into the same peer's margin - above the old inherited gap (~0.09),
+    // below the pair margin. A leaked d0 allowance would grant it; the full margin must not.
+    for (int k = 0; k < 4; ++k) {
+        for (const auto& d : planner.update(
+                 1.4 + 0.2 * k,
+                 {vehicle(8, 1, rc::Phase::Requesting, {-3.0, 0.0, 0.0}, {-0.945, 0.0, 0.0}),
+                  peer})) {
+            EXPECT_NE(d.state, rc::GrantState::Go)
+                << "the inherited gap of the previous admission must not persist";
+        }
+    }
 }
 
 TEST(ResetPlanner, DecisionsAreADeterministicFunctionOfTheInputs) {
@@ -479,6 +626,47 @@ TEST(ResetPlanner, ASceneChangeUnderAGrantedRouteBrakesTheVehicle) {
     EXPECT_EQ(decisions[0].reason, rc::Reason::SceneChanged);
     ASSERT_EQ(decisions[0].blockers.size(), 1U);
     EXPECT_EQ(decisions[0].blockers[0], "new-wall");
+}
+
+TEST(ResetPlanner, AParkedBodyThatMovesIntoAGrantedRouteBrakesTheVehicle) {
+    // The peer never participates: declared once, then it moves into the certified
+    // corridor mid-drive with no setWorld call. Its pose delta is itself a scene
+    // change, so the extension sweep must re-verify and revoke the full grant.
+    StoppedPlannerFixture planner;
+    planner.setWorld({}, Fence());
+    PlannerVehicle one, two;
+    one.id = "ugv1";
+    one.session = 1;
+    one.spec = scoutSpec();
+    one.pose = {0.0, 0.0, 0.0};
+    one.target = {3.5, 0.0, 0.0};
+    one.phase = rc::Phase::Requesting;
+    two.id = "ugv2";
+    two.session = 2;
+    two.spec = scoutSpec();
+    two.pose = {5.0, 5.0, 0.0};
+    two.target = {5.0, 5.0, 0.0};
+    two.phase = rc::Phase::Idle;
+    const auto granted = planner.update(0.0, {one, two});
+    ASSERT_EQ(granted.size(), 1U);
+    ASSERT_EQ(granted[0].state, rc::GrantState::Go);
+    ASSERT_GE(granted[0].s_limit, 3.5);
+    one.phase = rc::Phase::Moving;
+    one.pose = {0.7, 0.0, 0.0};
+    EXPECT_TRUE(planner.update(0.3, {one, two}).empty());
+    // ugv2 slides into the corridor dead ahead while ugv1 keeps driving.
+    one.pose = {1.4, 0.0, 0.0};
+    two.pose = {2.8, 0.0, 0.0};
+    std::vector<PlannerDecision> brakes;
+    for (const auto& d : planner.update(0.6, {one, two})) {
+        if (d.id == "ugv1" && d.state == rc::GrantState::Brake) {
+            brakes.push_back(d);
+        }
+    }
+    ASSERT_FALSE(brakes.empty()) << "a moved parked body must invalidate the certified route";
+    EXPECT_EQ(brakes[0].reason, rc::Reason::Replan);
+    ASSERT_EQ(brakes[0].blockers.size(), 1U);
+    EXPECT_EQ(brakes[0].blockers[0], "ugv2");
 }
 
 // The family of the design measurements (235 scenarios on the TASE scene, 4 Scouts, the Reset
