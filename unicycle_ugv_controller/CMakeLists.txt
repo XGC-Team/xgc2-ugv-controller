@@ -92,9 +92,11 @@ else()
 endif()
 
 if(UGV_NMPC_REGENERATE)
-  find_program(PYTHON3_EXECUTABLE python3)
-  if(NOT PYTHON3_EXECUTABLE)
-    message(FATAL_ERROR "python3 is required to generate UGV NMPC acados code")
+  if(NOT XGC2_ACADOS_CODEGEN_PYTHON)
+    message(FATAL_ERROR "xgc2_acados did not export XGC2_ACADOS_CODEGEN_PYTHON; install the released SDK with its code-generation interpreter")
+  endif()
+  if(NOT IS_ABSOLUTE "${XGC2_ACADOS_CODEGEN_PYTHON}" OR NOT EXISTS "${XGC2_ACADOS_CODEGEN_PYTHON}")
+    message(FATAL_ERROR "XGC2_ACADOS_CODEGEN_PYTHON must be an existing absolute interpreter: ${XGC2_ACADOS_CODEGEN_PYTHON}")
   endif()
   execute_process(
     COMMAND ${CMAKE_COMMAND} -E env
@@ -107,7 +109,7 @@ if(UGV_NMPC_REGENERATE)
       LD_LIBRARY_PATH=${UGV_ACADOS_LIBRARY_PATH_ENV}:$ENV{LD_LIBRARY_PATH}
       MPLBACKEND=Agg
       PYTHONPATH=${UGV_NMPC_TOOL_PATH}:${UGV_ACADOS_PYTHONPATH_ENV}:$ENV{PYTHONPATH}
-      ${PYTHON3_EXECUTABLE} -B -m unicycle_nmpc.export_ros_generated_code
+      ${XGC2_ACADOS_CODEGEN_PYTHON} -B -m unicycle_nmpc.export_ros_generated_code
       --output-dir ${UGV_NMPC_GENERATED_DIR}
       --horizon ${UGV_NMPC_HORIZON}
       --steps ${UGV_NMPC_STEPS}
