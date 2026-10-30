@@ -477,6 +477,7 @@ struct Body {
     bool awaiting_stop{false}, certified{false}, plan_retiring{false}, go_received{false};
     Phase phase{Phase::Idle};
     bool uncontrolled{false};
+    bool available{true};
     bool participant{false};
     bool rejected{false};  // the planner ended this session
     bool plan_active{false};
@@ -1292,6 +1293,7 @@ struct ResetPlanner::Impl {
                 body.pose = v.pose;
             }
             body.phase = v.phase;
+            body.available = v.available;
             body.participant = v.phase == Phase::Requesting || v.phase == Phase::Waiting ||
                                v.phase == Phase::Moving || v.phase == Phase::Settling;
             if (!body.plan_active && (v.available || fresh)) {
@@ -1877,11 +1879,59 @@ struct ResetPlanner::Impl {
                 stuck.push_back(entry.first);
             }
         }
+        // A stuck body whose recorded blockers name a participant whose stop
+        // certificate is still in flight is deferred, not deadlocked: the
+        // certificate can turn that blocker into a parking claim. In flight
+        // means the incoming facts still show a controlled, available
+        // participant waiting on its post-zero certificate - a lost,
+        // uncontrolled or out-of-session body can never land one and does
+        // not defer anything. The deferral reaches only the component that
+        // transitively waits on such a pending blocker; every other stuck
+        // body is adjudicated normally.
+        auto inflight_blocker = [&](const Body& b) {
+            for (const std::string& id : b.blockers) {
+                const auto it = bodies.find(id);
+                if (it != bodies.end() && it->second.participant &&
+                    it->second.awaiting_stop && it->second.available &&
+                    !it->second.uncontrolled) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        std::set<std::string> deferred;
         for (const std::string& id : stuck) {
+            if (inflight_blocker(bodies[id])) {
+                deferred.insert(id);
+            }
+        }
+        bool grown = true;
+        while (grown) {
+            grown = false;
+            for (const std::string& id : stuck) {
+                if (deferred.count(id)) {
+                    continue;
+                }
+                for (const std::string& blocker : bodies[id].blockers) {
+                    if (deferred.count(blocker)) {
+                        deferred.insert(id);
+                        grown = true;
+                        break;
+                    }
+                }
+            }
+        }
+        for (const std::string& id : stuck) {
+            if (deferred.count(id)) {
+                continue;
+            }
             Body& b = bodies[id];
             std::vector<std::string> who = b.blockers;
-            who.insert(who.end(), stuck.begin(), stuck.end());
-            who.erase(std::remove(who.begin(), who.end(), id), who.end());
+            for (const std::string& other : stuck) {
+                if (other != id && !deferred.count(other)) {
+                    who.push_back(other);
+                }
+            }
             std::sort(who.begin(), who.end());
             who.erase(std::unique(who.begin(), who.end()), who.end());
             emitReject(b, Reason::Deadlock, "nobody can move and no parking move helps", who);
@@ -1953,30 +2003,7 @@ struct ResetPlanner::Impl {
                     no_route_pending = no_route_pending || (b.participant && !b.plan_active &&
                                                             !b.rejected && b.no_route_since >= 0.0);
                 }
-                // A blocker that is still an awaiting participant has its certificate in
-                // flight: once it lands the parking machinery can claim it, so the only
-                // fact against a body it blocks is a wait, not an irreversible verdict.
-                bool certification_pending = false;
-                for (const auto& entry : bodies) {
-                    const Body& b = entry.second;
-                    if (certification_pending) {
-                        break;
-                    }
-                    if (!b.participant || !b.certified || b.awaiting_stop || b.plan_active ||
-                        b.rejected || (b.phase != Phase::Requesting &&
-                                       b.phase != Phase::Waiting)) {
-                        continue;
-                    }
-                    for (const std::string& id : b.blockers) {
-                        const auto it = bodies.find(id);
-                        if (it != bodies.end() && it->second.participant &&
-                            it->second.awaiting_stop) {
-                            certification_pending = true;
-                            break;
-                        }
-                    }
-                }
-                if (!settling && !no_route_pending && !certification_pending) {
+                if (!settling && !no_route_pending) {
                     deadlock();
                 }
             }

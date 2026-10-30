@@ -779,7 +779,7 @@ TEST(ResetPlanner, APendingPeerChangeIsNotErasedByUnrelatedVerifications) {
     EXPECT_EQ(brakes[0].blockers[0], "ugv2");
 }
 
-// Root's scout-certification counterexample on the frozen field geometry: a certified
+// Root's scout-certification counterexample (a statics-free, limited case): a certified
 // participant whose route is hard at s=0 only because a blocking participant still awaits
 // its post-zero stop certificate is not deadlocked - that certificate can still arrive,
 // and once it does the same blocker is a parking claim (second arm). The irreversible
@@ -793,7 +793,7 @@ TEST(ResetPlanner, ABlockerAwaitingItsStopCertificateDefersTheDeadlockVerdict) {
                                {-6.0, -2.8, 1.079108},
                                {-6.0, -4.4, -1.527922},
                                {-6.0, -6.0, 0.533272}};
-    auto run = [&](bool both) {
+    auto run = [&](bool both, bool ugv2_available = true) {
         PlannerConfig cfg;
         cfg.step_yaw = 0.035;
         ugv_reset_safety::ResetPlanner planner(cfg);
@@ -825,6 +825,7 @@ TEST(ResetPlanner, ABlockerAwaitingItsStopCertificateDefersTheDeadlockVerdict) {
         }
         vehicles[0].stop_certified = true;
         vehicles[1].stop_certified = both;
+        vehicles[1].available = ugv2_available;
         return planner.update(0.268, vehicles);
     };
     // Only ugv1 certified: ugv2's certificate is still in flight, so the only fact against
@@ -839,6 +840,17 @@ TEST(ResetPlanner, ABlockerAwaitingItsStopCertificateDefersTheDeadlockVerdict) {
              std::find(d.blockers.begin(), d.blockers.end(), "ugv2") != d.blockers.end());
     }
     EXPECT_TRUE(held_by_awaiting) << "the stuck body must stay held on its awaiting blocker";
+    // A lost blocker can never land a certificate: it is not in flight, so the hold must
+    // not persist - ugv1 is adjudicated on the facts it actually has.
+    bool rejected_on_lost = false;
+    for (const auto& d : run(false, false)) {
+        rejected_on_lost =
+            rejected_on_lost ||
+            (d.id == "ugv1" && d.state == rc::GrantState::Reject &&
+             d.reason == rc::Reason::Deadlock);
+    }
+    EXPECT_TRUE(rejected_on_lost)
+        << "an unavailable blocker defers nothing - the verdict must not wait forever";
     // Both certified: the identical blocker becomes the parking move that frees ugv1.
     bool parked = false;
     for (const auto& d : run(true)) {
@@ -850,6 +862,72 @@ TEST(ResetPlanner, ABlockerAwaitingItsStopCertificateDefersTheDeadlockVerdict) {
         }
     }
     EXPECT_TRUE(parked) << "the certified blocker must be claimable by the parking move";
+}
+
+// The deferral is per-component, not global: a second pair that is genuinely mutually
+// stuck with every blocker settled must still receive its deadlock verdict even while
+// the awaiting-certification pair defers.
+TEST(ResetPlanner, AnIndependentDeadlockedComponentStillGetsItsVerdict) {
+    PlannerConfig cfg;
+    cfg.step_yaw = 0.035;
+    ugv_reset_safety::ResetPlanner planner(cfg);
+    Fence fence;
+    fence.xmin = -10;
+    fence.xmax = 10;
+    fence.ymin = -10;
+    fence.ymax = 10;
+    planner.setWorld({}, fence);
+    std::vector<PlannerVehicle> vehicles(4);
+    const rc::Pose poses[4] = {{-4.462397, -1.670390, -0.041435},
+                               {-5.523253, -2.032793, 0.586472},
+                               {5.0, 0.0, 0.0},
+                               {5.6, 0.0, 0.0}};
+    const rc::Pose goals[4] = {{-6.0, -1.2, -0.392974},
+                               {-6.0, -2.8, 1.079108},
+                               {8.0, 0.0, 0.0},
+                               {2.0, 0.0, 0.0}};
+    for (size_t i = 0; i < vehicles.size(); ++i) {
+        PlannerVehicle& v = vehicles[i];
+        v.id = "ugv" + std::to_string(i + 1);
+        v.session = 100 + i;
+        v.request_generation = 1;
+        v.spec = scoutSpec();
+        v.pose = poses[i];
+        v.target = goals[i];
+        v.phase = rc::Phase::Requesting;
+        v.ell_spread = -1.0;
+    }
+    const auto initial = planner.update(0.0, vehicles);
+    for (const auto& d : initial) {
+        for (auto& v : vehicles) {
+            if (v.id == d.id && d.state == rc::GrantState::Brake) {
+                v.acknowledged_grant_id = d.grant_id;
+            }
+        }
+    }
+    // ugv1 certified with ugv2's certificate still in flight; ugv3/ugv4 are both
+    // certified and sit inside each other's inflated start - a real deadlock that
+    // must not be masked by the pending component.
+    vehicles[0].stop_certified = true;
+    vehicles[1].stop_certified = false;
+    vehicles[2].stop_certified = true;
+    vehicles[3].stop_certified = true;
+    std::map<std::string, bool> deadlocked;
+    for (const auto& d : planner.update(0.268, vehicles)) {
+        deadlocked[d.id] =
+            deadlocked[d.id] ||
+            (d.state == rc::GrantState::Reject && d.reason == rc::Reason::Deadlock);
+        if (d.id == "ugv1") {
+            EXPECT_FALSE(d.state == rc::GrantState::Reject &&
+                         d.reason == rc::Reason::Deadlock)
+                << "the pending component still defers its verdict";
+        }
+    }
+    EXPECT_FALSE(deadlocked["ugv1"]) << "ugv1's blocker is still certifying: deferred";
+    EXPECT_TRUE(deadlocked["ugv3"])
+        << "ugv3's component is unsolvable now - its verdict must arrive";
+    EXPECT_TRUE(deadlocked["ugv4"])
+        << "ugv4's component is unsolvable now - its verdict must arrive";
 }
 
 // The family of the design measurements (235 scenarios on the TASE scene, 4 Scouts, the Reset
