@@ -404,8 +404,11 @@ class ResetExecutor {
             // handover below never sees command_.zero(), and the stall watchdog would end the
             // session. For a non-final route the heading precision is not part of completion,
             // so a measured-stopped vehicle at the route end stops commanding here.
+            // external_command_zero must not gate this: it mirrors the outstanding command, so
+            // it is false precisely while the creep persists; stopped(m) re-checks it once the
+            // cleared command has actually published.
             if (complete_prefix && !final_ && tracker_.atEnd() && m.healthy &&
-                m.external_command_zero && velocity_.valid() &&
+                velocity_.valid() &&
                 velocity_.speed() <= cfg_.stop_speed &&
                 std::abs(velocity_.yawRate()) <= cfg_.stop_yaw_rate) {
                 command_ = {};

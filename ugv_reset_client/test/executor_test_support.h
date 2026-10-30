@@ -116,6 +116,10 @@ class SoloRig {
         m.pose = p;
         m.pose_stamp = t_ - plant_.pose_delay + ros_offset_;
         m.healthy = healthy && !unhealthy_;
+        // Field wiring (unicycle/mecanum controllers): external_command_zero reports the
+        // controller's outstanding outer command, so it is false while a published command is
+        // still nonzero — including the tracker's own terminal creep.
+        m.external_command_zero = cmd_.zero();
         return m;
     }
 
