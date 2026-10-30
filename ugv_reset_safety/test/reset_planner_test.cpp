@@ -712,6 +712,73 @@ TEST(ResetPlanner, ATinyIncrementDriftOfACertPeerInvalidatesTheCertificate) {
     EXPECT_EQ(brakes[0].blockers[0], "ugv2");
 }
 
+TEST(ResetPlanner, APendingPeerChangeIsNotErasedByUnrelatedVerifications) {
+    // Two consumers share the planner: ugv1 holds a full grant (the cert peer
+    // ugv2 inside its margin) and ugv4 holds a contested prefix, so an
+    // unrelated extension sweep runs every 0.2 s. ugv2 creeps 0.05e-6 m per
+    // observation - below the 1e-6 anchor authority inside any single
+    // extension window. Re-baselining ugv2 on every unrelated verification
+    // would erase the pending change before ugv1's grant ever rechecks; the
+    // anchor belongs to the body alone.
+    StoppedPlannerFixture planner;
+    planner.setWorld({}, Fence());
+    PlannerVehicle one, two, three, four;
+    one.id = "ugv1";
+    one.session = 1;
+    one.spec = scoutSpec();
+    one.pose = {-0.94, 0.0, 0.0};
+    one.target = {-3.0, 0.0, 0.0};
+    one.phase = rc::Phase::Requesting;
+    two.id = "ugv2";
+    two.session = 2;
+    two.spec = scoutSpec();
+    two.pose = {0.0, 0.0, 1.5707963};
+    two.phase = rc::Phase::Idle;
+    three.id = "ugv3";
+    three.session = 3;
+    three.spec = scoutSpec();
+    three.pose = {-3.0, 6.0, 0.0};
+    three.target = {3.0, 6.0, 0.0};
+    three.phase = rc::Phase::Requesting;
+    four.id = "ugv4";
+    four.session = 4;
+    four.spec = scoutSpec();
+    four.pose = {0.0, 3.0, 1.5708};
+    four.target = {0.0, 9.0, 1.5708};
+    four.phase = rc::Phase::Requesting;
+    std::map<std::string, PlannerDecision> by;
+    for (const auto& d : planner.update(0.0, {one, two, three, four})) {
+        by[d.id] = d;
+    }
+    ASSERT_EQ(by["ugv1"].state, rc::GrantState::Go);
+    ASSERT_GE(by["ugv1"].s_limit, 2.0);
+    ASSERT_EQ(by["ugv3"].state, rc::GrantState::Go);
+    ASSERT_EQ(by["ugv4"].state, rc::GrantState::Go);
+    ASSERT_LT(by["ugv4"].s_limit, 6.0) << "ugv4 must hold a prefix, not the route";
+    // ugv3 waits short of the contested crossing so its reservation keeps
+    // ugv4's prefix open; ugv1 creeps forward as a committed mover.
+    one.phase = rc::Phase::Moving;
+    three.phase = rc::Phase::Moving;
+    four.phase = rc::Phase::Moving;
+    one.pose = {-0.95, 0.0, 0.0};
+    three.pose = {-0.5, 6.0, 0.0};
+    four.pose = {0.0, 3.5, 1.5708};
+    std::vector<PlannerDecision> brakes;
+    for (int k = 1; k <= 120 && brakes.empty(); ++k) {
+        two.pose = {-0.05e-6 * k, 0.0, 1.5707963};
+        for (const auto& d : planner.update(0.02 * k, {one, two, three, four})) {
+            if (d.id == "ugv1" && d.state == rc::GrantState::Brake) {
+                brakes.push_back(d);
+            }
+        }
+    }
+    ASSERT_FALSE(brakes.empty())
+        << "unrelated sweeps must not erase drift accumulating toward the grant";
+    EXPECT_EQ(brakes[0].reason, rc::Reason::Replan);
+    ASSERT_EQ(brakes[0].blockers.size(), 1U);
+    EXPECT_EQ(brakes[0].blockers[0], "ugv2");
+}
+
 // The family of the design measurements (235 scenarios on the TASE scene, 4 Scouts, the Reset
 // footprint 0.90 x 0.80): with ideal followers the planner alone must be sound, whatever it
 // completes.

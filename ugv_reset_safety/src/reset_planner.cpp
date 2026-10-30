@@ -459,11 +459,11 @@ struct Body {
     double no_route_since{-1.0};
     double last_limit{0.0};
     Pose pose, target, progress_pose;
-    // The pose the most recent route verification actually consumed for this
-    // body (re-anchored only when a sweep or admission ran). Staleness of a
-    // quiescent body is measured against this anchor, never against the
-    // previous observation - drift smaller than any per-tick threshold still
-    // accumulates past the anchor.
+    // The pose this body's own last check discharged: drift from an
+    // unverified report is measured against this anchor, never against the
+    // previous observation, so sub-epsilon drift still accumulates past it.
+    // The anchor moves only inside this body's staleness check - an
+    // unrelated verification never erases a pending change.
     Pose proof_pose;
     bool proof_pose_set{false};
     std::vector<std::string> last_blockers, blockers;
@@ -519,9 +519,6 @@ struct ResetPlanner::Impl {
     double last_extension{-1e9};
     double fleet_progress{0.0};
     bool dirty{true};
-    // Set whenever a route verification ran this update; its end marks the
-    // pose each quiescent body was last proven at (Body::proof_pose).
-    mutable bool sweep_consumed{false};
     uint32_t next_grant{1};
 
     explicit Impl(const PlannerConfig& config) : cfg(config) {}
@@ -1065,7 +1062,6 @@ struct ResetPlanner::Impl {
                     }
                 }
             }
-            sweep_consumed = true;
             const Violation violation =
                 firstViolation(body, view, std::vector<size_t>(view.size(), 0),
                                plan.escape_certs);
@@ -1303,9 +1299,18 @@ struct ResetPlanner::Impl {
                 body.shape = makeShape(v.spec);
                 setDelta(body);
             }
-            if (stale_quiescent && inGrantedCorridor(body)) {
-                world_changed = true;
-                dirty = true;
+            // A quiescent body whose report drifted from its own anchor is a
+            // pending change: inside a granted corridor it raises the flag
+            // the extension sweep consumes; outside every corridor the
+            // exclusion itself discharges it. The anchor moves only here -
+            // no unrelated sweep or admission can erase what was captured.
+            if (stale_quiescent) {
+                if (inGrantedCorridor(body)) {
+                    world_changed = true;
+                    dirty = true;
+                }
+                body.proof_pose = v.pose;
+                body.proof_pose_set = true;
             }
             body.ell_hat = v.ell_hat;
             body.ell_spread = v.ell_spread;
@@ -1455,7 +1460,6 @@ struct ResetPlanner::Impl {
             for (const SampleSet& s : plan.sets) {
                 rest.push_back(&s);
             }
-            sweep_consumed = true;
             const Violation violation =
                 firstViolation(body, rest, plan.cursor, plan.escape_certs);
             const bool held = body.phase == Phase::Waiting;
@@ -1999,15 +2003,6 @@ std::vector<PlannerDecision> ResetPlanner::update(double now,
     m.out.clear();
     m.sync(vehicles);
     m.step(admit);
-    if (m.sweep_consumed) {
-        // Every verification that ran this update consumed the current poses:
-        // they become the proof anchor for the next round of drift checks.
-        for (auto& entry : m.bodies) {
-            entry.second.proof_pose = entry.second.pose;
-            entry.second.proof_pose_set = true;
-        }
-        m.sweep_consumed = false;
-    }
     const double ms =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     m.stats.plan_ms_max = std::max(m.stats.plan_ms_max, ms);
