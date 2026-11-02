@@ -42,7 +42,6 @@ void StateInputProducer::stateCallback(
     state_.estimator_flags = msg->flags;
     state_.received = true;
     state_.velocity_valid = std::isfinite(state_.vx) && std::isfinite(state_.vy);
-    post(event_type::INPUT_STATE_UPDATED, "state_estimate", toRosTime(state_.stamp));
 }
 
 void StateInputProducer::poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
@@ -67,7 +66,6 @@ void StateInputProducer::poseCallback(const geometry_msgs::PoseStamped::ConstPtr
     state_.estimator_state = 0U;
     state_.estimator_flags = 0U;
     state_.received = true;
-    post(event_type::INPUT_STATE_UPDATED, "platform_pose", toRosTime(state_.stamp));
 }
 
 void StateInputProducer::post(::state_machine::EventId id, const char* source,

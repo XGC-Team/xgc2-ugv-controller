@@ -34,7 +34,6 @@ void PvaReferenceInputProducer::callback(
     reference.ay = msg->ay;
     reference.valid = true;
     controller_.setWorldPva(reference);
-    post(event_type::INPUT_REFERENCE_UPDATED, "reference_pva", toRosTime(reference.stamp));
 }
 
 void PvaReferenceInputProducer::post(::state_machine::EventId id, const char* source,

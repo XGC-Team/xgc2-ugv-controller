@@ -1,5 +1,7 @@
 #include "unicycle_reference_trajectory/unicycle_reference_trajectory_node.h"
 
+#include <ros/callback_queue.h>
+
 #include <algorithm>
 #include <cmath>
 
@@ -46,11 +48,18 @@ ReferenceTrajectoryNode::~ReferenceTrajectoryNode() {
 void ReferenceTrajectoryNode::run(double main_frequency_hz) {
     const double frequency =
         std::isfinite(main_frequency_hz) && main_frequency_hz > 0.0 ? main_frequency_hz : 100.0;
-    ROS_INFO("[ReferenceTrajectoryNode] Starting main loop at %.1f Hz", frequency);
-    ros::Rate rate(frequency);
+    ROS_INFO("[ReferenceTrajectoryNode] Starting demand-driven main loop (max %.1f Hz)", frequency);
+    ::state_machine::adt::AdaptiveScheduleTracker schedule(1.0 / frequency);
+    ros::CallbackQueue* queue = ros::getGlobalCallbackQueue();
+    double wait_sec = 0.0;
     while (ros::ok()) {
-        ros::spinOnce();
-        const auto update = driver_.update(ros::Time::now().toSec());
+        if (queue != nullptr) {
+            queue->callAvailable(ros::WallDuration(wait_sec));
+        } else {
+            ros::spinOnce();
+        }
+        const double now_sec = ros::Time::now().toSec();
+        const auto update = driver_.update(now_sec);
         if (update.default_analytic == ReferenceTrajectoryDriver::Request::kRejected) {
             ROS_WARN_THROTTLE(1.0, "[ReferenceTrajectoryNode] Rejected default analytic reference");
         } else if (update.default_analytic == ReferenceTrajectoryDriver::Request::kPostFailed) {
@@ -60,7 +69,8 @@ void ReferenceTrajectoryNode::run(double main_frequency_hz) {
                               driver_.postError().c_str());
         }
         dispatchOutputEvents(update.events);
-        rate.sleep();
+        wait_sec = std::max(1.0 / frequency,
+                            schedule.nextWaitDurationSec(driver_.runtime().tickPolicy(), now_sec));
     }
 }
 

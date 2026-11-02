@@ -27,7 +27,6 @@ void ReferenceInputProducer::analyticCallback(
         ROS_WARN_THROTTLE(1.0, "[UgvReferenceInputProducer] Rejected active analytic reference");
         return;
     }
-    post(event_type::INPUT_REFERENCE_UPDATED, "active_analytic");
 }
 
 void ReferenceInputProducer::polynomialCallback(
@@ -36,7 +35,6 @@ void ReferenceInputProducer::polynomialCallback(
         ROS_WARN_THROTTLE(1.0, "[UgvReferenceInputProducer] Rejected active polynomial reference");
         return;
     }
-    post(event_type::INPUT_REFERENCE_UPDATED, "active_polynomial");
 }
 
 void ReferenceInputProducer::sampledCallback(
@@ -45,7 +43,6 @@ void ReferenceInputProducer::sampledCallback(
         ROS_WARN_THROTTLE(1.0, "[UgvReferenceInputProducer] Rejected active sampled reference");
         return;
     }
-    post(event_type::INPUT_REFERENCE_UPDATED, "active_sampled");
 }
 
 void ReferenceInputProducer::post(::state_machine::EventId id, const char* source) {

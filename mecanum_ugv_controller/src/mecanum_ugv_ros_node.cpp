@@ -2,6 +2,7 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
 #include <geometry_msgs/TwistStamped.h>
+#include <ros/callback_queue.h>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
 #include <ugv_reset_client/reset_ros.h>
@@ -78,9 +79,16 @@ class MecanumUgvRosNode {
     }
 
     void run() {
-        ros::WallRate rate(finitePositiveOr(config_.control_rate_hz, 500.0));
+        const double nominal_hz = finitePositiveOr(config_.control_rate_hz, 500.0);
+        ::state_machine::adt::AdaptiveScheduleTracker schedule(1.0 / nominal_hz);
+        ros::CallbackQueue* queue = ros::getGlobalCallbackQueue();
+        double wait_sec = 0.0;
         while (ros::ok()) {
-            ros::spinOnce();
+            if (queue != nullptr) {
+                queue->callAvailable(ros::WallDuration(wait_sec));
+            } else {
+                ros::spinOnce();
+            }
             const double now = ros::Time::now().toSec();
             controller_.update(now);
             if (!controller_.lastResetAdmissionMiss().empty() &&
@@ -119,7 +127,10 @@ class MecanumUgvRosNode {
                 }
                 control_state_pub_.publish(status);
             }
-            rate.sleep();
+            const double wall_now = ros::WallTime::now().toSec();
+            wait_sec = std::max(
+                1.0 / nominal_hz,
+                schedule.nextWaitDurationSec(controller_.tickPolicy(nominal_hz), wall_now));
         }
     }
 
@@ -275,11 +286,6 @@ class MecanumUgvRosNode {
         state_.stamp =
             toCoreTime(msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp);
         state_.received = true;
-        ::state_machine::Event event(event_type::INPUT_STATE_UPDATED,
-                                     ::state_machine::EventTimestamp{state_.stamp.toSec()});
-        event.source = "platform_pose";
-        event.category = ::state_machine::EventCategory::kInput;
-        (void)controller_.postEvent(std::move(event));
     }
 
     void resetPoseCallback(const geometry_msgs::Pose2D::ConstPtr& msg) {
@@ -305,11 +311,6 @@ class MecanumUgvRosNode {
         reference.vy = msg->twist.linear.y;
         reference.valid = true;
         controller_.setWorldReference(reference);
-        ::state_machine::Event event(event_type::INPUT_REFERENCE_UPDATED,
-                                     ::state_machine::EventTimestamp{reference.stamp.toSec()});
-        event.source = "reference_twist";
-        event.category = ::state_machine::EventCategory::kInput;
-        (void)controller_.postEvent(std::move(event));
     }
 
     geometry_msgs::Twist makeTwist(const ControlCommand& command) {

@@ -1,5 +1,7 @@
 #include "unicycle_ugv_controller/unicycle_ugv_ros_node.h"
 
+#include <ros/callback_queue.h>
+
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -111,12 +113,21 @@ UnicycleUgvRosNode::~UnicycleUgvRosNode() {
 
 void UnicycleUgvRosNode::run(double frequency_hz) {
     const double frequency = finitePositiveOr(frequency_hz, config_.control_rate_hz);
-    ROS_INFO("[UnicycleUgvRosNode] Starting main loop at %.1f Hz", frequency);
-    ros::WallRate rate(frequency);
+    ROS_INFO("[UnicycleUgvRosNode] Starting demand-driven main loop (nominal %.1f Hz)", frequency);
+    ::state_machine::adt::AdaptiveScheduleTracker schedule(1.0 / frequency);
+    ros::CallbackQueue* queue = ros::getGlobalCallbackQueue();
+    double wait_sec = 0.0;
     while (ros::ok()) {
-        ros::spinOnce();
+        if (queue != nullptr) {
+            queue->callAvailable(ros::WallDuration(wait_sec));
+        } else {
+            ros::spinOnce();
+        }
         updateOnce();
-        rate.sleep();
+        const double now_sec = ros::WallTime::now().toSec();
+        wait_sec = std::max(
+            1.0 / frequency,
+            schedule.nextWaitDurationSec(controller_.tickPolicy(frequency), now_sec));
     }
 }
 

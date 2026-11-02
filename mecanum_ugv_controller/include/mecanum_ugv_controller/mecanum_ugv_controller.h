@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <mutex>
+#include <state_machine/adt.hpp>
 #include <state_machine/state_machine.hpp>
 #include <string>
 
@@ -23,7 +24,13 @@ class MecanumUgvController {
         return current_time_sec_;
     }
     ControllerConfig config() const;
+    const ControllerConfig& configRef() const noexcept {
+        return config_;
+    }
     void setConfig(const ControllerConfig& config);
+    ::state_machine::adt::TickPolicy tickPolicy(double nominal_hz) const;
+    ::state_machine::adt::Expected<void, std::string> checkResetAdmission(
+        const std::string& source) const;
     ::state_machine::StateMachine& stateMachine() {
         return *machine_;
     }

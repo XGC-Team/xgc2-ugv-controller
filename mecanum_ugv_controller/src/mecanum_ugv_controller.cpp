@@ -103,22 +103,58 @@ void MecanumUgvController::noteResetAdmissionAfterUpdate() {
     MECANUM_LOG_ERROR("[MecanumUgvController] %s", last_reset_admission_miss_.c_str());
 }
 
+::state_machine::adt::Expected<void, std::string> MecanumUgvController::checkResetAdmission(
+    const std::string& source) const {
+    const auto control_id = machine_->currentState(region_type::CONTROL);
+    const std::string control = machine_->currentStateName(region_type::CONTROL);
+    const bool health = healthReady();
+    const bool target = resetTargetReady();
+    if (control_id == state_type::Ready || control_id == state_type::Custom1 ||
+        control_id == state_type::Reset) {
+        return {};
+    }
+    std::ostringstream oss;
+    oss << "RESET_REQUESTED unmatched topic=" << source << " CONTROL=" << control
+        << " health=" << (health ? "ready" : "unhealthy")
+        << " target=" << (target ? "ready" : "missing");
+    if (control_id == state_type::SelfCheck && health) {
+        oss << " reason=health-ready-but-stuck-in-SelfCheck";
+    } else if (control_id == state_type::SelfCheck) {
+        oss << " reason=unhealthy-SelfCheck-has-no-Reset-edge";
+    } else {
+        oss << " reason=no-matching-transition";
+    }
+    return ::state_machine::adt::Unexpected<std::string>(oss.str());
+}
+
 std::string MecanumUgvController::describeResetAdmissionMiss(const std::string& source) const {
+    const auto admission = checkResetAdmission(source);
+    if (!admission.hasValue()) {
+        return admission.error();
+    }
     const std::string control = machine_->currentStateName(region_type::CONTROL);
     const bool health = healthReady();
     const bool target = resetTargetReady();
     std::ostringstream oss;
     oss << "RESET_REQUESTED unmatched topic=" << source << " CONTROL=" << control
         << " health=" << (health ? "ready" : "unhealthy")
-        << " target=" << (target ? "ready" : "missing");
-    if (control == "SelfCheck" && health) {
-        oss << " reason=health-ready-but-stuck-in-SelfCheck";
-    } else if (control == "SelfCheck") {
-        oss << " reason=unhealthy-SelfCheck-has-no-Reset-edge";
-    } else {
-        oss << " reason=no-matching-transition";
-    }
+        << " target=" << (target ? "ready" : "missing") << " reason=no-matching-transition";
     return oss.str();
+}
+
+::state_machine::adt::TickPolicy MecanumUgvController::tickPolicy(double nominal_hz) const {
+    const double control_hz =
+        (std::isfinite(nominal_hz) && nominal_hz > 0.0) ? nominal_hz : config_.control_rate_hz;
+    if (!machine_) {
+        return ::state_machine::adt::TickPeriodic{1.0 / std::max(1.0, control_hz)};
+    }
+    const auto active = machine_->currentState(region_type::CONTROL);
+    if (active == state_type::SelfCheck || active == state_type::Ready) {
+        const double idle_hz =
+            std::min(control_hz, std::max(20.0, config_.idle_cmd_rate_hz));
+        return ::state_machine::adt::TickPeriodic{1.0 / std::max(1.0, idle_hz)};
+    }
+    return ::state_machine::adt::TickPeriodic{1.0 / std::max(1.0, control_hz)};
 }
 
 ControllerConfig MecanumUgvController::config() const {
@@ -151,7 +187,7 @@ void MecanumUgvController::applyResetSpec() {
 }
 
 bool MecanumUgvController::healthReady() const {
-    const auto cfg = config();
+    const auto& cfg = config_;
     return stateFresh(state_, Time(current_time_sec_), cfg.state_timeout) &&
            insideFence(state_, cfg);
 }

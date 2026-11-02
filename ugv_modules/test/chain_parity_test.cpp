@@ -254,7 +254,6 @@ Trace nodePath() {
             state.estimator_flags = 0;
             state.received = true;
             state.velocity_valid = true;
-            post(ugv::event_type::INPUT_STATE_UPDATED, now, "state_estimate");
         }
 
         // the generator, every 5th period (unicycle_reference_trajectory_node's main loop)
@@ -294,27 +293,21 @@ Trace nodePath() {
                     std::memset(p.get(), 0, sizeof *p);
                     rp::toPayload(*p, m);
                     run.reference.push_back({"active_analytic", ns, bytesOf(*p)});
-                    if (controller.referenceCache().updateAnalytic(toController(m))) {
-                        post(ugv::event_type::INPUT_REFERENCE_UPDATED, now, "active_analytic");
-                    }
+                    (void)controller.referenceCache().updateAnalytic(toController(m));
                 } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_POLYNOMIAL) {
                     const auto& m = runtime.activePolynomialMessage();
                     auto p = std::make_unique<xgc2_ugv_polynomial_reference>();
                     std::memset(p.get(), 0, sizeof *p);
                     rp::toPayload(*p, m);
                     run.reference.push_back({"active_polynomial", ns, bytesOf(*p)});
-                    if (controller.referenceCache().updatePolynomial(toController(m))) {
-                        post(ugv::event_type::INPUT_REFERENCE_UPDATED, now, "active_polynomial");
-                    }
+                    (void)controller.referenceCache().updatePolynomial(toController(m));
                 } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_SAMPLED) {
                     const auto& m = runtime.activeSampledMessage();
                     auto p = std::make_unique<xgc2_ugv_sampled_reference>();
                     std::memset(p.get(), 0, sizeof *p);
                     rp::toPayload(*p, m);
                     run.reference.push_back({"active_sampled", ns, bytesOf(*p)});
-                    if (controller.referenceCache().updateSampled(toController(m))) {
-                        post(ugv::event_type::INPUT_REFERENCE_UPDATED, now, "active_sampled");
-                    }
+                    (void)controller.referenceCache().updateSampled(toController(m));
                 }
             }
         }

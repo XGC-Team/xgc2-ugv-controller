@@ -105,22 +105,58 @@ void UnicycleUgvController::noteResetAdmissionAfterUpdate() {
     UGV_LOG_ERROR("[UnicycleUgvController] %s", last_reset_admission_miss_.c_str());
 }
 
+::state_machine::adt::Expected<void, std::string> UnicycleUgvController::checkResetAdmission(
+    const std::string& source) const {
+    const auto control_id = machine_->currentState(region_type::CONTROL);
+    const std::string control = machine_->currentStateName(region_type::CONTROL);
+    const bool health = healthReady();
+    const bool target = resetTargetReady();
+    if (control_id == state_type::Ready || control_id == state_type::Custom1 ||
+        control_id == state_type::Reset) {
+        return {};
+    }
+    std::ostringstream oss;
+    oss << "RESET_REQUESTED unmatched topic=" << source << " CONTROL=" << control
+        << " health=" << (health ? "ready" : "unhealthy")
+        << " target=" << (target ? "ready" : "missing");
+    if (control_id == state_type::SelfCheck && health) {
+        oss << " reason=health-ready-but-stuck-in-SelfCheck";
+    } else if (control_id == state_type::SelfCheck) {
+        oss << " reason=unhealthy-SelfCheck-has-no-Reset-edge";
+    } else {
+        oss << " reason=no-matching-transition";
+    }
+    return ::state_machine::adt::Unexpected<std::string>(oss.str());
+}
+
 std::string UnicycleUgvController::describeResetAdmissionMiss(const std::string& source) const {
+    const auto admission = checkResetAdmission(source);
+    if (!admission.hasValue()) {
+        return admission.error();
+    }
     const std::string control = machine_->currentStateName(region_type::CONTROL);
     const bool health = healthReady();
     const bool target = resetTargetReady();
     std::ostringstream oss;
     oss << "RESET_REQUESTED unmatched topic=" << source << " CONTROL=" << control
         << " health=" << (health ? "ready" : "unhealthy")
-        << " target=" << (target ? "ready" : "missing");
-    if (control == "SelfCheck" && health) {
-        oss << " reason=health-ready-but-stuck-in-SelfCheck";
-    } else if (control == "SelfCheck") {
-        oss << " reason=unhealthy-SelfCheck-has-no-Reset-edge";
-    } else {
-        oss << " reason=no-matching-transition";
-    }
+        << " target=" << (target ? "ready" : "missing") << " reason=no-matching-transition";
     return oss.str();
+}
+
+::state_machine::adt::TickPolicy UnicycleUgvController::tickPolicy(double nominal_hz) const {
+    const double control_hz =
+        (std::isfinite(nominal_hz) && nominal_hz > 0.0) ? nominal_hz : config_.control_rate_hz;
+    if (!machine_) {
+        return ::state_machine::adt::TickPeriodic{1.0 / std::max(1.0, control_hz)};
+    }
+    const auto active = machine_->currentState(region_type::CONTROL);
+    if (active == state_type::SelfCheck || active == state_type::Ready) {
+        const double idle_hz =
+            std::min(control_hz, std::max(20.0, config_.idle_cmd_rate_hz));
+        return ::state_machine::adt::TickPeriodic{1.0 / std::max(1.0, idle_hz)};
+    }
+    return ::state_machine::adt::TickPeriodic{1.0 / std::max(1.0, control_hz)};
 }
 
 ControllerConfig UnicycleUgvController::config() const {
@@ -153,7 +189,7 @@ void UnicycleUgvController::applyResetSpec() {
 }
 
 bool UnicycleUgvController::healthReady() const {
-    const auto cfg = config();
+    const auto& cfg = config_;
     if (!stateFresh(state_, Time(current_time_sec_), cfg.state_timeout) ||
         !insideFence(state_, cfg)) {
         return false;
@@ -165,7 +201,7 @@ bool UnicycleUgvController::healthReady() const {
 }
 
 bool UnicycleUgvController::referenceReady() const {
-    const auto cfg = config();
+    const auto& cfg = config_;
     if (cfg.tracking_strategy == TrackingStrategy::FLATNESS) {
         return worldPvaReady();
     }
@@ -174,7 +210,7 @@ bool UnicycleUgvController::referenceReady() const {
 
 bool UnicycleUgvController::commandReady() const {
     constexpr double kFutureStampTolerance = 0.05;
-    const auto cfg = config();
+    const auto& cfg = config_;
     const auto current_command = command();
     const double age = current_time_sec_ - current_command.stamp.toSec();
     return current_command.valid && std::isfinite(current_command.linear_speed) &&
@@ -340,7 +376,7 @@ WorldPvaReference UnicycleUgvController::liftedWorldPva() const {
 }
 
 void UnicycleUgvController::maybeUpdatePoseVelocity() {
-    const auto cfg = config();
+    const auto& cfg = config_;
     if (!usesPoseVelocityFilter(cfg.state_source)) {
         return;
     }
@@ -358,7 +394,7 @@ void UnicycleUgvController::maybeUpdatePoseVelocity() {
 
 UgvState UnicycleUgvController::controlState() const {
     UgvState snapshot = state_;
-    const auto cfg = config();
+    const auto& cfg = config_;
     if (usesPoseVelocityFilter(cfg.state_source)) {
         snapshot.vx = pose_velocity_.vx;
         snapshot.vy = pose_velocity_.vy;
@@ -370,7 +406,7 @@ UgvState UnicycleUgvController::controlState() const {
 }
 
 bool UnicycleUgvController::velocityValid() const {
-    if (usesPoseVelocityFilter(config().state_source)) {
+    if (usesPoseVelocityFilter(config_.state_source)) {
         return pose_velocity_.velocity_valid;
     }
     return state_.velocity_valid;

@@ -380,11 +380,10 @@ class Instance {
             state_.estimator_flags = 0U;
         }
         state_.received = true;
-        post(ugv::event_type::INPUT_STATE_UPDATED, state_.stamp.toSec(),
-             estimator ? "state_estimate" : "platform_pose");
     }
 
     void readResetTarget(double now) {
+        (void)now;
         const auto sample = host_.latest<xgc2_ugv_reset_target>(kResetTarget);
         if (!seen_.fresh(kResetTarget, sample)) {
             return;
@@ -402,7 +401,6 @@ class Instance {
         reset_target_from_port_ = true;
         host_.log(kLogInfo,
                   format("Reset target x=%.3f y=%.3f yaw=%.3f", target.x, target.y, target.yaw));
-        post(ugv::event_type::INPUT_RESET_TARGET_UPDATED, now, "reset_pose");
     }
 
     // The three references of the NMPC strategy, the one that was committed last last.
@@ -453,7 +451,6 @@ class Instance {
                 warn(item.port, now, std::string("Rejected ") + name + " reference");
                 continue;
             }
-            post(ugv::event_type::INPUT_REFERENCE_UPDATED, now, name);
         }
     }
 
@@ -479,7 +476,6 @@ class Instance {
         reference.ay = p.ay;
         reference.valid = true;
         controller_.setWorldPva(reference);
-        post(ugv::event_type::INPUT_REFERENCE_UPDATED, reference.stamp.toSec(), "reference_pva");
     }
 
     // The coordinator's messages for the vehicle's session, in order (a brake and a new route can

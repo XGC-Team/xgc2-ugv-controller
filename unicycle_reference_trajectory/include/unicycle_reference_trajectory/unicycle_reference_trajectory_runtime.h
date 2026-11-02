@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <state_machine/adt.hpp>
 #include <state_machine/state_machine.hpp>
+#include <variant>
 #include <xgc2_math/trajectory.hpp>
 
 #include "unicycle_reference_trajectory/reference_types.h"
@@ -50,38 +52,50 @@ class ReferenceTrajectoryRuntime {
     const ReferenceTrajectoryConfig& config() const {
         return config_;
     }
-    trajectory::TrajectoryModelType activeType() const {
-        return active_type_;
-    }
-    uint32_t activeTrajectoryId() const {
-        return active_trajectory_id_;
-    }
-    uint32_t activeRevision() const {
-        return active_revision_;
-    }
+    trajectory::TrajectoryModelType activeType() const;
+    uint32_t activeTrajectoryId() const;
+    uint32_t activeRevision() const;
     uint32_t flags() const {
         return flags_;
     }
 
-    const reference::AnalyticReference& activeAnalyticMessage() const {
-        return active_analytic_;
-    }
-    const reference::SampledReference& activeSampledMessage() const {
-        return active_sampled_;
-    }
-    const reference::ActivePolynomialReference& activePolynomialMessage() const {
-        return active_polynomial_;
-    }
+    const reference::AnalyticReference& activeAnalyticMessage() const;
+    const reference::SampledReference& activeSampledMessage() const;
+    const reference::ActivePolynomialReference& activePolynomialMessage() const;
     reference::ReferenceStatus makeStatus(double stamp_sec) const;
-    const trajectory::TrajectoryEvaluator2* evaluator() const {
-        return active_evaluator_.get();
-    }
+    const trajectory::TrajectoryEvaluator2* evaluator() const;
+    ::state_machine::adt::TickPolicy tickPolicy() const;
     ::state_machine::StateMachine& stateMachine() {
         return *machine_;
     }
 
    private:
-    enum class PendingKind { kNone, kAnalytic, kSampled, kWaypoint };
+    struct ActiveAnalyticSpec {
+        reference::AnalyticReference message{};
+        double start_sec{0.0};
+        double duration{0.0};
+        std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator;
+    };
+
+    struct ActiveSampledSpec {
+        reference::SampledReference message{};
+        double start_sec{0.0};
+        double duration{0.0};
+        std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator;
+    };
+
+    struct ActivePolynomialSpec {
+        reference::ActivePolynomialReference message{};
+        double start_sec{0.0};
+        double duration{0.0};
+        std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator;
+    };
+
+    using PendingSpecVariant =
+        std::variant<std::monostate, reference::AnalyticReference, reference::SampledReference,
+                     reference::WaypointReferenceRequest>;
+    using ActiveSpecVariant = std::variant<std::monostate, ActiveAnalyticSpec, ActiveSampledSpec,
+                                           ActivePolynomialSpec>;
 
     void setupMachine();
     std::unique_ptr<trajectory::TrajectoryEvaluator2> buildAnalyticEvaluator(
@@ -106,20 +120,8 @@ class ReferenceTrajectoryRuntime {
     double current_time_sec_{0.0};
     uint32_t flags_{0U};
 
-    PendingKind pending_kind_{PendingKind::kNone};
-    reference::AnalyticReference pending_analytic_;
-    reference::SampledReference pending_sampled_;
-    reference::WaypointReferenceRequest pending_waypoint_;
-
-    trajectory::TrajectoryModelType active_type_{trajectory::TrajectoryModelType::kNone};
-    uint32_t active_trajectory_id_{0U};
-    uint32_t active_revision_{0U};
-    double active_start_sec_{0.0};
-    double active_duration_{0.0};
-    std::unique_ptr<trajectory::TrajectoryEvaluator2> active_evaluator_;
-    reference::AnalyticReference active_analytic_;
-    reference::SampledReference active_sampled_;
-    reference::ActivePolynomialReference active_polynomial_;
+    PendingSpecVariant pending_spec_{std::monostate{}};
+    ActiveSpecVariant active_spec_{std::monostate{}};
 };
 
 }  // namespace unicycle_reference_trajectory

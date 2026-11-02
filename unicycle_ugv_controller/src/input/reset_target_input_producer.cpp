@@ -28,7 +28,6 @@ void ResetTargetInputProducer::callback(const geometry_msgs::Pose2D::ConstPtr& m
     controller_.setResetTarget(target);
     ROS_INFO("[UgvResetTargetInputProducer] Reset target x=%.3f y=%.3f yaw=%.3f", target.x,
              target.y, target.yaw);
-    post(event_type::INPUT_RESET_TARGET_UPDATED, "reset_pose");
 }
 
 void ResetTargetInputProducer::post(::state_machine::EventId id, const char* source) {
