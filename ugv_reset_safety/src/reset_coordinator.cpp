@@ -270,18 +270,21 @@ double ResetCoordinator::nextDeadline(double now) const {
     for (const auto& item : entries_) {
         const Entry& e = item.second;
         const double expiry = e.received + config_.lost_after;
-        if (now <= expiry)
+        if (now <= expiry) {
             next = std::min(next, std::nextafter(expiry, never));
-        if (lost(e, now) || e.session.request_generation == 0 || !e.last)
+        }
+        if (lost(e, now) || e.session.request_generation == 0 || !e.last) {
             continue;
+        }
         const bool outside = !config_.expected_namespaces.empty() &&
                              !std::binary_search(config_.expected_namespaces.begin(),
                                                  config_.expected_namespaces.end(), item.first);
         const bool pending = e.last->grant.state == rc::GrantState::Brake ||
                              (e.last->grant.state == rc::GrantState::Hold &&
                               e.session.acknowledged_grant_id != e.last->grant.grant_id);
-        if (e.bad_reason || outside || participant(e, now) || pending)
+        if (e.bad_reason || outside || participant(e, now) || pending) {
             next = std::min(next, std::nextafter(e.last->sent + config_.refresh_period, never));
+        }
     }
     return next;
 }

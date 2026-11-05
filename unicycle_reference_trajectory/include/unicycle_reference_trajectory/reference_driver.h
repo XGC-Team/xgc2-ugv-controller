@@ -27,7 +27,7 @@ class ReferenceTrajectoryDriver {
 
     // Applies the runtime configuration (which restarts the runtime) and the default request.
     void configure(const ReferenceTrajectoryConfig& config,
-                   const DefaultAnalyticReferenceConfig& default_analytic);
+                   const DefaultAnalyticReferenceConfig& defaults);
 
     ReferenceTrajectoryRuntime& runtime() {
         return runtime_;

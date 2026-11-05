@@ -406,11 +406,13 @@ class Instance {
    private:
     void armWallDeadline() {
         const auto demand = host_.latest<xgc2_ugv_wall_deadline>(kWallDeadline);
-        if (!seen_.fresh(kWallDeadline, demand))
+        if (!seen_.fresh(kWallDeadline, demand)) {
             return;
+        }
         const int64_t deadline = demand->monotonic_deadline_ns;
-        if (armed_wall_ns_ && *armed_wall_ns_ == deadline)
+        if (armed_wall_ns_ && *armed_wall_ns_ == deadline) {
             return;
+        }
         // stop removes pending callbacks. An already-running wake may finish; it never
         // changes the current demand. disconnect() joins the spinner before destroying
         // the queue or this instance. No product handoff lock surrounds callbacks.

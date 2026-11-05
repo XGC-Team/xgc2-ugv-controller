@@ -44,11 +44,13 @@ void ReferenceTrajectoryNode::run() {
     loop_.run(
         [this] {
             const auto update = driver_.update(loop_.now());
-            if (update.default_analytic == ReferenceTrajectoryDriver::Request::kRejected)
+            if (update.default_analytic == ReferenceTrajectoryDriver::Request::kRejected) {
                 ROS_WARN_THROTTLE(1.0,
                                   "[ReferenceTrajectoryNode] Rejected default analytic reference");
-            for (const auto& output : update.events)
+            }
+            for (const auto& output : update.events) {
                 output_->handle(output);
+            }
         },
         [this] {
             ugv_reset_client::NextWake next;

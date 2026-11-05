@@ -128,8 +128,9 @@ class Run {
         if (pending_command_) {
             controller_.command(*pending_command_, t_, wall, "replay");
             pending_command_.reset();
-        } else
+        } else {
             controller_.update(t_, wall);
+        }
         const auto events = controller_.outputs();
         std::fprintf(out, "%.3f h %u c %u out", t_, 100U,
                      static_cast<uint32_t>(controller_.mode()));
@@ -138,12 +139,13 @@ class Run {
                          std::visit(
                              [](const auto& value) -> unsigned {
                                  using T = std::decay_t<decltype(value)>;
-                                 if constexpr (std::is_same_v<T, SolveNmpc>)
+                                 if constexpr (std::is_same_v<T, SolveNmpc>) {
                                      return 10000U;
-                                 else if constexpr (std::is_same_v<T, PublishCommand>)
+                                 } else if constexpr (std::is_same_v<T, PublishCommand>) {
                                      return 10001U;
-                                 else
+                                 } else {
                                      return 10002U;
+                                 }
                              },
                              event));
         }
@@ -199,7 +201,6 @@ class Run {
     }
 
     void solve(const SolveNmpc& request) {
-        const double t = request.timestamp > 0.0 ? request.timestamp : t_;
         NmpcRequest nmpc;
         NmpcOutcome outcome;
         if (makeNmpcRequest(controller_, request, t_, nmpc)) {

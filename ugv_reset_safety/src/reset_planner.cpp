@@ -514,8 +514,9 @@ struct Body {
         return std::get<Reserved>(reservation).value;
     }
     void retire() {
-        if (auto* r = std::get_if<Reserved>(&reservation))
+        if (auto* r = std::get_if<Reserved>(&reservation)) {
             r->phase.emplace<Retiring>();
+        }
     }
     void awaitReceipt() {
         std::get<Reserved>(reservation).phase.emplace<AwaitGoReceipt>();
@@ -2128,13 +2129,15 @@ double ResetPlanner::nextDeadline(bool admit) const {
     for (const auto& item : m.bodies) {
         const Body& b = item.second;
         if (b.hasPlan() && !b.retiring()) {
-            if (b.plan().s_limit < b.plan().total - 1e-9 || m.world_changed)
+            if (b.plan().s_limit < b.plan().total - 1e-9 || m.world_changed) {
                 next = std::min(next, extension);
+            }
             // The original stall check runs only in an extension turn.
-            if (b.phase == Phase::Waiting)
+            if (b.phase == Phase::Waiting) {
                 next = std::min(
                     next,
                     std::max(extension, std::nextafter(m.fleet_progress + m.cfg.stall_s, kInf)));
+            }
         }
         if (admit && b.participates() && b.certified() && !b.hasPlan() && !b.rejected &&
             (b.phase == Phase::Requesting || b.phase == Phase::Waiting)) {

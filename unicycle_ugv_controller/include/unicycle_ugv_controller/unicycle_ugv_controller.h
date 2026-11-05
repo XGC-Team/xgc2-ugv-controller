@@ -171,7 +171,7 @@ class UnicycleUgvController {
         static void handle(Custom1&, const NmpcCompletion&, UnicycleUgvController&);
         static void handle(Reset&, const NmpcCompletion&, UnicycleUgvController&);
     };
-    CommandOutcome turn(double domain_now, double wall_now, std::optional<OperatorCommand> command,
+    CommandOutcome turn(double domain_now, double wall_now, std::optional<OperatorCommand> input,
                         const std::string& source);
     bool apply(Spec::Change change);
     Spec::Change prepareReset(CommandOutcome& outcome);

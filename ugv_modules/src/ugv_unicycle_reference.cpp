@@ -123,8 +123,9 @@ class Instance {
 
     void step(const xgc2_step_ctx& ctx) {
         thread_.check("step");
-        if (ctx.reasons & XGC2_STEP_DEADLINE)
+        if (ctx.reasons & XGC2_STEP_DEADLINE) {
             armed_deadline_ns_ = -1;
+        }
         const double now = secondsOf<urt::Time>(ctx.now_ns);
         collect();
         for (const Pending& request : pending_) {

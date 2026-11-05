@@ -649,13 +649,16 @@ class ResetExecutor {
         return ptr ? *ptr : nullptr;
     }
     Permission& permission() {
-        return run() ? run()->permission : std::get<Retirement>(authority_).permission;
+        auto* value = run();
+        return value ? value->permission : std::get<Retirement>(authority_).permission;
     }
     const Permission& permission() const {
-        return run() ? run()->permission : std::get<Retirement>(authority_).permission;
+        auto* value = run();
+        return value ? value->permission : std::get<Retirement>(authority_).permission;
     }
     const SessionHeader& header() const {
-        return run() ? run()->header : std::get<Retirement>(authority_).header;
+        const auto* value = run();
+        return value ? value->header : std::get<Retirement>(authority_).header;
     }
     template <class T>
     bool is() const {

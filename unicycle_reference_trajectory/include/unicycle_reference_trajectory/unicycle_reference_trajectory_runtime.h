@@ -114,7 +114,7 @@ class ReferenceTrajectoryRuntime {
     bool planWaypoint(Waypoint& request);
     bool activeExpired(double now_sec) const;
     double activeEnd() const;
-    void publish(PeriodicGate& gate, double rate, ReferenceOutput output);
+    void publish(PeriodicGate& gate, double rate, ReferenceOutput kind);
     void publishActive(Active& state);
     std::unique_ptr<trajectory::TrajectoryEvaluator2> buildAnalyticEvaluator(
         const reference::AnalyticReference& msg, uint32_t& flags) const;

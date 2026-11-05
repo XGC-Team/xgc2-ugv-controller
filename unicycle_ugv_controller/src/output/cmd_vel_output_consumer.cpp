@@ -19,7 +19,8 @@ void CmdVelOutputConsumer::handle(const PublishZero&) {
 void CmdVelOutputConsumer::publish(const geometry_msgs::Twist& twist) {
     cmd_vel_pub_.publish(twist);
     if (twist.linear.x == 0.0 && twist.linear.y == 0.0 && twist.linear.z == 0.0 &&
-        twist.angular.x == 0.0 && twist.angular.y == 0.0 && twist.angular.z == 0.0)
+        twist.angular.x == 0.0 && twist.angular.y == 0.0 && twist.angular.z == 0.0) {
         controller_.notifyResetZeroPublished(clock_());
+    }
 }
 }  // namespace unicycle_ugv_controller

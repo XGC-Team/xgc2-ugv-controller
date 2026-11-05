@@ -78,13 +78,15 @@ NmpcExecution::NmpcExecution(UnicycleUgvController& controller, CompletionSink c
       worker_([this, entered = false](
                   const NmpcRequest& request) mutable { return compute(request, entered); },
               [this](const NmpcCompletion& completion) {
-                  if (completion_sink_)
+                  if (completion_sink_) {
                       completion_sink_(completion);
+                  }
                   return true;
               },
               [this](const NmpcCompletion&) {
-                  if (notify_)
+                  if (notify_) {
                       notify_();
+                  }
               }) {
     backend_.configure(controller_.config());
 }
@@ -98,27 +100,29 @@ void NmpcExecution::start() {
 }
 
 void NmpcExecution::stop() {
-    if (worker_.stop())
+    if (worker_.stop()) {
         backend_.exit();
+    }
 }
 
 void NmpcExecution::handle(const SolveNmpc& event) {
     NmpcRequest request;
     if (!makeNmpcRequest(controller_, event, clock_(), request)) {
         postResult(event.sequence, NmpcOutcome{});
-        if (notify_)
+        if (notify_) {
             notify_();
+        }
         return;
     }
     if (!worker_.trySubmit(std::move(request))) {
         UGV_LOG_WARN_THROTTLE(1.0, "[UgvNmpcExecution] Reject solve seq=%lu: backend busy",
                               static_cast<unsigned long>(event.sequence));
         postResult(event.sequence, NmpcOutcome{});
-        if (notify_)
+        if (notify_) {
             notify_();
+        }
         return;
     }
-    return;
 }
 
 NmpcCompletion NmpcExecution::compute(const NmpcRequest& request, bool& entered) {

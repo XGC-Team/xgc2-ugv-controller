@@ -32,17 +32,19 @@ bool UnicycleUgvController::resetTargetReady() const {
 }
 void UnicycleUgvController::postCompletion(NmpcCompletion result) {
     std::lock_guard<std::mutex> lock(completion_mutex_);
-    completion_inbox_.push_back(std::move(result));
+    completion_inbox_.push_back(result);
 }
 void UnicycleUgvController::observeInputs(double now, double wall) {
     current_time_sec_ = now;
     wall_time_sec_ = wall;
-    if (!control_phase_ns_)
+    if (!control_phase_ns_) {
         control_phase_ns_ = static_cast<int64_t>(unicycle_ugv_controller::Time(now).toNSec());
+    }
     setCoreTime(now);
     maybeUpdatePoseVelocity();
-    if (state_.received)
+    if (state_.received) {
         reset_executor_.observe(resetMeasurement());
+    }
     reset_executor_.poll(resetMeasurement());
 }
 bool UnicycleUgvController::statusDue() const {
@@ -98,20 +100,25 @@ CommandOutcome UnicycleUgvController::turn(double now, double wall,
                 *this));
         }
     }
-    if (!changed && health_changed)
+    if (!changed && health_changed) {
         changed = apply(machine_.dispatch(Health{healthy}, *this));
-    if (!changed && finished)
+    }
+    if (!changed && finished) {
         changed = apply(adt::Enter{Ready{}});
-    if (!changed)
-        for (const auto& result : completions_)
+    }
+    if (!changed) {
+        for (const auto& result : completions_) {
             machine_.dispatch(result, *this);
+        }
+    }
     if (input == OperatorCommand::kReset) {
         last_reset_admission_miss_ = outcome.ok() ? std::string{}
                                                   : (outcome.code == CommandOutcome::Code::Unmatched
                                                          ? describeResetAdmissionMiss(source)
                                                          : outcome.message);
-        if (!outcome.ok())
+        if (!outcome.ok()) {
             UGV_LOG_ERROR("[UnicycleUgvController] %s", last_reset_admission_miss_.c_str());
+        }
     }
     logResetHold();
     return outcome;
@@ -121,9 +128,9 @@ bool UnicycleUgvController::apply(Spec::Change change) {
     return std::visit(
         [this](auto& transition) {
             using T = std::decay_t<decltype(transition)>;
-            if constexpr (std::is_same_v<T, adt::Stay>)
+            if constexpr (std::is_same_v<T, adt::Stay>) {
                 return false;
-            else {
+            } else {
                 machine_.dispatch(Exit{}, *this);
                 enter(transition.value);
                 machine_.apply(std::move(transition), current_time_sec_);
@@ -150,10 +157,11 @@ void UnicycleUgvController::enter(Reset& state) {
     last_reset_hold_reason_ = resetTargetReady()
                                   ? std::string{}
                                   : "no target: reset_pose cache and reset_initial_* missing";
-    if (!resetTargetReady())
+    if (!resetTargetReady()) {
         UGV_LOG_ERROR(
             "[UnicycleUgvController] Reset entered without a valid goal; "
             "it ends after 2 s unless a cached initialPose arrives first");
+    }
     emitResetZero(state, true);
 }
 UnicycleUgvController::Spec::Change UnicycleUgvController::prepareReset(CommandOutcome& outcome) {
@@ -175,8 +183,9 @@ UnicycleUgvController::Spec::Change UnicycleUgvController::prepareReset(CommandO
 }
 void UnicycleUgvController::publishIdle(PeriodicGate& gate) {
     if (gate.due(current_time_sec_,
-                 config_.idle_cmd_rate_hz > 0 ? 1.0 / config_.idle_cmd_rate_hz : 0))
+                 config_.idle_cmd_rate_hz > 0 ? 1.0 / config_.idle_cmd_rate_hz : 0)) {
         outputs_.emplace_back(PublishZero{current_time_sec_});
+    }
 }
 bool UnicycleUgvController::Spec::handle(SelfCheck& state, Tick, UnicycleUgvController& c) {
     c.publishIdle(state.command);
@@ -187,20 +196,23 @@ bool UnicycleUgvController::Spec::handle(Ready& state, Tick, UnicycleUgvControll
     return false;
 }
 void UnicycleUgvController::emitZero(Custom1& state, bool force) {
-    if (force || command_.valid)
+    if (force || command_.valid) {
         state.zero.reset();
+    }
     state.body_speed = 0;
     clearCommand();
-    if (state.zero.due(current_time_sec_, 1.0 / config_.idle_cmd_rate_hz))
+    if (state.zero.due(current_time_sec_, 1.0 / config_.idle_cmd_rate_hz)) {
         outputs_.emplace_back(PublishZero{current_time_sec_});
+    }
 }
 void UnicycleUgvController::emitCommand(Custom1& state) {
     if (!commandReady()) {
         emitZero(state);
         return;
     }
-    if (state.command.due(current_time_sec_, 1.0 / config_.command_publish_rate_hz))
+    if (state.command.due(current_time_sec_, 1.0 / config_.command_publish_rate_hz)) {
         outputs_.emplace_back(PublishCommand{current_time_sec_});
+    }
 }
 bool UnicycleUgvController::Spec::handle(Custom1& state, Tick, UnicycleUgvController& c) {
     const auto& cfg = c.config_;
@@ -213,19 +225,22 @@ bool UnicycleUgvController::Spec::handle(Custom1& state, Tick, UnicycleUgvContro
         }
         const double dt = now - state.last_tick;
         if (dt >= 0 && dt <= cfg.velocity_dt_min) {
-            if (c.wall_control_ && c.wall_control_->external_domain)
+            if (c.wall_control_ && c.wall_control_->external_domain) {
                 state.sample_wall.reset();
+            }
             c.emitCommand(state);
             return false;
         }
         if (c.wall_control_) {
             if (!c.wall_control_->take(state.sample_wall, c.wall_time_sec_)) {
-                if (c.commandReady())
+                if (c.commandReady()) {
                     c.emitCommand(state);
+                }
                 return false;
             }
-            if (!c.wall_control_->external_domain)
+            if (!c.wall_control_->external_domain) {
                 state.sample_wall = c.wall_control_->next(c.wall_time_sec_);
+            }
         }
         state.last_tick = now;
         const auto output =
@@ -244,8 +259,9 @@ bool UnicycleUgvController::Spec::handle(Custom1& state, Tick, UnicycleUgvContro
         c.emitCommand(state);
         return false;
     }
-    if (state.in_flight && now > state.in_flight->deadline)
+    if (state.in_flight && now > state.in_flight->deadline) {
         state.in_flight.reset();
+    }
     if (!c.referenceReady()) {
         c.emitZero(state);
         return false;
@@ -262,8 +278,9 @@ void UnicycleUgvController::emitResetZero(Reset& state, bool force) {
     const double period = config_.idle_cmd_rate_hz > 0 ? 1.0 / config_.idle_cmd_rate_hz
                                                        : 1.0 / config_.command_publish_rate_hz;
     const bool due = state.command.due(wall_time_sec_, period);
-    if (force || due)
+    if (force || due) {
         outputs_.emplace_back(PublishZero{current_time_sec_});
+    }
 }
 bool UnicycleUgvController::Spec::handle(Reset& state, Tick, UnicycleUgvController& c) {
     const auto step = c.reset_executor_.step(c.resetMeasurement());
@@ -282,8 +299,9 @@ bool UnicycleUgvController::Spec::handle(Reset& state, Tick, UnicycleUgvControll
     command.linear_speed = step.command.vx;
     command.angular_speed = step.command.wz;
     c.setCommand(command);
-    if (state.command.due(c.wall_time_sec_, 1.0 / c.config_.command_publish_rate_hz))
+    if (state.command.due(c.wall_time_sec_, 1.0 / c.config_.command_publish_rate_hz)) {
         c.outputs_.emplace_back(PublishCommand{c.current_time_sec_});
+    }
     return false;
 }
 UnicycleUgvController::Spec::Change UnicycleUgvController::Spec::handle(SelfCheck&, Operator,
@@ -292,8 +310,9 @@ UnicycleUgvController::Spec::Change UnicycleUgvController::Spec::handle(SelfChec
 }
 UnicycleUgvController::Spec::Change UnicycleUgvController::Spec::handle(Ready&, Operator input,
                                                                         UnicycleUgvController& c) {
-    if (input.command == OperatorCommand::kReset)
+    if (input.command == OperatorCommand::kReset) {
         return c.prepareReset(input.outcome);
+    }
     if (input.command == OperatorCommand::kCustom1) {
         input.outcome.code = CommandOutcome::Code::Applied;
         return adt::Enter{
@@ -303,12 +322,14 @@ UnicycleUgvController::Spec::Change UnicycleUgvController::Spec::handle(Ready&, 
 }
 UnicycleUgvController::Spec::Change UnicycleUgvController::Spec::handle(Custom1&, Operator input,
                                                                         UnicycleUgvController& c) {
-    if (input.command == OperatorCommand::kReset)
+    if (input.command == OperatorCommand::kReset) {
         return c.prepareReset(input.outcome);
+    }
     // Actual old registered order is Reset, HealthUnhealthy, Stop. The old global
     // sort did not consistently order same-source rules by the declared priority.
-    if (input.health && !input.health->ready)
+    if (input.health && !input.health->ready) {
         return adt::Enter{SelfCheck{}};
+    }
     if (input.command == OperatorCommand::kStop) {
         input.outcome.code = CommandOutcome::Code::Applied;
         return adt::Enter{Ready{}};
@@ -317,8 +338,9 @@ UnicycleUgvController::Spec::Change UnicycleUgvController::Spec::handle(Custom1&
 }
 UnicycleUgvController::Spec::Change UnicycleUgvController::Spec::handle(Reset&, Operator input,
                                                                         UnicycleUgvController& c) {
-    if (input.command == OperatorCommand::kReset)
+    if (input.command == OperatorCommand::kReset) {
         return c.prepareReset(input.outcome);
+    }
     if (input.command == OperatorCommand::kStop) {
         input.outcome.code = CommandOutcome::Code::Applied;
         return adt::Enter{Ready{}};
@@ -327,33 +349,37 @@ UnicycleUgvController::Spec::Change UnicycleUgvController::Spec::handle(Reset&, 
 }
 UnicycleUgvController::Spec::Change UnicycleUgvController::Spec::handle(SelfCheck&, Health health,
                                                                         UnicycleUgvController&) {
-    if (health.ready)
+    if (health.ready) {
         return adt::Enter{Ready{}};
+    }
     return adt::Stay{};
 }
 UnicycleUgvController::Spec::Change UnicycleUgvController::Spec::handle(Ready&, Health health,
                                                                         UnicycleUgvController&) {
-    if (!health.ready)
+    if (!health.ready) {
         return adt::Enter{SelfCheck{}};
+    }
     return adt::Stay{};
 }
 UnicycleUgvController::Spec::Change UnicycleUgvController::Spec::handle(Custom1&, Health health,
                                                                         UnicycleUgvController&) {
-    if (!health.ready)
+    if (!health.ready) {
         return adt::Enter{SelfCheck{}};
+    }
     return adt::Stay{};
 }
 UnicycleUgvController::Spec::Change UnicycleUgvController::Spec::handle(Reset&, Health health,
                                                                         UnicycleUgvController&) {
-    if (!health.ready)
+    if (!health.ready) {
         return adt::Enter{SelfCheck{}};
+    }
     return adt::Stay{};
 }
 void UnicycleUgvController::Spec::handle(SelfCheck&, Exit, UnicycleUgvController&) {}
 void UnicycleUgvController::Spec::handle(Ready&, Exit, UnicycleUgvController&) {}
 void UnicycleUgvController::Spec::handle(Custom1& state, Exit, UnicycleUgvController& c) {
     c.emitZero(state, true);
-    c.idle_pva_ = std::move(state.pva);
+    c.idle_pva_ = state.pva;
 }
 void UnicycleUgvController::Spec::handle(Reset& state, Exit, UnicycleUgvController& c) {
     if (c.reset_executor_.active()) {
@@ -376,12 +402,14 @@ void UnicycleUgvController::Spec::handle(Reset&, const NmpcCompletion&, Unicycle
 void UnicycleUgvController::Spec::handle(Custom1& state, const NmpcCompletion& result,
                                          UnicycleUgvController& c) {
     if (c.config_.tracking_strategy != TrackingStrategy::NMPC || !state.in_flight ||
-        result.sequence != state.in_flight->sequence)
+        result.sequence != state.in_flight->sequence) {
         return;
+    }
     const double deadline = state.in_flight->deadline;
     state.in_flight.reset();
-    if (c.current_time_sec_ > deadline)
+    if (c.current_time_sec_ > deadline) {
         return;
+    }
     if (result.command) {
         const auto& command = *result.command;
         const double stamp = command.stamp.toSec();
@@ -395,22 +423,24 @@ void UnicycleUgvController::Spec::handle(Custom1& state, const NmpcCompletion& r
             }
         }
     }
-    if (!c.commandReady())
+    if (!c.commandReady()) {
         c.emitZero(state);
+    }
 }
 
 ControlMode UnicycleUgvController::mode() const {
     return std::visit(
         [](const auto& state) {
             using T = std::decay_t<decltype(state)>;
-            if constexpr (std::is_same_v<T, SelfCheck>)
+            if constexpr (std::is_same_v<T, SelfCheck>) {
                 return ControlMode::SelfCheck;
-            else if constexpr (std::is_same_v<T, Ready>)
+            } else if constexpr (std::is_same_v<T, Ready>) {
                 return ControlMode::Ready;
-            else if constexpr (std::is_same_v<T, Custom1>)
+            } else if constexpr (std::is_same_v<T, Custom1>) {
                 return ControlMode::Custom1;
-            else
+            } else {
                 return ControlMode::Reset;
+            }
         },
         machine_.state());
 }
@@ -428,24 +458,25 @@ const char* UnicycleUgvController::modeName() const {
     return "";
 }
 WorldPvaReference UnicycleUgvController::worldPva() const {
-    if (const auto* active = std::get_if<Custom1>(&machine_.state()))
+    if (const auto* active = std::get_if<Custom1>(&machine_.state())) {
         return active->pva;
+    }
     return idle_pva_;
 }
 void UnicycleUgvController::setWorldPva(WorldPvaReference reference) {
-    machine_.dispatch(SetPva{std::move(reference)}, *this);
+    machine_.dispatch(SetPva{reference}, *this);
 }
 void UnicycleUgvController::Spec::handle(SelfCheck&, SetPva input, UnicycleUgvController& c) {
-    c.idle_pva_ = std::move(input.value);
+    c.idle_pva_ = input.value;
 }
 void UnicycleUgvController::Spec::handle(Ready&, SetPva input, UnicycleUgvController& c) {
-    c.idle_pva_ = std::move(input.value);
+    c.idle_pva_ = input.value;
 }
 void UnicycleUgvController::Spec::handle(Reset&, SetPva input, UnicycleUgvController& c) {
-    c.idle_pva_ = std::move(input.value);
+    c.idle_pva_ = input.value;
 }
 void UnicycleUgvController::Spec::handle(Custom1& state, SetPva input, UnicycleUgvController&) {
-    state.pva = std::move(input.value);
+    state.pva = input.value;
 }
 bool UnicycleUgvController::worldPvaReady() const {
     return ::unicycle_ugv_controller::worldPvaReady(worldPva());
@@ -458,12 +489,13 @@ std::string UnicycleUgvController::describeResetAdmissionMiss(const std::string&
     text << "RESET_REQUESTED unmatched topic=" << source << " CONTROL=" << modeName()
          << " health=" << (healthReady() ? "ready" : "unhealthy")
          << " target=" << (resetTargetReady() ? "ready" : "missing");
-    if (mode() == ControlMode::SelfCheck && healthReady())
+    if (mode() == ControlMode::SelfCheck && healthReady()) {
         text << " reason=health-ready-but-stuck-in-SelfCheck";
-    else if (mode() == ControlMode::SelfCheck)
+    } else if (mode() == ControlMode::SelfCheck) {
         text << " reason=unhealthy-SelfCheck-has-no-Reset-edge";
-    else
+    } else {
         text << " reason=no-matching-transition";
+    }
     return text.str();
 }
 void UnicycleUgvController::logResetResult() const {
@@ -487,11 +519,13 @@ void UnicycleUgvController::logResetResult() const {
     }
 }
 void UnicycleUgvController::logResetHold() {
-    if (!reset_executor_.active())
+    if (!reset_executor_.active()) {
         return;
+    }
     auto* state = std::get_if<Reset>(&machine_.state());
-    if (!state)
+    if (!state) {
         return;
+    }
     auto& last = state->run->last_hold_logged;
     std::string text = rc::name(reset_executor_.holdReason());
     if (text.empty()) {
@@ -499,8 +533,9 @@ void UnicycleUgvController::logResetHold() {
         return;
     }
     text += ": " + reset_executor_.holdDetail();
-    for (const auto& who : reset_executor_.holdBlockers())
+    for (const auto& who : reset_executor_.holdBlockers()) {
         text += " [" + who + "]";
+    }
     if (text != last) {
         last = text;
         UGV_LOG_INFO("[UnicycleUgvController] Reset held by the coordinator: %s", text.c_str());
@@ -674,22 +709,26 @@ double UnicycleUgvController::nextControlDeadline() const {
 }
 ugv_reset_client::NextWake UnicycleUgvController::nextWake() const {
     auto next = reset_executor_.nextWake(resetMeasurement());
-    if (current_time_sec_ > 0)
+    if (current_time_sec_ > 0) {
         next.atDomain(statusDue()
                           ? current_time_sec_
                           : static_cast<double>(
                                 last_status_ns_ +
                                 static_cast<int64_t>(1.0e9 / config_.status_publish_rate_hz)) /
                                 1.0e9);
+    }
     const double never = std::numeric_limits<double>::infinity();
     // Freshness has an existing lower bound too: a future-stamped pose becomes usable at
     // stamp-50ms.
-    if (state_.received && state_.stamp.toSec() - 0.05 > current_time_sec_)
+    if (state_.received && state_.stamp.toSec() - 0.05 > current_time_sec_) {
         next.atDomain(state_.stamp.toSec() - 0.05);
-    if (state_.received && last_health_ready_)
+    }
+    if (state_.received && last_health_ready_) {
         next.atDomain(std::nextafter(state_.stamp.toSec() + config_.state_timeout, never));
-    if (command_.valid && command_.stamp.toSec() - 0.05 > current_time_sec_)
+    }
+    if (command_.valid && command_.stamp.toSec() - 0.05 > current_time_sec_) {
         next.atDomain(command_.stamp.toSec() - 0.05);
+    }
     std::visit(
         [&](const auto& state) {
             using T = std::decay_t<decltype(state)>;
@@ -700,19 +739,22 @@ ugv_reset_client::NextWake UnicycleUgvController::nextWake() const {
             } else if constexpr (std::is_same_v<T, Custom1>) {
                 if (config_.tracking_strategy == TrackingStrategy::FLATNESS && worldPvaReady()) {
                     if (wall_control_) {
-                        if (state.sample_wall)
+                        if (state.sample_wall) {
                             next.atWall(*state.sample_wall);
-                        else if (!wall_control_->external_domain)
+                        } else if (!wall_control_->external_domain) {
                             next.atWall(wall_control_->next(wall_time_sec_));
-                    } else
+                        }
+                    } else {
                         next.atDomain(nextControlDeadline());
+                    }
                 }
                 if (config_.tracking_strategy == TrackingStrategy::NMPC && referenceReady()) {
-                    if (state.in_flight)
+                    if (state.in_flight) {
                         next.atDomain(std::nextafter(state.in_flight->deadline, never));
-                    else
+                    } else {
                         next.atDomain(state.solve.next(current_time_sec_,
                                                        1.0 / config_.nmpc_request_rate_hz));
+                    }
                 }
                 if (commandReady()) {
                     next.atDomain(state.command.next(current_time_sec_,

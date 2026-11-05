@@ -23,8 +23,9 @@ class Executor : public rc::ResetExecutor {
     using rc::ResetExecutor::ResetExecutor;
     bool begin(uint32_t session, const rc::Pose& target, bool valid, const rc::Measurement& m) {
         auto next = prepare(session, target, valid, m);
-        if (!next)
+        if (!next) {
             return false;
+        }
         install(*next, m);
         run_ = std::move(next);
         return true;

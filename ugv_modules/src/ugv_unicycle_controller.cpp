@@ -261,9 +261,7 @@ class Instance {
         if (config_.tracking_strategy == ugv::TrackingStrategy::NMPC && !execution_) {
             execution_ = std::make_unique<ugv::NmpcExecution>(
                 controller_,
-                [this](ugv::NmpcCompletion result) {
-                    controller_.postCompletion(std::move(result));
-                },
+                [this](ugv::NmpcCompletion result) { controller_.postCompletion(result); },
                 [this] { return secondsOf<ugv::Time>(host_.nowNs()); }, [this] { host_.wake(); });
             if (started_) {
                 execution_->start();
@@ -306,8 +304,9 @@ class Instance {
         thread_.check("step");
         const double now = secondsOf<ugv::Time>(ctx.now_ns);
         const double wall = ugv::monotonicSeconds();
-        if (ctx.reasons & XGC2_STEP_DEADLINE)
+        if (ctx.reasons & XGC2_STEP_DEADLINE) {
             armed_domain_ns_ = -1;
+        }
         (void)host_.latest<xgc2_ugv_wall_wake>(kWallWake);
         readState(now);
         readResetTarget(now);
@@ -539,8 +538,9 @@ class Instance {
         bool handled = false;
         for (;;) {
             const auto sample = host_.next<xgc2_ugv_command>(kCommand);
-            if (!sample)
+            if (!sample) {
                 return handled;
+            }
             ugv::OperatorCommand command;
             switch (sample->kind) {
                 case XGC2_UGV_COMMAND_CUSTOM1:
@@ -559,8 +559,9 @@ class Instance {
             const auto outcome = controller_.command(
                 command, now, wall,
                 sample->source == XGC2_UGV_COMMAND_SOURCE_PUBLIC ? "/command" : "command");
-            if (!outcome.ok() && outcome.code != ugv::CommandOutcome::Code::Unmatched)
+            if (!outcome.ok() && outcome.code != ugv::CommandOutcome::Code::Unmatched) {
                 host_.log(kLogWarn, outcome.message);
+            }
             dispatchOutputs(controller_.outputs(), now);
             handled = true;
         }
@@ -574,10 +575,11 @@ class Instance {
                 [&](const auto& value) {
                     using T = std::decay_t<decltype(value)>;
                     if constexpr (std::is_same_v<T, ugv::SolveNmpc>) {
-                        if (execution_)
+                        if (execution_) {
                             execution_->handle(value);
-                        else
+                        } else {
                             warn(kCmdVel, now, "An NMPC solve was requested but no solver runs");
+                        }
                     } else if constexpr (std::is_same_v<T, ugv::PublishCommand>) {
                         const auto twist = controller_.cmdVel();
                         pending_ = {true, XGC2_UGV_CMD_VEL_COMMAND, twist.linear_x,
@@ -684,8 +686,9 @@ class Instance {
     }
 
     void publishStatusIfDue(int64_t now_ns) {
-        if (!controller_.statusDue())
+        if (!controller_.statusDue()) {
             return;
+        }
         auto slot = host_.write<xgc2_ugv_controller_status>(kStatus);
         if (!slot) {
             return;
@@ -695,8 +698,9 @@ class Instance {
         slot->control_state = static_cast<uint32_t>(controller_.mode());
         slot->health_state = 100U;
         std::strncpy(slot->control_state_name, name.c_str(), sizeof(slot->control_state_name) - 1U);
-        if (slot.commit(now_ns))
+        if (slot.commit(now_ns)) {
             controller_.statusPublished();
+        }
     }
 
     void logStateChanges() {
@@ -715,8 +719,9 @@ class Instance {
     void schedule(int64_t now_ns) {
         auto next = controller_.nextWake();
         // Retrying an already-pending output was work on the original 2 ms owner cadence.
-        if (pending_.valid || controller_.resetExecutor().resultPending())
+        if (pending_.valid || controller_.resetExecutor().resultPending()) {
             next.atDomain(controller_.currentTime() + 1.0 / config_.control_rate_hz);
+        }
         const int64_t domain = deadlineNs(next.domain);
         if (domain != armed_domain_ns_) {
             host_.wakeAtNs(domain);
@@ -727,8 +732,9 @@ class Instance {
             auto slot = host_.write<xgc2_ugv_wall_deadline>(kWallDeadline);
             if (slot) {
                 slot->monotonic_deadline_ns = wall;
-                if (slot.commit(now_ns))
+                if (slot.commit(now_ns)) {
                     published_wall_ns_ = wall;
+                }
             }
         }
     }

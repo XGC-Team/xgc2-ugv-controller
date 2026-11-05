@@ -137,7 +137,7 @@ class MecanumUgvController {
         static void handle(Custom1&, Exit, MecanumUgvController&);
         static void handle(Reset&, Exit, MecanumUgvController&);
     };
-    CommandOutcome turn(double domain_now, double wall_now, std::optional<OperatorCommand> command,
+    CommandOutcome turn(double domain_now, double wall_now, std::optional<OperatorCommand> input,
                         const std::string& source);
     bool apply(Spec::Change change);
     Spec::Change prepareReset(CommandOutcome& outcome);

@@ -32,11 +32,13 @@ bool MecanumUgvController::resetTargetReady() const {
 void MecanumUgvController::observeInputs(double now, double wall) {
     current_time_sec_ = now;
     wall_time_sec_ = wall;
-    if (!control_phase_ns_)
+    if (!control_phase_ns_) {
         control_phase_ns_ = static_cast<int64_t>(std::llround(wall * 1.0e9));
+    }
     setCoreTime(now);
-    if (state_.received)
+    if (state_.received) {
         reset_executor_.observe(resetMeasurement());
+    }
     reset_executor_.poll(resetMeasurement());
 }
 bool MecanumUgvController::statusDue() const {
@@ -83,17 +85,20 @@ CommandOutcome MecanumUgvController::turn(double now, double wall,
                 *this));
         }
     }
-    if (!changed && health_changed)
+    if (!changed && health_changed) {
         changed = apply(machine_.dispatch(Health{healthy}, *this));
-    if (!changed && finished)
-        changed = apply(adt::Enter{Ready{}});
+    }
+    if (!changed && finished) {
+        apply(adt::Enter{Ready{}});
+    }
     if (input == OperatorCommand::kReset) {
         last_reset_admission_miss_ = outcome.ok() ? std::string{}
                                                   : (outcome.code == CommandOutcome::Code::Unmatched
                                                          ? describeResetAdmissionMiss(source)
                                                          : outcome.message);
-        if (!outcome.ok())
+        if (!outcome.ok()) {
             MECANUM_LOG_ERROR("[MecanumUgvController] %s", last_reset_admission_miss_.c_str());
+        }
     }
     logResetHold();
     return outcome;
@@ -103,9 +108,9 @@ bool MecanumUgvController::apply(Spec::Change change) {
     return std::visit(
         [this](auto& transition) {
             using T = std::decay_t<decltype(transition)>;
-            if constexpr (std::is_same_v<T, adt::Stay>)
+            if constexpr (std::is_same_v<T, adt::Stay>) {
                 return false;
-            else {
+            } else {
                 machine_.dispatch(Exit{}, *this);
                 enter(transition.value);
                 machine_.apply(std::move(transition), current_time_sec_);
@@ -131,10 +136,11 @@ void MecanumUgvController::enter(Reset& state) {
     last_reset_hold_reason_ = resetTargetReady()
                                   ? std::string{}
                                   : "no target: reset_pose cache and reset_initial_* missing";
-    if (!resetTargetReady())
+    if (!resetTargetReady()) {
         MECANUM_LOG_ERROR(
             "[MecanumUgvController] Reset entered without a valid goal; "
             "it ends after 2 s unless a cached initialPose arrives first");
+    }
     emitResetZero(state, true);
 }
 MecanumUgvController::Spec::Change MecanumUgvController::prepareReset(CommandOutcome& outcome) {
@@ -156,8 +162,9 @@ MecanumUgvController::Spec::Change MecanumUgvController::prepareReset(CommandOut
 }
 void MecanumUgvController::publishIdle(PeriodicGate& gate) {
     if (gate.due(current_time_sec_,
-                 config_.idle_cmd_rate_hz > 0 ? 1.0 / config_.idle_cmd_rate_hz : 0))
+                 config_.idle_cmd_rate_hz > 0 ? 1.0 / config_.idle_cmd_rate_hz : 0)) {
         outputs_.emplace_back(PublishZero{current_time_sec_});
+    }
 }
 bool MecanumUgvController::Spec::handle(SelfCheck& state, Tick, MecanumUgvController& c) {
     c.publishIdle(state.command);
@@ -175,8 +182,9 @@ bool MecanumUgvController::Spec::handle(Custom1& state, Tick, MecanumUgvControll
     if (!c.worldReferenceReady()) {
         if (!c.wall_control_ || c.wall_control_->take(state.sample_wall, c.wall_time_sec_)) {
             c.emitZero();
-            if (c.wall_control_)
+            if (c.wall_control_) {
                 state.sample_wall = c.wall_control_->next(c.wall_time_sec_);
+            }
         }
         return false;
     }
@@ -199,8 +207,9 @@ void MecanumUgvController::emitResetZero(Reset& state, bool force) {
     const double period = config_.idle_cmd_rate_hz > 0 ? 1.0 / config_.idle_cmd_rate_hz
                                                        : 1.0 / config_.command_publish_rate_hz;
     const bool due = state.command.due(wall_time_sec_, period);
-    if (force || due)
+    if (force || due) {
         outputs_.emplace_back(PublishZero{current_time_sec_});
+    }
 }
 bool MecanumUgvController::Spec::handle(Reset& state, Tick, MecanumUgvController& c) {
     const auto step = c.reset_executor_.step(c.resetMeasurement());
@@ -220,8 +229,9 @@ bool MecanumUgvController::Spec::handle(Reset& state, Tick, MecanumUgvController
     command.linear_y = step.command.vy;
     command.angular_z = step.command.wz;
     c.setCommand(command);
-    if (state.command.due(c.wall_time_sec_, 1.0 / c.config_.command_publish_rate_hz))
+    if (state.command.due(c.wall_time_sec_, 1.0 / c.config_.command_publish_rate_hz)) {
         c.outputs_.emplace_back(PublishCommand{c.current_time_sec_});
+    }
     return false;
 }
 MecanumUgvController::Spec::Change MecanumUgvController::Spec::handle(SelfCheck&, Operator,
@@ -230,8 +240,9 @@ MecanumUgvController::Spec::Change MecanumUgvController::Spec::handle(SelfCheck&
 }
 MecanumUgvController::Spec::Change MecanumUgvController::Spec::handle(Ready&, Operator input,
                                                                       MecanumUgvController& c) {
-    if (input.command == OperatorCommand::kReset)
+    if (input.command == OperatorCommand::kReset) {
         return c.prepareReset(input.outcome);
+    }
     if (input.command == OperatorCommand::kCustom1) {
         input.outcome.code = CommandOutcome::Code::Applied;
         return adt::Enter{Custom1{}};
@@ -240,12 +251,14 @@ MecanumUgvController::Spec::Change MecanumUgvController::Spec::handle(Ready&, Op
 }
 MecanumUgvController::Spec::Change MecanumUgvController::Spec::handle(Custom1&, Operator input,
                                                                       MecanumUgvController& c) {
-    if (input.command == OperatorCommand::kReset)
+    if (input.command == OperatorCommand::kReset) {
         return c.prepareReset(input.outcome);
+    }
     // Actual old registered order is Reset, HealthUnhealthy, Stop. The old global
     // sort did not consistently order same-source rules by the declared priority.
-    if (input.health && !input.health->ready)
+    if (input.health && !input.health->ready) {
         return adt::Enter{SelfCheck{}};
+    }
     if (input.command == OperatorCommand::kStop) {
         input.outcome.code = CommandOutcome::Code::Applied;
         return adt::Enter{Ready{}};
@@ -254,8 +267,9 @@ MecanumUgvController::Spec::Change MecanumUgvController::Spec::handle(Custom1&, 
 }
 MecanumUgvController::Spec::Change MecanumUgvController::Spec::handle(Reset&, Operator input,
                                                                       MecanumUgvController& c) {
-    if (input.command == OperatorCommand::kReset)
+    if (input.command == OperatorCommand::kReset) {
         return c.prepareReset(input.outcome);
+    }
     if (input.command == OperatorCommand::kStop) {
         input.outcome.code = CommandOutcome::Code::Applied;
         return adt::Enter{Ready{}};
@@ -264,26 +278,30 @@ MecanumUgvController::Spec::Change MecanumUgvController::Spec::handle(Reset&, Op
 }
 MecanumUgvController::Spec::Change MecanumUgvController::Spec::handle(SelfCheck&, Health health,
                                                                       MecanumUgvController&) {
-    if (health.ready)
+    if (health.ready) {
         return adt::Enter{Ready{}};
+    }
     return adt::Stay{};
 }
 MecanumUgvController::Spec::Change MecanumUgvController::Spec::handle(Ready&, Health health,
                                                                       MecanumUgvController&) {
-    if (!health.ready)
+    if (!health.ready) {
         return adt::Enter{SelfCheck{}};
+    }
     return adt::Stay{};
 }
 MecanumUgvController::Spec::Change MecanumUgvController::Spec::handle(Custom1&, Health health,
                                                                       MecanumUgvController&) {
-    if (!health.ready)
+    if (!health.ready) {
         return adt::Enter{SelfCheck{}};
+    }
     return adt::Stay{};
 }
 MecanumUgvController::Spec::Change MecanumUgvController::Spec::handle(Reset&, Health health,
                                                                       MecanumUgvController&) {
-    if (!health.ready)
+    if (!health.ready) {
         return adt::Enter{SelfCheck{}};
+    }
     return adt::Stay{};
 }
 void MecanumUgvController::Spec::handle(SelfCheck&, Exit, MecanumUgvController&) {}
@@ -309,14 +327,15 @@ ControlMode MecanumUgvController::mode() const {
     return std::visit(
         [](const auto& state) {
             using T = std::decay_t<decltype(state)>;
-            if constexpr (std::is_same_v<T, SelfCheck>)
+            if constexpr (std::is_same_v<T, SelfCheck>) {
                 return ControlMode::SelfCheck;
-            else if constexpr (std::is_same_v<T, Ready>)
+            } else if constexpr (std::is_same_v<T, Ready>) {
                 return ControlMode::Ready;
-            else if constexpr (std::is_same_v<T, Custom1>)
+            } else if constexpr (std::is_same_v<T, Custom1>) {
                 return ControlMode::Custom1;
-            else
+            } else {
                 return ControlMode::Reset;
+            }
         },
         machine_.state());
 }
@@ -342,12 +361,13 @@ std::string MecanumUgvController::describeResetAdmissionMiss(const std::string& 
     text << "RESET_REQUESTED unmatched topic=" << source << " CONTROL=" << modeName()
          << " health=" << (healthReady() ? "ready" : "unhealthy")
          << " target=" << (resetTargetReady() ? "ready" : "missing");
-    if (mode() == ControlMode::SelfCheck && healthReady())
+    if (mode() == ControlMode::SelfCheck && healthReady()) {
         text << " reason=health-ready-but-stuck-in-SelfCheck";
-    else if (mode() == ControlMode::SelfCheck)
+    } else if (mode() == ControlMode::SelfCheck) {
         text << " reason=unhealthy-SelfCheck-has-no-Reset-edge";
-    else
+    } else {
         text << " reason=no-matching-transition";
+    }
     return text.str();
 }
 void MecanumUgvController::logResetResult() const {
@@ -371,11 +391,13 @@ void MecanumUgvController::logResetResult() const {
     }
 }
 void MecanumUgvController::logResetHold() {
-    if (!reset_executor_.active())
+    if (!reset_executor_.active()) {
         return;
+    }
     auto* state = std::get_if<Reset>(&machine_.state());
-    if (!state)
+    if (!state) {
         return;
+    }
     auto& last = state->run->last_hold_logged;
     std::string text = rc::name(reset_executor_.holdReason());
     if (text.empty()) {
@@ -383,8 +405,9 @@ void MecanumUgvController::logResetHold() {
         return;
     }
     text += ": " + reset_executor_.holdDetail();
-    for (const auto& who : reset_executor_.holdBlockers())
+    for (const auto& who : reset_executor_.holdBlockers()) {
         text += " [" + who + "]";
+    }
     if (text != last) {
         last = text;
         MECANUM_LOG_INFO("[MecanumUgvController] Reset held by the coordinator: %s", text.c_str());
@@ -477,10 +500,12 @@ ugv_reset_client::NextWake MecanumUgvController::nextWake() const {
     const double never = std::numeric_limits<double>::infinity();
     // Freshness has an existing lower bound too: a future-stamped pose becomes usable at
     // stamp-50ms.
-    if (state_.received && state_.stamp.toSec() - 0.05 > current_time_sec_)
+    if (state_.received && state_.stamp.toSec() - 0.05 > current_time_sec_) {
         next.atDomain(state_.stamp.toSec() - 0.05);
-    if (state_.received && last_health_ready_)
+    }
+    if (state_.received && last_health_ready_) {
         next.atDomain(std::nextafter(state_.stamp.toSec() + config_.state_timeout, never));
+    }
     std::visit(
         [&](const auto& state) {
             using T = std::decay_t<decltype(state)>;
@@ -490,13 +515,14 @@ ugv_reset_client::NextWake MecanumUgvController::nextWake() const {
                     config_.idle_cmd_rate_hz > 0 ? 1.0 / config_.idle_cmd_rate_hz : 0));
             } else if constexpr (std::is_same_v<T, Custom1>) {
                 // Missing-reference zero is an original output on every nominal control step.
-                if (!worldReferenceReady())
+                if (!worldReferenceReady()) {
                     next.atWall(state.sample_wall.value_or(wall_control_
                                                                ? wall_control_->next(wall_time_sec_)
                                                                : nextControlDeadline()));
-                else
+                } else {
                     next.atDomain(state.command.next(current_time_sec_,
                                                      1.0 / config_.command_publish_rate_hz));
+                }
             } else {
                 const double rate = healthReady() || config_.idle_cmd_rate_hz <= 0
                                         ? config_.command_publish_rate_hz

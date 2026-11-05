@@ -319,8 +319,9 @@ Trace nodePath() {
         }
 
         // the controller's loop (UnicycleUgvRosNode::updateOnce)
-        if (!commanded)
+        if (!commanded) {
             controller.update(now, now);
+        }
         Control control;
         for (const auto& event : controller.outputs()) {
             if (std::holds_alternative<ugv::SolveNmpc>(event)) {

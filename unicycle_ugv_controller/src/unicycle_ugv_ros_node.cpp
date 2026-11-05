@@ -71,14 +71,14 @@ UnicycleUgvRosNode::UnicycleUgvRosNode(ros::NodeHandle& nh)
 
     auto command = [this](OperatorCommand input, const char* source) {
         command_turn_ = true;
-        return controller_.command(input, loop_.now(), loop_.wallNow(), source);
+        return controller_.command(input, loop_.now(), state_machine::Ros1AdaptiveLoop::wallNow(),
+                                   source);
     };
     command_output_ = std::make_unique<CmdVelOutputConsumer>(
         nh_, controller_, cmd_vel_topic_, queue_size_, [this] { return loop_.now(); });
     if (config_.tracking_strategy == TrackingStrategy::NMPC) {
         nmpc_output_ = std::make_unique<NmpcOutputConsumer>(
-            nh_, controller_,
-            [this](NmpcCompletion result) { controller_.postCompletion(std::move(result)); },
+            nh_, controller_, [this](NmpcCompletion result) { controller_.postCompletion(result); },
             [this] { loop_.notify(); }, queue_size_);
         reference_input_ = std::make_unique<ReferenceInputProducer>(
             nh_, controller_.referenceCache(), active_analytic_topic_, active_polynomial_topic_,
@@ -138,8 +138,9 @@ void UnicycleUgvRosNode::seedResetTarget() {
 }
 
 void UnicycleUgvRosNode::updateOnce() {
-    if (!std::exchange(command_turn_, false))
-        controller_.update(loop_.now(), loop_.wallNow());
+    if (!std::exchange(command_turn_, false)) {
+        controller_.update(loop_.now(), state_machine::Ros1AdaptiveLoop::wallNow());
+    }
     if (!controller_.lastResetAdmissionMiss().empty() &&
         controller_.lastResetAdmissionMiss() != last_logged_reset_miss_) {
         last_logged_reset_miss_ = controller_.lastResetAdmissionMiss();
@@ -161,23 +162,28 @@ void UnicycleUgvRosNode::updateOnce() {
 }
 
 void UnicycleUgvRosNode::dispatchOutputs(const std::vector<ControllerOutput>& outputs) {
-    for (const auto& output : outputs)
+    for (const auto& output : outputs) {
         std::visit(
             [this](const auto& value) {
                 using T = std::decay_t<decltype(value)>;
                 if constexpr (std::is_same_v<T, SolveNmpc>) {
-                    if (nmpc_output_)
+                    if (nmpc_output_) {
                         nmpc_output_->handle(value);
-                } else
+                    }
+                } else {
                     command_output_->handle(value);
+                }
             },
             output);
-    if (controller_.resetExecutor().needsZeroPublication())
+    }
+    if (controller_.resetExecutor().needsZeroPublication()) {
         command_output_->handle(PublishZero{controller_.currentTime()});
+    }
 }
 void UnicycleUgvRosNode::publishStatusIfDue() {
-    if (!control_state_pub_ || !controller_.statusDue())
+    if (!control_state_pub_ || !controller_.statusDue()) {
         return;
+    }
     std_msgs::String status;
     status.data = controller_.modeName();
     control_state_pub_.publish(status);

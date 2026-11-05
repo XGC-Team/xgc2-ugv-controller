@@ -63,7 +63,7 @@ class NmpcExecution {
     void stop();
 
     // Consumes the solve request on the control owner.
-    void handle(const SolveNmpc& request);
+    void handle(const SolveNmpc& event);
 
    private:
     NmpcCompletion compute(const NmpcRequest& request, bool& entered);

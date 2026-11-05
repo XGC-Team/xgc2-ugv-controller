@@ -24,8 +24,9 @@ class Callback : public ros::CallbackInterface {
 template <class Predicate>
 bool await(Predicate predicate) {
     const auto end = std::chrono::steady_clock::now() + 3s;
-    while (!predicate() && std::chrono::steady_clock::now() < end)
+    while (!predicate() && std::chrono::steady_clock::now() < end) {
         std::this_thread::sleep_for(1ms);
+    }
     return predicate();
 }
 TEST(OwnerLoop, ClockInputCompletionWallAndShutdownWakeOneSleepingOwner) {
@@ -55,7 +56,7 @@ TEST(OwnerLoop, ClockInputCompletionWallAndShutdownWakeOneSleepingOwner) {
         enqueue([&] {
             EXPECT_EQ(std::this_thread::get_id(), owner);
             ++inputs;
-            wall_deadline = loop.wallNow() + .04;
+            wall_deadline = state_machine::Ros1AdaptiveLoop::wallNow() + .04;
         });
         EXPECT_TRUE(await([&] { return inputs.load() == 1; }));
         EXPECT_TRUE(await([&] { return wall_fires.load() == 1; }));
@@ -76,14 +77,15 @@ TEST(OwnerLoop, ClockInputCompletionWallAndShutdownWakeOneSleepingOwner) {
         [&] {
             ++turns;
             observed_clock = loop.now();
-            if (loop.wallNow() >= wall_deadline) {
+            if (state_machine::Ros1AdaptiveLoop::wallNow() >= wall_deadline) {
                 ++wall_fires;
                 wall_deadline = std::numeric_limits<double>::infinity();
             }
             if (request_barrier.exchange(false)) {
                 in_work = true;
-                while (!release_work.load())
+                while (!release_work.load()) {
                     std::this_thread::yield();
+                }
             }
         },
         [&] {

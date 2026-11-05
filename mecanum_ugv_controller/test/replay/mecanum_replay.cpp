@@ -115,8 +115,9 @@ class Run {
         if (pending_command_) {
             controller_.command(*pending_command_, t_, wall, "replay");
             pending_command_.reset();
-        } else
+        } else {
             controller_.update(t_, wall);
+        }
         const auto events = controller_.outputs();
         std::fprintf(out, "%.3f h %u c %u out", t_, 100U,
                      static_cast<uint32_t>(controller_.mode()));

@@ -775,11 +775,12 @@ TEST(MecanumUgvControllerPriority, ResetAndReadyKeepTheirOriginalSimultaneousHea
         goal.x = 1;
         c.setResetTarget(goal);
         c.update(1.0, 100.0);
-        if (test.from != ControlMode::Ready)
+        if (test.from != ControlMode::Ready) {
             ASSERT_TRUE(c.command(test.from == ControlMode::Custom1 ? OperatorCommand::kCustom1
                                                                     : OperatorCommand::kReset,
                                   1.01, 100.01)
                             .ok());
+        }
         ASSERT_EQ(c.mode(), test.from);
         EXPECT_TRUE(c.command(test.command, 2.0, 100.02).ok());
         EXPECT_EQ(c.mode(), test.expected);

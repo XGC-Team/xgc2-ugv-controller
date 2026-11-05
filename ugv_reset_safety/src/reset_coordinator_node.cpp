@@ -199,8 +199,9 @@ class CoordinatorNode {
                     event_ = false;
                     for (const OutgoingGrant& g : core_->step(now)) {
                         auto found = grant_pubs_.find(g.vehicle);
-                        if (found != grant_pubs_.end())
+                        if (found != grant_pubs_.end()) {
                             found->second.publish(toMessage(g.grant, world_frame_));
+                        }
                         logGrant(g);
                     }
                 }
@@ -214,9 +215,10 @@ class CoordinatorNode {
                 next.atWall(next_discovery);
                 next.atWall(next_fleet);
                 next.atWall(due());
-                if (scene_live_)
+                if (scene_live_) {
                     next.atWall(std::nextafter(scene_state_wall_ + 1.0,
                                                std::numeric_limits<double>::infinity()));
+                }
                 return next;
             });
     }

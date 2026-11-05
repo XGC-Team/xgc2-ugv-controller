@@ -85,23 +85,26 @@ class MecanumUgvRosNode {
                                         loop_.externalClock());
         loop_.run(
             [this] {
-                if (!std::exchange(command_turn_, false))
-                    controller_.update(loop_.now(), loop_.wallNow());
+                if (!std::exchange(command_turn_, false)) {
+                    controller_.update(loop_.now(), state_machine::Ros1AdaptiveLoop::wallNow());
+                }
                 if (!controller_.lastResetAdmissionMiss().empty() &&
                     controller_.lastResetAdmissionMiss() != last_logged_reset_miss_) {
                     last_logged_reset_miss_ = controller_.lastResetAdmissionMiss();
                     ROS_ERROR("[MecanumUgvRosNode] %s", last_logged_reset_miss_.c_str());
                 }
                 for (const auto& output : controller_.outputs()) {
-                    if (std::holds_alternative<PublishCommand>(output))
+                    if (std::holds_alternative<PublishCommand>(output)) {
                         publishTwist(controller_.resetExecutor().requiresZeroCommand()
                                          ? geometry_msgs::Twist{}
                                          : makeTwist(controller_.command()));
-                    else
+                    } else {
                         publishTwist(geometry_msgs::Twist{});
+                    }
                 }
-                if (controller_.resetExecutor().needsZeroPublication())
+                if (controller_.resetExecutor().needsZeroPublication()) {
                     publishTwist(geometry_msgs::Twist{});
+                }
                 ugv_reset_client::Session session;
                 if (controller_.takeResetSession(&session)) {
                     reset_edge_->publish(session);
@@ -242,12 +245,14 @@ class MecanumUgvRosNode {
             return;
         }
         command_turn_ = true;
-        const auto outcome = controller_.command(id, loop_.now(), loop_.wallNow(), source);
-        if (outcome.ok())
+        const auto outcome = controller_.command(
+            id, loop_.now(), state_machine::Ros1AdaptiveLoop::wallNow(), source);
+        if (outcome.ok()) {
             ROS_INFO("[MecanumUgvRosNode] Command applied: %s on %s", msg->data.c_str(), source);
-        else
+        } else {
             ROS_WARN("[MecanumUgvRosNode] Command unmatched/refused: %s source=%s CONTROL=%s",
                      outcome.message.c_str(), source, controller_.modeName());
+        }
     }
 
     void poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
