@@ -37,6 +37,7 @@ require_version() {
   }
 }
 require_version libxgc2-math-dev '0.6.0-6~focal'
+require_version libxgc2-state-machine-dev '0.2.0-3~focal'
 require_version "ros-${ROS_DISTRO:-noetic}-xgc2-geometry-msgs" 1.5.0-4
 require_version "ros-${ROS_DISTRO:-noetic}-xgc2-unicycle-reference-trajectory-msgs" 1.4.0-1
 require_version "ros-${ROS_DISTRO:-noetic}-xgc2-ugv-reset-msgs" 2.0.0-1

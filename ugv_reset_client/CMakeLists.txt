@@ -4,15 +4,16 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(catkin REQUIRED COMPONENTS roscpp rosgraph_msgs ugv_reset_msgs)
-# Header-only: executor/route math is ROS-free; reset_ros.h and owner_loop.h are ROS edges.
+# Header-only: executor/route math is ROS-free; reset_ros.h is the Reset ROS edge.
 catkin_package(INCLUDE_DIRS include CATKIN_DEPENDS roscpp rosgraph_msgs ugv_reset_msgs)
 include_directories(include ${catkin_INCLUDE_DIRS})
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
 if(CATKIN_ENABLE_TESTING)
+  find_package(xgc2_state_machine 0.2.0 REQUIRED CONFIG COMPONENTS ros1_loop)
   find_package(rostest REQUIRED)
   add_rostest_gtest(owner_loop_test test/owner_loop.test test/owner_loop_test.cpp)
   if(TARGET owner_loop_test)
-    target_link_libraries(owner_loop_test ${catkin_LIBRARIES})
+    target_link_libraries(owner_loop_test xgc2_state_machine::ros1_loop ${catkin_LIBRARIES})
     add_dependencies(owner_loop_test ${catkin_EXPORTED_TARGETS})
   endif()
   # The executor, the tracker and the route: header-only, no ROS anywhere.

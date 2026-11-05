@@ -13,7 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   unicycle_reference_trajectory_msgs
 )
-find_package(xgc2_state_machine 0.2.0 REQUIRED CONFIG)
+find_package(xgc2_state_machine 0.2.0 REQUIRED CONFIG COMPONENTS ros1_loop)
 find_package(xgc2_math 0.5.12 REQUIRED CONFIG)
 
 find_package(Eigen3 REQUIRED)
@@ -64,6 +64,7 @@ add_executable(unicycle_reference_trajectory_node
 add_dependencies(unicycle_reference_trajectory_node ${${PROJECT_NAME}_EXPORTED_TARGETS}
                                       ${catkin_EXPORTED_TARGETS})
 target_link_libraries(unicycle_reference_trajectory_node
+  xgc2_state_machine::ros1_loop
   unicycle_reference_trajectory_core
   xgc2_math::trajectory
   xgc2_state_machine::state_machine

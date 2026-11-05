@@ -19,7 +19,7 @@
 
 #include <ros/master.h>
 #include <ros/ros.h>
-#include <ugv_reset_client/owner_loop.h>
+#include <ugv_reset_client/schedule.h>
 #include <ugv_reset_msgs/ResetFleet.h>
 #include <ugv_reset_msgs/ResetGrant.h>
 #include <ugv_reset_msgs/ResetSession.h>
@@ -35,6 +35,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <state_machine/ros1_adaptive_loop.hpp>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -414,7 +415,7 @@ class CoordinatorNode {
         event_ = true;
     }
 
-    rc::OwnerLoop loop_;
+    state_machine::Ros1AdaptiveLoop loop_;
     ros::NodeHandle nh_, private_;
     std::unique_ptr<ResetCoordinator> core_;
     std::map<std::string, Vehicle> vehicles_;

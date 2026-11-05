@@ -74,7 +74,18 @@ NmpcExecution::NmpcExecution(UnicycleUgvController& controller, CompletionSink c
       completion_sink_(std::move(completion_sink)),
       clock_(std::move(clock)),
       notify_(std::move(notify)),
-      prediction_(std::move(prediction)) {
+      prediction_(std::move(prediction)),
+      worker_([this, entered = false](
+                  const NmpcRequest& request) mutable { return compute(request, entered); },
+              [this](const NmpcCompletion& completion) {
+                  if (completion_sink_)
+                      completion_sink_(completion);
+                  return true;
+              },
+              [this](const NmpcCompletion&) {
+                  if (notify_)
+                      notify_();
+              }) {
     backend_.configure(controller_.config());
 }
 
@@ -83,27 +94,12 @@ NmpcExecution::~NmpcExecution() {
 }
 
 void NmpcExecution::start() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (worker_.joinable()) {
-        return;
-    }
-    stop_ = false;
-    busy_ = false;
-    pending_.reset();
-    worker_ = std::thread(&NmpcExecution::workerLoop, this);
+    worker_.start();
 }
 
 void NmpcExecution::stop() {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        stop_ = true;
-        pending_.reset();
-    }
-    condition_.notify_all();
-    if (worker_.joinable()) {
-        worker_.join();
+    if (worker_.stop())
         backend_.exit();
-    }
 }
 
 void NmpcExecution::handle(const SolveNmpc& event) {
@@ -114,16 +110,7 @@ void NmpcExecution::handle(const SolveNmpc& event) {
             notify_();
         return;
     }
-    bool rejected = false;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (stop_ || busy_ || pending_.has_value()) {
-            rejected = true;
-        } else {
-            pending_ = std::move(request);
-        }
-    }
-    if (rejected) {
+    if (!worker_.trySubmit(std::move(request))) {
         UGV_LOG_WARN_THROTTLE(1.0, "[UgvNmpcExecution] Reject solve seq=%lu: backend busy",
                               static_cast<unsigned long>(event.sequence));
         postResult(event.sequence, NmpcOutcome{});
@@ -131,52 +118,29 @@ void NmpcExecution::handle(const SolveNmpc& event) {
             notify_();
         return;
     }
-    condition_.notify_one();
     return;
 }
 
-void NmpcExecution::workerLoop() {
-    bool entered = false;
-    while (true) {
-        NmpcRequest request;
-        {
-            std::unique_lock<std::mutex> lock(mutex_);
-            condition_.wait(lock, [this] { return stop_ || pending_.has_value(); });
-            if (stop_) {
-                return;
-            }
-            request = std::move(*pending_);
-            pending_.reset();
-            busy_ = true;
+NmpcCompletion NmpcExecution::compute(const NmpcRequest& request, bool& entered) {
+    const NmpcOutcome outcome = solveNmpcRequest(backend_, entered, request);
+    if (outcome.success) {
+        if (prediction_) {
+            prediction_(request.now, backend_);
         }
-
-        const NmpcOutcome outcome = solveNmpcRequest(backend_, entered, request);
-        if (outcome.success) {
-            if (prediction_) {
-                prediction_(request.now, backend_);
-            }
-            UGV_LOG_INFO_THROTTLE(1.0,
-                                  "[UgvNmpcExecution] Solve ok seq=%lu linear=%.3f angular=%.3f "
-                                  "solve=%.3f ms",
-                                  static_cast<unsigned long>(request.sequence),
-                                  outcome.command.linear_speed, outcome.command.angular_speed,
-                                  backend_.solveTimeMs());
-        } else {
-            UGV_LOG_WARN_THROTTLE(1.0,
-                                  "[UgvNmpcExecution] Solve failed seq=%lu status=%d solve=%.3f ms "
-                                  "refs=%zu",
-                                  static_cast<unsigned long>(request.sequence), backend_.status(),
-                                  backend_.solveTimeMs(), request.references.size());
-        }
-        postResult(request.sequence, outcome);
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            busy_ = false;
-        }
-        if (notify_) {
-            notify_();
-        }
+        UGV_LOG_INFO_THROTTLE(1.0,
+                              "[UgvNmpcExecution] Solve ok seq=%lu linear=%.3f angular=%.3f "
+                              "solve=%.3f ms",
+                              static_cast<unsigned long>(request.sequence),
+                              outcome.command.linear_speed, outcome.command.angular_speed,
+                              backend_.solveTimeMs());
+    } else {
+        UGV_LOG_WARN_THROTTLE(1.0,
+                              "[UgvNmpcExecution] Solve failed seq=%lu status=%d solve=%.3f ms "
+                              "refs=%zu",
+                              static_cast<unsigned long>(request.sequence), backend_.status(),
+                              backend_.solveTimeMs(), request.references.size());
     }
+    return makeNmpcCompletion(request.sequence, outcome);
 }
 
 void NmpcExecution::postResult(uint64_t sequence, const NmpcOutcome& outcome) {

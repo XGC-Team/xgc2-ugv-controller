@@ -2,7 +2,7 @@
 
 The vehicle's side of the UGV Reset protocol with the station's coordinator (`ugv_reset_safety`). The vehicle owns
 its motion, its 90 s deadline and its fail-stop; the coordinator only grants permission to move. Everything here is
-header-only and ROS-free except the `reset_ros.h` and `owner_loop.h` transport edges, so the controllers, the module entity and the scenario harness
+header-only and ROS-free except the `reset_ros.h` transport edge, so the controllers, the module entity and the scenario harness
 exercise one definition.
 
 | header | what it is |
@@ -12,7 +12,6 @@ exercise one definition.
 | `reset_tracker.h` | `VelocityEstimator`, `EllEstimator` (windowed rotation-centre offset of a skid-steer unicycle, learned only from turns in place) and `RouteTracker`: follows the segment direction, stops and turns in place at every vertex, stops inside the granted prefix with a lag-aware stopping profile, finishes with a latched final stage. |
 | `reset_executor.h` | `ResetExecutor`: grants in, command out, `Session` messages out, one `Result`. Its fail-stops: 90 s on the wall and the ROS clock; the heartbeat of the grant (a second after the last message the vehicle brakes to a stop inside its prefix and waits, and goes on if the coordinator is back); no message from the coordinator for 2 s (typed result AbortedCoordinatorLost, or RejectedNoCoordinator if none ever answered); no target (2 s); health lost; the route tube (cross-track); no progress for 10 s while allowed to move. |
 | `schedule.h` | Explicit domain/wall deadlines and the existing ROS wall sampling phase. |
-| `owner_loop.h` | Serial ROS callback/clock/completion/deadline owner with a latched sleep and shutdown wake. |
 | `reset_ros.h` | `ResetRosEdge`: publishes `reset/session`, the latched `reset/result`, takes `reset/grant`. |
 
 The controller owns the executor's passive observation and protocol retirement context. Its active
@@ -24,7 +23,7 @@ result credits. Typed command dispatch returns admission directly, and a complet
 the existing return to Ready. An old completed Run cannot terminate a same-turn replacement Run.
 
 Both domain and monotonic wall time are explicit in each observation/step. `nextWake` projects the
-original timeouts, heartbeat and numerical/session obligations. `OwnerLoop` reuses the standalone
+original timeouts, heartbeat and numerical/session obligations. The common `state_machine::Ros1AdaptiveLoop` reuses the standalone
 node's owner thread and existing ROS callback queue; native modules consume the same deadlines. The shared messages `ResetSession`, `ResetGrant`, `ResetResult` and `ResetFleet` are in `ugv_reset_msgs`
 (ros1-msgs).
 

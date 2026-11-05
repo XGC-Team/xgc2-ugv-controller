@@ -4,12 +4,13 @@
 #include <geometry_msgs/TwistStamped.h>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_client/owner_loop.h>
 #include <ugv_reset_client/reset_ros.h>
+#include <ugv_reset_client/schedule.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <state_machine/ros1_adaptive_loop.hpp>
 #include <string>
 #include <utility>
 
@@ -306,7 +307,7 @@ class MecanumUgvRosNode {
         return msg;
     }
 
-    ugv_reset_client::OwnerLoop loop_;
+    state_machine::Ros1AdaptiveLoop loop_;
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
     UgvState state_;

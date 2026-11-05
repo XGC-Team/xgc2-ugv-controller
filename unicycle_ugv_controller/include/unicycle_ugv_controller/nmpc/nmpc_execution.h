@@ -1,11 +1,8 @@
 #pragma once
 
-#include <condition_variable>
 #include <cstdint>
 #include <functional>
-#include <mutex>
-#include <optional>
-#include <thread>
+#include <state_machine/async_worker.hpp>
 #include <vector>
 
 #include "unicycle_ugv_controller/common/types.h"
@@ -69,7 +66,7 @@ class NmpcExecution {
     void handle(const SolveNmpc& request);
 
    private:
-    void workerLoop();
+    NmpcCompletion compute(const NmpcRequest& request, bool& entered);
     void postResult(uint64_t sequence, const NmpcOutcome& outcome);
 
     UnicycleUgvController& controller_;
@@ -78,12 +75,7 @@ class NmpcExecution {
     Notify notify_;
     PredictionSink prediction_;
     NmpcTrackingBackend backend_;
-    std::mutex mutex_;
-    std::condition_variable condition_;
-    std::thread worker_;
-    bool stop_{false};
-    bool busy_{false};
-    std::optional<NmpcRequest> pending_;
+    state_machine::AsyncWorker<NmpcRequest, NmpcCompletion> worker_;
 };
 
 }  // namespace unicycle_ugv_controller

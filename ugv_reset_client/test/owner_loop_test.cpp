@@ -1,10 +1,11 @@
 #include <gtest/gtest.h>
-#include <ugv_reset_client/owner_loop.h>
+#include <ugv_reset_client/schedule.h>
 
 #include <atomic>
 #include <boost/make_shared.hpp>
 #include <chrono>
 #include <functional>
+#include <state_machine/ros1_adaptive_loop.hpp>
 #include <thread>
 
 namespace {
@@ -28,7 +29,7 @@ bool await(Predicate predicate) {
     return predicate();
 }
 TEST(OwnerLoop, ClockInputCompletionWallAndShutdownWakeOneSleepingOwner) {
-    ugv_reset_client::OwnerLoop loop;
+    state_machine::Ros1AdaptiveLoop loop;
     ros::NodeHandle nh;
     loop.attach(nh);
     ASSERT_TRUE(loop.externalClock());
