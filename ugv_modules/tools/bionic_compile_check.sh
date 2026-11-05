@@ -56,10 +56,6 @@ sources=(
   unicycle_reference_trajectory/src/unicycle_reference_trajectory_runtime.cpp
   unicycle_reference_trajectory/src/reference_driver.cpp
   unicycle_reference_trajectory/src/default_analytic.cpp
-  unicycle_reference_trajectory/src/state_machine/active_state.cpp
-  unicycle_reference_trajectory/src/state_machine/planning_state.cpp
-  unicycle_reference_trajectory/src/state_machine/ready_state.cpp
-  unicycle_reference_trajectory/src/state_machine/self_check_state.cpp
   unicycle_ugv_controller/src/common_types.cpp
   unicycle_ugv_controller/src/core_log.cpp
   unicycle_ugv_controller/src/reference_cache.cpp
@@ -67,15 +63,9 @@ sources=(
   unicycle_ugv_controller/src/nmpc/nmpc_execution.cpp
   unicycle_ugv_controller/src/nmpc/nmpc_tracking_backend.cpp
   unicycle_ugv_controller/src/nmpc/unicycle_nmpc_solver.cpp
-  unicycle_ugv_controller/src/state_machine/custom1_state.cpp
-  unicycle_ugv_controller/src/state_machine/health_monitor_state.cpp
-  unicycle_ugv_controller/src/state_machine/ready_state.cpp
-  unicycle_ugv_controller/src/state_machine/reset_state.cpp
-  unicycle_ugv_controller/src/state_machine/self_check_state.cpp
   mecanum_ugv_controller/src/common_types.cpp
   mecanum_ugv_controller/src/core_log.cpp
   mecanum_ugv_controller/src/mecanum_ugv_controller.cpp
-  mecanum_ugv_controller/src/state_machine/states.cpp
   ugv_reset_safety/src/reset_path.cpp
   ugv_reset_safety/src/reset_planner.cpp
   ugv_reset_safety/src/reset_coordinator.cpp
