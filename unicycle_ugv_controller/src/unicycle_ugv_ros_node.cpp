@@ -71,7 +71,7 @@ UnicycleUgvRosNode::UnicycleUgvRosNode(ros::NodeHandle& nh)
 
     auto command = [this](OperatorCommand input, const char* source) {
         command_turn_ = true;
-        return controller_.command(input, loop_.now(), state_machine::Ros1AdaptiveLoop::wallNow(),
+        return controller_.command(input, loop_.now(), ros1_utils::AdaptiveOwnerLoop::wallNow(),
                                    source);
     };
     command_output_ = std::make_unique<CmdVelOutputConsumer>(
@@ -139,7 +139,7 @@ void UnicycleUgvRosNode::seedResetTarget() {
 
 void UnicycleUgvRosNode::updateOnce() {
     if (!std::exchange(command_turn_, false)) {
-        controller_.update(loop_.now(), state_machine::Ros1AdaptiveLoop::wallNow());
+        controller_.update(loop_.now(), ros1_utils::AdaptiveOwnerLoop::wallNow());
     }
     if (!controller_.lastResetAdmissionMiss().empty() &&
         controller_.lastResetAdmissionMiss() != last_logged_reset_miss_) {

@@ -35,7 +35,7 @@
 #include <map>
 #include <memory>
 #include <set>
-#include <state_machine/ros1_adaptive_loop.hpp>
+#include <ros1_utils/adaptive_owner_loop.h>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -417,7 +417,7 @@ class CoordinatorNode {
         event_ = true;
     }
 
-    state_machine::Ros1AdaptiveLoop loop_;
+    ros1_utils::AdaptiveOwnerLoop loop_;
     ros::NodeHandle nh_, private_;
     std::unique_ptr<ResetCoordinator> core_;
     std::map<std::string, Vehicle> vehicles_;

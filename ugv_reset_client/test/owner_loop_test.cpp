@@ -5,7 +5,7 @@
 #include <boost/make_shared.hpp>
 #include <chrono>
 #include <functional>
-#include <state_machine/ros1_adaptive_loop.hpp>
+#include <ros1_utils/adaptive_owner_loop.h>
 #include <thread>
 
 namespace {
@@ -30,7 +30,7 @@ bool await(Predicate predicate) {
     return predicate();
 }
 TEST(OwnerLoop, ClockInputCompletionWallAndShutdownWakeOneSleepingOwner) {
-    state_machine::Ros1AdaptiveLoop loop;
+    ros1_utils::AdaptiveOwnerLoop loop;
     ros::NodeHandle nh;
     loop.attach(nh);
     ASSERT_TRUE(loop.externalClock());
@@ -56,7 +56,7 @@ TEST(OwnerLoop, ClockInputCompletionWallAndShutdownWakeOneSleepingOwner) {
         enqueue([&] {
             EXPECT_EQ(std::this_thread::get_id(), owner);
             ++inputs;
-            wall_deadline = state_machine::Ros1AdaptiveLoop::wallNow() + .04;
+            wall_deadline = ros1_utils::AdaptiveOwnerLoop::wallNow() + .04;
         });
         EXPECT_TRUE(await([&] { return inputs.load() == 1; }));
         EXPECT_TRUE(await([&] { return wall_fires.load() == 1; }));
@@ -77,7 +77,7 @@ TEST(OwnerLoop, ClockInputCompletionWallAndShutdownWakeOneSleepingOwner) {
         [&] {
             ++turns;
             observed_clock = loop.now();
-            if (state_machine::Ros1AdaptiveLoop::wallNow() >= wall_deadline) {
+            if (ros1_utils::AdaptiveOwnerLoop::wallNow() >= wall_deadline) {
                 ++wall_fires;
                 wall_deadline = std::numeric_limits<double>::infinity();
             }

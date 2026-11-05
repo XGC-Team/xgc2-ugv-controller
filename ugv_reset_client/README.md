@@ -23,7 +23,7 @@ result credits. Typed command dispatch returns admission directly, and a complet
 the existing return to Ready. An old completed Run cannot terminate a same-turn replacement Run.
 
 Both domain and monotonic wall time are explicit in each observation/step. `nextWake` projects the
-original timeouts, heartbeat and numerical/session obligations. The common `state_machine::Ros1AdaptiveLoop` reuses the standalone
+original timeouts, heartbeat and numerical/session obligations. The common `ros1_utils::AdaptiveOwnerLoop` reuses the standalone
 node's owner thread and existing ROS callback queue; native modules consume the same deadlines. The shared messages `ResetSession`, `ResetGrant`, `ResetResult` and `ResetFleet` are in `ugv_reset_msgs`
 (ros1-msgs).
 

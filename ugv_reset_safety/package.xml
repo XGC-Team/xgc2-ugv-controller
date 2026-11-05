@@ -11,8 +11,7 @@
   <depend>geometry_msgs</depend>
   <depend>std_msgs</depend>
   <depend>roscpp</depend>
-  <build_depend version_gte="0.2.0-3~focal">libxgc2-state-machine-dev</build_depend>
-  <exec_depend version_gte="0.2.0-3~focal">libxgc2-state-machine-dev</exec_depend>
+  <build_depend>ros1_utils</build_depend>
   <build_depend>xgc2_geometry_msgs</build_depend>
   <exec_depend>xgc2_geometry_msgs</exec_depend>
   <depend>eigen</depend>

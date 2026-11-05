@@ -18,7 +18,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 find_package(Eigen3 REQUIRED)
 find_package(xgc2_acados REQUIRED CONFIG)
-find_package(xgc2_state_machine 0.2.0 REQUIRED CONFIG COMPONENTS workers ros1_loop)
+find_package(xgc2_state_machine 0.2.0 REQUIRED CONFIG COMPONENTS workers)
 find_package(xgc2_math 0.5.12 REQUIRED CONFIG)
 
 if(COMMAND xgc2_acados_require)
@@ -255,7 +255,6 @@ add_dependencies(${PROJECT_NAME}_node
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS})
 target_link_libraries(${PROJECT_NAME}_node
-  xgc2_state_machine::ros1_loop
   unicycle_ugv_controller_core
   ${catkin_LIBRARIES}
   pthread)

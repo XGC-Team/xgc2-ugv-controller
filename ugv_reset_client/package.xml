@@ -10,7 +10,7 @@
   <depend>roscpp</depend>
   <depend>rosgraph_msgs</depend>
   <depend>ugv_reset_msgs</depend>
-  <test_depend version_gte="0.2.0-3~focal">libxgc2-state-machine-dev</test_depend>
+  <test_depend>ros1_utils</test_depend>
   <test_depend>gtest</test_depend>
   <test_depend>rostest</test_depend>
 </package>

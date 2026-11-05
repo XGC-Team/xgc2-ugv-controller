@@ -4,7 +4,7 @@
 #include <ugv_reset_client/schedule.h>
 
 #include <memory>
-#include <state_machine/ros1_adaptive_loop.hpp>
+#include <ros1_utils/adaptive_owner_loop.h>
 #include <string>
 #include <vector>
 
@@ -24,7 +24,7 @@ class ReferenceTrajectoryNode {
    private:
     void loadParams();
 
-    state_machine::Ros1AdaptiveLoop loop_;
+    ros1_utils::AdaptiveOwnerLoop loop_;
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
     ReferenceTrajectoryDriver driver_;

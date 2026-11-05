@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <state_machine/ros1_adaptive_loop.hpp>
+#include <ros1_utils/adaptive_owner_loop.h>
 #include <string>
 #include <utility>
 
@@ -86,7 +86,7 @@ class MecanumUgvRosNode {
         loop_.run(
             [this] {
                 if (!std::exchange(command_turn_, false)) {
-                    controller_.update(loop_.now(), state_machine::Ros1AdaptiveLoop::wallNow());
+                    controller_.update(loop_.now(), ros1_utils::AdaptiveOwnerLoop::wallNow());
                 }
                 if (!controller_.lastResetAdmissionMiss().empty() &&
                     controller_.lastResetAdmissionMiss() != last_logged_reset_miss_) {
@@ -246,7 +246,7 @@ class MecanumUgvRosNode {
         }
         command_turn_ = true;
         const auto outcome = controller_.command(
-            id, loop_.now(), state_machine::Ros1AdaptiveLoop::wallNow(), source);
+            id, loop_.now(), ros1_utils::AdaptiveOwnerLoop::wallNow(), source);
         if (outcome.ok()) {
             ROS_INFO("[MecanumUgvRosNode] Command applied: %s on %s", msg->data.c_str(), source);
         } else {
@@ -312,7 +312,7 @@ class MecanumUgvRosNode {
         return msg;
     }
 
-    state_machine::Ros1AdaptiveLoop loop_;
+    ros1_utils::AdaptiveOwnerLoop loop_;
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
     UgvState state_;

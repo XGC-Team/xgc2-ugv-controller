@@ -5,8 +5,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(catkin REQUIRED COMPONENTS geometry_msgs roscpp std_msgs ugv_reset_client ugv_reset_msgs)
-find_package(xgc2_state_machine 0.2.0 REQUIRED CONFIG COMPONENTS ros1_loop)
+find_package(catkin REQUIRED COMPONENTS geometry_msgs roscpp ros1_utils std_msgs ugv_reset_client ugv_reset_msgs)
+find_package(xgc2_state_machine 0.2.0 REQUIRED CONFIG)
 find_package(xgc2_math 0.5.12 REQUIRED CONFIG)
 
 catkin_package(
@@ -47,7 +47,6 @@ add_executable(${PROJECT_NAME}_node
   src/mecanum_ugv_ros_node.cpp)
 add_dependencies(${PROJECT_NAME}_node ${catkin_EXPORTED_TARGETS})
 target_link_libraries(${PROJECT_NAME}_node
-  xgc2_state_machine::ros1_loop
   mecanum_ugv_controller_core
   ${catkin_LIBRARIES}
   pthread)
