@@ -22,7 +22,7 @@ find_package(Xgc2Module REQUIRED CONFIG)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(JSONCPP REQUIRED jsoncpp)
 find_package(Eigen3 REQUIRED)
-find_package(xgc2_state_machine REQUIRED CONFIG)
+find_package(xgc2_state_machine 0.2.0 REQUIRED CONFIG)
 find_package(xgc2_math 0.5.12 REQUIRED CONFIG)
 
 # The payload header is the public vocabulary of the modules.

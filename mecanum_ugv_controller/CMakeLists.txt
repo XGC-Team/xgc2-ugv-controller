@@ -6,12 +6,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(catkin REQUIRED COMPONENTS geometry_msgs roscpp std_msgs ugv_reset_client ugv_reset_msgs)
-find_package(xgc2_state_machine REQUIRED CONFIG)
+find_package(xgc2_state_machine 0.2.0 REQUIRED CONFIG)
 find_package(xgc2_math 0.5.12 REQUIRED CONFIG)
 
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES mecanum_ugv_controller_core
+  CFG_EXTRAS mecanum_ugv_controller-dependencies.cmake
   CATKIN_DEPENDS geometry_msgs roscpp std_msgs ugv_reset_client ugv_reset_msgs
 )
 

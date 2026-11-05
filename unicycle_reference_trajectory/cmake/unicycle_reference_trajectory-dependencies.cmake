@@ -2,7 +2,7 @@ include(CMakeFindDependencyMacro)
 
 find_dependency(Eigen3 CONFIG)
 find_dependency(xgc2_math 0.5.12 CONFIG)
-find_dependency(xgc2_state_machine CONFIG)
+find_dependency(xgc2_state_machine 0.2.0 CONFIG)
 
 list(APPEND unicycle_reference_trajectory_LIBRARIES
   Eigen3::Eigen

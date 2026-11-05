@@ -13,7 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   unicycle_reference_trajectory_msgs
 )
-find_package(xgc2_state_machine REQUIRED CONFIG)
+find_package(xgc2_state_machine 0.2.0 REQUIRED CONFIG)
 find_package(xgc2_math 0.5.12 REQUIRED CONFIG)
 
 find_package(Eigen3 REQUIRED)
