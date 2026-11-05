@@ -19,6 +19,7 @@
 
 #include <ros/master.h>
 #include <ros/ros.h>
+#include <ros1_utils/adaptive_owner_loop.h>
 #include <ugv_reset_client/schedule.h>
 #include <ugv_reset_msgs/ResetFleet.h>
 #include <ugv_reset_msgs/ResetGrant.h>
@@ -35,7 +36,6 @@
 #include <map>
 #include <memory>
 #include <set>
-#include <ros1_utils/adaptive_owner_loop.h>
 #include <stdexcept>
 #include <string>
 #include <tuple>

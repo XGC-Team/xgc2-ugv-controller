@@ -3,6 +3,7 @@
 #include <geometry_msgs/Twist.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <ros/ros.h>
+#include <ros1_utils/adaptive_owner_loop.h>
 #include <std_msgs/String.h>
 #include <ugv_reset_client/reset_ros.h>
 #include <ugv_reset_client/schedule.h>
@@ -10,7 +11,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <ros1_utils/adaptive_owner_loop.h>
 #include <string>
 #include <utility>
 
@@ -245,8 +245,8 @@ class MecanumUgvRosNode {
             return;
         }
         command_turn_ = true;
-        const auto outcome = controller_.command(
-            id, loop_.now(), ros1_utils::AdaptiveOwnerLoop::wallNow(), source);
+        const auto outcome =
+            controller_.command(id, loop_.now(), ros1_utils::AdaptiveOwnerLoop::wallNow(), source);
         if (outcome.ok()) {
             ROS_INFO("[MecanumUgvRosNode] Command applied: %s on %s", msg->data.c_str(), source);
         } else {

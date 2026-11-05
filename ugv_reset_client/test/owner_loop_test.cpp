@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
+#include <ros1_utils/adaptive_owner_loop.h>
 #include <ugv_reset_client/schedule.h>
 
 #include <atomic>
 #include <boost/make_shared.hpp>
 #include <chrono>
 #include <functional>
-#include <ros1_utils/adaptive_owner_loop.h>
 #include <thread>
 
 namespace {
