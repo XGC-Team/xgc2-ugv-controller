@@ -37,9 +37,11 @@ void CommandInputProducer::handleCommand(const std_msgs::String::ConstPtr& msg,
     }
     const auto outcome = command_sink_(command, source);
     if (outcome.ok()) {
-        ROS_INFO("[UgvCommandInputProducer] Command applied: %u on %s", static_cast<unsigned>(command), source);
+        ROS_INFO("[UgvCommandInputProducer] Command applied: %u on %s",
+                 static_cast<unsigned>(command), source);
     } else {
-        ROS_WARN("[UgvCommandInputProducer] Command unmatched/refused on %s: %s", source, outcome.message.c_str());
+        ROS_WARN("[UgvCommandInputProducer] Command unmatched/refused on %s: %s", source,
+                 outcome.message.c_str());
     }
 }
 

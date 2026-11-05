@@ -4,8 +4,8 @@
 #include <geometry_msgs/TwistStamped.h>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_client/reset_ros.h>
 #include <ugv_reset_client/owner_loop.h>
+#include <ugv_reset_client/reset_ros.h>
 
 #include <algorithm>
 #include <cctype>
@@ -53,14 +53,13 @@ std::string normalize(std::string value) {
 class MecanumUgvRosNode {
    public:
     explicit MecanumUgvRosNode(ros::NodeHandle& nh)
-        : nh_(nh),
-          private_nh_("~"),
-          controller_(state_) {
+        : nh_(nh), private_nh_("~"), controller_(state_) {
         loop_.attach(nh_);
-        reset_edge_ = std::make_unique<ugv_reset_client::ResetRosEdge>(nh_, [this](const auto& grant) {
-            controller_.observeInputs(loop_.now(), loop_.wallNow());
-            controller_.onResetGrant(grant);
-        });
+        reset_edge_ =
+            std::make_unique<ugv_reset_client::ResetRosEdge>(nh_, [this](const auto& grant) {
+                controller_.observeInputs(loop_.now(), loop_.wallNow());
+                controller_.onResetGrant(grant);
+            });
         loadParams();
         controller_.setConfig(config_);
         seedResetTarget();
@@ -81,37 +80,45 @@ class MecanumUgvRosNode {
     }
 
     void run() {
-        controller_.setWallControlPhase(static_cast<int64_t>(ros::SteadyTime::now().toNSec()), loop_.externalClock());
-        loop_.run([this] {
-            if (!std::exchange(command_turn_, false)) controller_.update(loop_.now(), loop_.wallNow());
-            if (!controller_.lastResetAdmissionMiss().empty() &&
-                controller_.lastResetAdmissionMiss() != last_logged_reset_miss_) {
-                last_logged_reset_miss_ = controller_.lastResetAdmissionMiss();
-                ROS_ERROR("[MecanumUgvRosNode] %s", last_logged_reset_miss_.c_str());
-            }
-            for (const auto& output : controller_.outputs()) {
-                if (std::holds_alternative<PublishCommand>(output))
-                    publishTwist(controller_.resetExecutor().requiresZeroCommand() ? geometry_msgs::Twist{} : makeTwist(controller_.command()));
-                else publishTwist(geometry_msgs::Twist{});
-            }
-            if (controller_.resetExecutor().needsZeroPublication()) publishTwist(geometry_msgs::Twist{});
-            ugv_reset_client::Session session;
-            if (controller_.takeResetSession(&session)) {
-                reset_edge_->publish(session);
-                controller_.resetSessionPublished();
-            }
-            ugv_reset_client::Result result;
-            if (controller_.peekResetResult(&result)) {
-                reset_edge_->publish(result);
-                controller_.resetResultPublished();
-            }
-            if (controller_.statusDue()) {
-                std_msgs::String status;
-                status.data = controller_.modeName();
-                control_state_pub_.publish(status);
-                controller_.statusPublished();
-            }
-        }, [this] { return controller_.nextWake(); });
+        controller_.setWallControlPhase(static_cast<int64_t>(ros::SteadyTime::now().toNSec()),
+                                        loop_.externalClock());
+        loop_.run(
+            [this] {
+                if (!std::exchange(command_turn_, false))
+                    controller_.update(loop_.now(), loop_.wallNow());
+                if (!controller_.lastResetAdmissionMiss().empty() &&
+                    controller_.lastResetAdmissionMiss() != last_logged_reset_miss_) {
+                    last_logged_reset_miss_ = controller_.lastResetAdmissionMiss();
+                    ROS_ERROR("[MecanumUgvRosNode] %s", last_logged_reset_miss_.c_str());
+                }
+                for (const auto& output : controller_.outputs()) {
+                    if (std::holds_alternative<PublishCommand>(output))
+                        publishTwist(controller_.resetExecutor().requiresZeroCommand()
+                                         ? geometry_msgs::Twist{}
+                                         : makeTwist(controller_.command()));
+                    else
+                        publishTwist(geometry_msgs::Twist{});
+                }
+                if (controller_.resetExecutor().needsZeroPublication())
+                    publishTwist(geometry_msgs::Twist{});
+                ugv_reset_client::Session session;
+                if (controller_.takeResetSession(&session)) {
+                    reset_edge_->publish(session);
+                    controller_.resetSessionPublished();
+                }
+                ugv_reset_client::Result result;
+                if (controller_.peekResetResult(&result)) {
+                    reset_edge_->publish(result);
+                    controller_.resetResultPublished();
+                }
+                if (controller_.statusDue()) {
+                    std_msgs::String status;
+                    status.data = controller_.modeName();
+                    control_state_pub_.publish(status);
+                    controller_.statusPublished();
+                }
+            },
+            [this] { return controller_.nextWake(); });
     }
 
    private:
@@ -235,9 +242,11 @@ class MecanumUgvRosNode {
         }
         command_turn_ = true;
         const auto outcome = controller_.command(id, loop_.now(), loop_.wallNow(), source);
-        if (outcome.ok()) ROS_INFO("[MecanumUgvRosNode] Command applied: %s on %s", msg->data.c_str(), source);
-        else ROS_WARN("[MecanumUgvRosNode] Command unmatched/refused: %s source=%s CONTROL=%s",
-                      outcome.message.c_str(), source, controller_.modeName());
+        if (outcome.ok())
+            ROS_INFO("[MecanumUgvRosNode] Command applied: %s on %s", msg->data.c_str(), source);
+        else
+            ROS_WARN("[MecanumUgvRosNode] Command unmatched/refused: %s source=%s CONTROL=%s",
+                     outcome.message.c_str(), source, controller_.modeName());
     }
 
     void poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {

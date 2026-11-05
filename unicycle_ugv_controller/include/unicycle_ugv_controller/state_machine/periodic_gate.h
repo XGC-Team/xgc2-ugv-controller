@@ -30,8 +30,10 @@ class PeriodicGate {
     }
 
     double next(double now, double period) const {
-        if (!std::isfinite(period) || period <= 0) return std::numeric_limits<double>::infinity();
-        if (!initialized_ || now < last_time_) return now;
+        if (!std::isfinite(period) || period <= 0)
+            return std::numeric_limits<double>::infinity();
+        if (!initialized_ || now < last_time_)
+            return now;
         return std::nextafter(last_time_ + period, std::numeric_limits<double>::infinity());
     }
     void reset() {

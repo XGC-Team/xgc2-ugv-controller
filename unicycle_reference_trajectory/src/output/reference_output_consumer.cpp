@@ -52,8 +52,7 @@ double visualizationDuration(const trajectory::TrajectoryEvaluator2& evaluator,
 }  // namespace
 
 ReferenceOutputConsumer::ReferenceOutputConsumer(
-    ros::NodeHandle& nh,
-    ReferenceTrajectoryRuntime& runtime, const std::string& status_topic,
+    ros::NodeHandle& nh, ReferenceTrajectoryRuntime& runtime, const std::string& status_topic,
     const std::string& active_analytic_topic, const std::string& active_polynomial_topic,
     const std::string& active_sampled_topic, const std::string& reference_path_topic,
     double reference_path_sample_dt, double reference_path_preview_duration, uint32_t queue_size)
@@ -76,12 +75,18 @@ ReferenceOutputConsumer::ReferenceOutputConsumer(
 void ReferenceOutputConsumer::handle(const ReferencePublication& publication) {
     switch (publication.kind) {
         case ReferenceOutput::Status:
-            status_pub_.publish(toRos(runtime_.makeStatus(publication.timestamp > 0.0
-                ? publication.timestamp : ros::Time::now().toSec())));
+            status_pub_.publish(toRos(runtime_.makeStatus(
+                publication.timestamp > 0.0 ? publication.timestamp : ros::Time::now().toSec())));
             return;
-        case ReferenceOutput::Analytic: active_analytic_pub_.publish(toRos(runtime_.activeAnalyticMessage())); break;
-        case ReferenceOutput::Polynomial: active_polynomial_pub_.publish(toRos(runtime_.activePolynomialMessage())); break;
-        case ReferenceOutput::Sampled: active_sampled_pub_.publish(toRos(runtime_.activeSampledMessage())); break;
+        case ReferenceOutput::Analytic:
+            active_analytic_pub_.publish(toRos(runtime_.activeAnalyticMessage()));
+            break;
+        case ReferenceOutput::Polynomial:
+            active_polynomial_pub_.publish(toRos(runtime_.activePolynomialMessage()));
+            break;
+        case ReferenceOutput::Sampled:
+            active_sampled_pub_.publish(toRos(runtime_.activeSampledMessage()));
+            break;
     }
     publishReferencePath(publication.timestamp);
 }

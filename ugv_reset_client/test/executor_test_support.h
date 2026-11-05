@@ -23,17 +23,22 @@ class Executor : public rc::ResetExecutor {
     using rc::ResetExecutor::ResetExecutor;
     bool begin(uint32_t session, const rc::Pose& target, bool valid, const rc::Measurement& m) {
         auto next = prepare(session, target, valid, m);
-        if (!next) return false;
+        if (!next)
+            return false;
         install(*next, m);
         run_ = std::move(next);
         return true;
     }
-    void finish() { rc::ResetExecutor::finish(); run_.reset(); }
+    void finish() {
+        rc::ResetExecutor::finish();
+        run_.reset();
+    }
     const rc::RouteTracker& tracker() const {
         const auto* active = rc::ResetExecutor::tracker();
         static const rc::RouteTracker absent;
         return active ? *active : absent;
     }
+
    private:
     RunPtr run_;
 };

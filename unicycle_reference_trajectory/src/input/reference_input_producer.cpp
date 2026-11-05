@@ -4,12 +4,10 @@
 
 namespace unicycle_reference_trajectory {
 
-ReferenceInputProducer::ReferenceInputProducer(ros::NodeHandle& nh,
-                                               ReferenceTrajectoryDriver& driver,
-                                               const std::string& analytic_topic,
-                                               const std::string& waypoint_topic,
-                                               const std::string& sampled_topic,
-                                               const std::string& reset_topic, uint32_t queue_size, std::function<double()> clock)
+ReferenceInputProducer::ReferenceInputProducer(
+    ros::NodeHandle& nh, ReferenceTrajectoryDriver& driver, const std::string& analytic_topic,
+    const std::string& waypoint_topic, const std::string& sampled_topic,
+    const std::string& reset_topic, uint32_t queue_size, std::function<double()> clock)
     : driver_(driver), clock_(std::move(clock)) {
     analytic_sub_ =
         nh.subscribe(analytic_topic, queue_size, &ReferenceInputProducer::analyticCallback, this);
@@ -47,8 +45,7 @@ void ReferenceInputProducer::sampledCallback(
         ROS_ERROR("[ReferenceInputProducer] Null sampled reference");
         return;
     }
-    report(driver_.acceptSampled(toCore(*msg), clock_()), "sampled reference",
-           "sampled_reference");
+    report(driver_.acceptSampled(toCore(*msg), clock_()), "sampled reference", "sampled_reference");
 }
 
 void ReferenceInputProducer::resetCallback(const std_msgs::Empty::ConstPtr& msg) {
@@ -60,7 +57,6 @@ void ReferenceInputProducer::report(ReferenceTrajectoryDriver::Request result, c
                                     const char*) {
     if (result == ReferenceTrajectoryDriver::Request::kRejected) {
         ROS_WARN_THROTTLE(1.0, "[ReferenceInputProducer] Rejected %s", what);
-
     }
 }
 

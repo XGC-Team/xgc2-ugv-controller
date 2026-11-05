@@ -2,10 +2,8 @@
 
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <ugv_reset_client/reset_ros.h>
 #include <ugv_reset_client/owner_loop.h>
-#include "unicycle_ugv_controller/output/cmd_vel_output_consumer.h"
-#include "unicycle_ugv_controller/output/nmpc_output_consumer.h"
+#include <ugv_reset_client/reset_ros.h>
 
 #include <memory>
 #include <string>
@@ -16,6 +14,8 @@
 #include "unicycle_ugv_controller/input/reference_input_producer.h"
 #include "unicycle_ugv_controller/input/reset_target_input_producer.h"
 #include "unicycle_ugv_controller/input/state_input_producer.h"
+#include "unicycle_ugv_controller/output/cmd_vel_output_consumer.h"
+#include "unicycle_ugv_controller/output/nmpc_output_consumer.h"
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
 
 namespace unicycle_ugv_controller {

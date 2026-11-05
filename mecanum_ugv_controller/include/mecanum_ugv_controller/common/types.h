@@ -2,8 +2,8 @@
 
 #include <cstdint>
 #include <limits>
-#include <variant>
 #include <string>
+#include <variant>
 
 #include "mecanum_ugv_controller/common/time.h"
 
@@ -81,14 +81,20 @@ struct HolonomicTrackOutput {
 
 enum class OperatorCommand { kUnknown, kCustom1, kStop, kReset };
 enum class ControlMode : uint32_t { SelfCheck = 1, Ready = 2, Custom1 = 3, Reset = 5 };
-struct PublishCommand { double timestamp; };
-struct PublishZero { double timestamp; };
+struct PublishCommand {
+    double timestamp;
+};
+struct PublishZero {
+    double timestamp;
+};
 using ControllerOutput = std::variant<PublishCommand, PublishZero>;
 struct CommandOutcome {
     enum class Code { Applied, Unmatched, PermissionActive, CreditUnavailable };
     Code code{Code::Unmatched};
     std::string message;
-    bool ok() const { return code == Code::Applied; }
+    bool ok() const {
+        return code == Code::Applied;
+    }
 };
 
 double wrapAngle(double value);

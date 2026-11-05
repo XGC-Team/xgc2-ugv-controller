@@ -1,9 +1,9 @@
 #pragma once
 
 #include <algorithm>
-#include <limits>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <optional>
 
 namespace ugv_reset_client {
@@ -11,9 +11,16 @@ namespace ugv_reset_client {
 struct NextWake {
     double domain{std::numeric_limits<double>::infinity()};
     double wall{std::numeric_limits<double>::infinity()};
-    void atDomain(double at) { domain = std::min(domain, at); }
-    void atWall(double at) { wall = std::min(wall, at); }
-    void include(NextWake other) { atDomain(other.domain); atWall(other.wall); }
+    void atDomain(double at) {
+        domain = std::min(domain, at);
+    }
+    void atWall(double at) {
+        wall = std::min(wall, at);
+    }
+    void include(NextWake other) {
+        atDomain(other.domain);
+        atWall(other.wall);
+    }
 };
 // The standalone controllers already sampled on WallRate. This clock binding keeps that
 // phase without sampling again for each input callback. It owns no business predicate.
@@ -30,8 +37,10 @@ struct WallControlCadence {
         return static_cast<double>(include_now && now == floor ? floor : floor + period) / 1.0e9;
     }
     bool take(std::optional<double>& pending, double wall) const {
-        if (!pending) pending = next(wall, true);
-        if (std::llround(wall * 1.0e9) < std::llround(*pending * 1.0e9)) return false;
+        if (!pending)
+            pending = next(wall, true);
+        if (std::llround(wall * 1.0e9) < std::llround(*pending * 1.0e9))
+            return false;
         pending.reset();
         return true;
     }

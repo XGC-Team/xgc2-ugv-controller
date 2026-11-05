@@ -112,12 +112,19 @@ class Instance {
         thread_.bind();  // which rebuilt the state machine on this thread
     }
 
-    void start() { host_.setPeriodNs(0); host_.wake(); armed_deadline_ns_ = -1; }
-    void stop() { host_.wakeAtNs(-1); }
+    void start() {
+        host_.setPeriodNs(0);
+        host_.wake();
+        armed_deadline_ns_ = -1;
+    }
+    void stop() {
+        host_.wakeAtNs(-1);
+    }
 
     void step(const xgc2_step_ctx& ctx) {
         thread_.check("step");
-        if (ctx.reasons & XGC2_STEP_DEADLINE) armed_deadline_ns_ = -1;
+        if (ctx.reasons & XGC2_STEP_DEADLINE)
+            armed_deadline_ns_ = -1;
         const double now = secondsOf<urt::Time>(ctx.now_ns);
         collect();
         for (const Pending& request : pending_) {
@@ -133,8 +140,13 @@ class Instance {
         }
         const int64_t deadline = deadlineNs(driver_.runtime().nextDeadline());
         if (deadline >= 0 && deadline <= ctx.now_ns) {
-            host_.wakeAtNs(-1); armed_deadline_ns_ = -1; host_.wake();
-        } else if (deadline != armed_deadline_ns_) { host_.wakeAtNs(deadline); armed_deadline_ns_ = deadline; }
+            host_.wakeAtNs(-1);
+            armed_deadline_ns_ = -1;
+            host_.wake();
+        } else if (deadline != armed_deadline_ns_) {
+            host_.wakeAtNs(deadline);
+            armed_deadline_ns_ = deadline;
+        }
     }
 
    private:
@@ -190,7 +202,6 @@ class Instance {
         }
         if (result == Request::kRejected) {
             host_.log(kLogWarn, std::string("Rejected ") + what);
-
         }
     }
 

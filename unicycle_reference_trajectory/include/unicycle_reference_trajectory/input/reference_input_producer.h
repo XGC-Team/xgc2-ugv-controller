@@ -1,12 +1,12 @@
 #pragma once
 
 #include <ros/ros.h>
-#include <functional>
 #include <std_msgs/Empty.h>
 #include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
 #include <unicycle_reference_trajectory_msgs/SampledReference.h>
 #include <unicycle_reference_trajectory_msgs/WaypointReferenceRequest.h>
 
+#include <functional>
 #include <string>
 
 #include "unicycle_reference_trajectory/reference_driver.h"

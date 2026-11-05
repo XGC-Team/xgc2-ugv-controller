@@ -394,7 +394,9 @@ TEST(ReferenceReceipt, StartNowUsesReceiptWhileExplicitFutureStartAndFirstReques
     EXPECT_DOUBLE_EQ(driver.runtime().activeAnalyticMessage().start_time.toSec(), 30.0);
     urt::ReferenceTrajectoryDriver first;
     ASSERT_EQ(first.acceptAnalytic(circle(3), 20.0), Request::kAccepted);
-    first.update(20.0); first.update(20.0); first.update(20.01);
+    first.update(20.0);
+    first.update(20.0);
+    first.update(20.01);
     EXPECT_EQ(first.runtime().currentState(), ref::ReferenceStatus::STATE_ACTIVE);
     EXPECT_EQ(first.runtime().activeTrajectoryId(), 3U);
     EXPECT_DOUBLE_EQ(first.runtime().activeAnalyticMessage().start_time.toSec(), 20.2);

@@ -5,19 +5,16 @@
 #include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
 #include <unicycle_reference_trajectory_msgs/SampledReference.h>
 
-
 #include "unicycle_ugv_controller/common/reference_cache.h"
 
 namespace unicycle_ugv_controller {
 
 class ReferenceInputProducer {
    public:
-
     ReferenceInputProducer(ros::NodeHandle& nh, ReferenceCache& cache,
                            const std::string& active_analytic_topic,
                            const std::string& active_polynomial_topic,
-                           const std::string& active_sampled_topic,
-                           uint32_t queue_size);
+                           const std::string& active_sampled_topic, uint32_t queue_size);
 
    private:
     void analyticCallback(

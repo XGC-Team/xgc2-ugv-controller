@@ -75,7 +75,9 @@ struct Sample {
 
 // A strict floating-point boundary is rounded up, never back to an earlier host nanosecond.
 inline int64_t deadlineNs(double seconds) {
-    return std::isfinite(seconds) ? static_cast<int64_t>(std::ceil(static_cast<long double>(seconds) * 1.0e9L)) : -1;
+    return std::isfinite(seconds)
+               ? static_cast<int64_t>(std::ceil(static_cast<long double>(seconds) * 1.0e9L))
+               : -1;
 }
 
 class Host;
@@ -118,9 +120,15 @@ class Host {
     int64_t nowNs() const {
         return api_->now_ns(context_);
     }
-    void setPeriodNs(int64_t period) const { api_->set_period_ns(context_, period); }
-    void wakeAtNs(int64_t deadline) const { api_->wake_at_ns(context_, deadline); }
-    int64_t phaseT0Ns() const { return api_->phase_t0_ns(context_); }
+    void setPeriodNs(int64_t period) const {
+        api_->set_period_ns(context_, period);
+    }
+    void wakeAtNs(int64_t deadline) const {
+        api_->wake_at_ns(context_, deadline);
+    }
+    int64_t phaseT0Ns() const {
+        return api_->phase_t0_ns(context_);
+    }
     void wake() const {
         api_->wake(context_);
     }

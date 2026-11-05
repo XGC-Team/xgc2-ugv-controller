@@ -1,4 +1,5 @@
 #include "unicycle_reference_trajectory/unicycle_reference_trajectory_runtime.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -92,35 +93,47 @@ void ReferenceTrajectoryRuntime::update(double now_sec) {
     }
 }
 
-bool ReferenceTrajectoryRuntime::acceptAnalytic(const reference::AnalyticReference& msg, double receipt_time) {
+bool ReferenceTrajectoryRuntime::acceptAnalytic(const reference::AnalyticReference& msg,
+                                                double receipt_time) {
     current_time_sec_ = receipt_time;
     uint32_t flags = 0U;
     auto evaluator = buildAnalyticEvaluator(msg, flags);
-    if (!evaluator) { flags_ |= flags; return false; }
+    if (!evaluator) {
+        flags_ |= flags;
+        return false;
+    }
     Analytic value{msg, std::move(evaluator), flags};
-    value.message.start_time = Time(adjustedStartTime(msg.start_time.toSec(), current_time_sec_,
-                                                    config_.min_lead_time));
+    value.message.start_time =
+        Time(adjustedStartTime(msg.start_time.toSec(), current_time_sec_, config_.min_lead_time));
     request_.emplace<Analytic>(std::move(value));
     return true;
 }
 
-bool ReferenceTrajectoryRuntime::acceptSampled(const reference::SampledReference& msg, double receipt_time) {
+bool ReferenceTrajectoryRuntime::acceptSampled(const reference::SampledReference& msg,
+                                               double receipt_time) {
     current_time_sec_ = receipt_time;
     uint32_t flags = 0U;
     auto evaluator = std::make_unique<trajectory::SampledEvaluator2>();
-    if (!buildSampledEvaluator(msg, *evaluator, flags)) { flags_ |= flags; return false; }
+    if (!buildSampledEvaluator(msg, *evaluator, flags)) {
+        flags_ |= flags;
+        return false;
+    }
     Sampled value{msg, std::move(evaluator), flags};
-    value.message.start_time = Time(adjustedStartTime(msg.start_time.toSec(), current_time_sec_,
-                                                    config_.min_lead_time));
+    value.message.start_time =
+        Time(adjustedStartTime(msg.start_time.toSec(), current_time_sec_, config_.min_lead_time));
     request_.emplace<Sampled>(std::move(value));
     return true;
 }
 
-bool ReferenceTrajectoryRuntime::acceptWaypoint(const reference::WaypointReferenceRequest& msg, double receipt_time) {
+bool ReferenceTrajectoryRuntime::acceptWaypoint(const reference::WaypointReferenceRequest& msg,
+                                                double receipt_time) {
     current_time_sec_ = receipt_time;
     trajectory::WaypointProblem2 problem;
     uint32_t flags = 0U;
-    if (!buildWaypointProblem(msg, problem, flags)) { flags_ |= flags; return false; }
+    if (!buildWaypointProblem(msg, problem, flags)) {
+        flags_ |= flags;
+        return false;
+    }
     request_.emplace<Waypoint>(Waypoint{msg, std::move(problem), flags});
     return true;
 }
@@ -142,16 +155,21 @@ bool ReferenceTrajectoryRuntime::planWaypoint(Waypoint& request) {
     auto evaluator = std::make_unique<trajectory::PiecewisePolynomialEvaluator2>();
     trajectory::SepticWaypointInterpolator2 solver;
     uint32_t flags = request.flags;
-    if (!solver.solve(request.problem, *evaluator, &flags)) { flags_ |= flags; return false; }
+    if (!solver.solve(request.problem, *evaluator, &flags)) {
+        flags_ |= flags;
+        return false;
+    }
     reference::ActivePolynomialReference msg;
     msg.header = request.message.header;
     msg.header.stamp = Time(current_time_sec_);
     msg.trajectory_id = request.message.trajectory_id;
     msg.revision = request.message.revision;
-    if (msg.revision == 0U) { msg.revision = activeRevision() + 1U; }
+    if (msg.revision == 0U) {
+        msg.revision = activeRevision() + 1U;
+    }
     msg.flags = flags | request.message.flags;
-    msg.start_time = Time(adjustedStartTime(request.message.header.stamp.toSec(),
-                                          current_time_sec_, config_.min_lead_time));
+    msg.start_time = Time(adjustedStartTime(request.message.header.stamp.toSec(), current_time_sec_,
+                                            config_.min_lead_time));
     msg.duration = evaluator->duration();
     msg.order = evaluator->order();
     for (const auto& segment : evaluator->segments()) {
@@ -172,12 +190,17 @@ void ReferenceTrajectoryRuntime::publish(PeriodicGate& gate, double rate, Refere
 }
 void ReferenceTrajectoryRuntime::publishActive(Active& state) {
     publish(state.status, config_.status_rate_hz, ReferenceOutput::Status);
-    const auto kind = std::visit([](const auto& value) {
-        using T = std::decay_t<decltype(value)>;
-        if constexpr (std::is_same_v<T, Analytic>) return ReferenceOutput::Analytic;
-        else if constexpr (std::is_same_v<T, Sampled>) return ReferenceOutput::Sampled;
-        else return ReferenceOutput::Polynomial;
-    }, retained_);
+    const auto kind = std::visit(
+        [](const auto& value) {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, Analytic>)
+                return ReferenceOutput::Analytic;
+            else if constexpr (std::is_same_v<T, Sampled>)
+                return ReferenceOutput::Sampled;
+            else
+                return ReferenceOutput::Polynomial;
+        },
+        retained_);
     publish(state.publication, config_.active_publish_rate_hz, kind);
 }
 
@@ -207,7 +230,8 @@ ReferenceTrajectoryRuntime::Spec::Change ReferenceTrajectoryRuntime::Spec::handl
 }
 ReferenceTrajectoryRuntime::Spec::Change ReferenceTrajectoryRuntime::Spec::handle(
     Planning& state, Advance, ReferenceTrajectoryRuntime& rt) {
-    if (!rt.planWaypoint(state.request)) return adt::Enter{SelfCheck{}};
+    if (!rt.planWaypoint(state.request))
+        return adt::Enter{SelfCheck{}};
     Active active;
     rt.publishActive(active);
     return adt::Enter{std::move(active)};
@@ -219,7 +243,8 @@ ReferenceTrajectoryRuntime::Spec::Change ReferenceTrajectoryRuntime::Spec::handl
         rt.request_.emplace<std::monostate>();
         return adt::Enter{std::move(planning)};
     }
-    if (!rt.activateRequest()) return adt::Enter{SelfCheck{}};
+    if (!rt.activateRequest())
+        return adt::Enter{SelfCheck{}};
     if (rt.activeExpired(rt.current_time_sec_)) {
         Ready ready;
         rt.publish(ready.status, rt.config_.status_rate_hz, ReferenceOutput::Status);
@@ -230,40 +255,64 @@ ReferenceTrajectoryRuntime::Spec::Change ReferenceTrajectoryRuntime::Spec::handl
 }
 
 uint8_t ReferenceTrajectoryRuntime::currentState() const {
-    return std::visit([](const auto& state) -> uint8_t {
-        using T = std::decay_t<decltype(state)>;
-        if constexpr (std::is_same_v<T, SelfCheck>) return reference::ReferenceStatus::STATE_SELF_CHECK;
-        else if constexpr (std::is_same_v<T, Ready>) return reference::ReferenceStatus::STATE_READY;
-        else if constexpr (std::is_same_v<T, Planning>) return reference::ReferenceStatus::STATE_PLANNING;
-        else return reference::ReferenceStatus::STATE_ACTIVE;
-    }, machine_.state());
+    return std::visit(
+        [](const auto& state) -> uint8_t {
+            using T = std::decay_t<decltype(state)>;
+            if constexpr (std::is_same_v<T, SelfCheck>)
+                return reference::ReferenceStatus::STATE_SELF_CHECK;
+            else if constexpr (std::is_same_v<T, Ready>)
+                return reference::ReferenceStatus::STATE_READY;
+            else if constexpr (std::is_same_v<T, Planning>)
+                return reference::ReferenceStatus::STATE_PLANNING;
+            else
+                return reference::ReferenceStatus::STATE_ACTIVE;
+        },
+        machine_.state());
 }
 trajectory::TrajectoryModelType ReferenceTrajectoryRuntime::activeType() const {
-    return std::visit([](const auto& value) {
-        using T = std::decay_t<decltype(value)>;
-        if constexpr (std::is_same_v<T, Analytic>) return trajectory::TrajectoryModelType::kAnalytic;
-        else if constexpr (std::is_same_v<T, Sampled>) return trajectory::TrajectoryModelType::kSampled;
-        else if constexpr (std::is_same_v<T, Polynomial>) return trajectory::TrajectoryModelType::kPolynomial;
-        else return trajectory::TrajectoryModelType::kNone;
-    }, retained_);
+    return std::visit(
+        [](const auto& value) {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, Analytic>)
+                return trajectory::TrajectoryModelType::kAnalytic;
+            else if constexpr (std::is_same_v<T, Sampled>)
+                return trajectory::TrajectoryModelType::kSampled;
+            else if constexpr (std::is_same_v<T, Polynomial>)
+                return trajectory::TrajectoryModelType::kPolynomial;
+            else
+                return trajectory::TrajectoryModelType::kNone;
+        },
+        retained_);
 }
 uint32_t ReferenceTrajectoryRuntime::activeTrajectoryId() const {
-    return std::visit([](const auto& value) -> uint32_t {
-        if constexpr (std::is_same_v<std::decay_t<decltype(value)>, std::monostate>) return 0U;
-        else return value.message.trajectory_id;
-    }, retained_);
+    return std::visit(
+        [](const auto& value) -> uint32_t {
+            if constexpr (std::is_same_v<std::decay_t<decltype(value)>, std::monostate>)
+                return 0U;
+            else
+                return value.message.trajectory_id;
+        },
+        retained_);
 }
 uint32_t ReferenceTrajectoryRuntime::activeRevision() const {
-    return std::visit([](const auto& value) -> uint32_t {
-        if constexpr (std::is_same_v<std::decay_t<decltype(value)>, std::monostate>) return 0U;
-        else return value.message.revision;
-    }, retained_);
+    return std::visit(
+        [](const auto& value) -> uint32_t {
+            if constexpr (std::is_same_v<std::decay_t<decltype(value)>, std::monostate>)
+                return 0U;
+            else
+                return value.message.revision;
+        },
+        retained_);
 }
 const trajectory::TrajectoryEvaluator2* ReferenceTrajectoryRuntime::evaluator() const {
-    return std::visit([](const auto& value) -> const trajectory::TrajectoryEvaluator2* {
-        if constexpr (std::is_same_v<std::decay_t<decltype(value)>, std::monostate>) return nullptr;
-        else return value.evaluator.get();
-    }, retained_);
+    return std::visit(
+        [](const auto& value) -> const trajectory::TrajectoryEvaluator2* {
+            if constexpr (std::is_same_v<std::decay_t<decltype(value)>, std::monostate>)
+                return nullptr;
+            else
+                return value.evaluator.get();
+        },
+        retained_);
 }
 const reference::AnalyticReference& ReferenceTrajectoryRuntime::activeAnalyticMessage() const {
     return std::get<Analytic>(retained_).message;
@@ -271,33 +320,49 @@ const reference::AnalyticReference& ReferenceTrajectoryRuntime::activeAnalyticMe
 const reference::SampledReference& ReferenceTrajectoryRuntime::activeSampledMessage() const {
     return std::get<Sampled>(retained_).message;
 }
-const reference::ActivePolynomialReference& ReferenceTrajectoryRuntime::activePolynomialMessage() const {
+const reference::ActivePolynomialReference& ReferenceTrajectoryRuntime::activePolynomialMessage()
+    const {
     return std::get<Polynomial>(retained_).message;
 }
 double ReferenceTrajectoryRuntime::activeEnd() const {
-    return std::visit([this](const auto& value) -> double {
-        using T = std::decay_t<decltype(value)>;
-        if constexpr (std::is_same_v<T, std::monostate>) return -never;
-        else {
-            double duration;
-            if constexpr (std::is_same_v<T, Sampled>) duration = value.evaluator->duration();
-            else duration = value.message.duration;
-            return duration <= 0.0 ? never : value.message.start_time.toSec() + duration + config_.trajectory_timeout;
-        }
-    }, retained_);
+    return std::visit(
+        [this](const auto& value) -> double {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, std::monostate>)
+                return -never;
+            else {
+                double duration;
+                if constexpr (std::is_same_v<T, Sampled>)
+                    duration = value.evaluator->duration();
+                else
+                    duration = value.message.duration;
+                return duration <= 0.0 ? never
+                                       : value.message.start_time.toSec() + duration +
+                                             config_.trajectory_timeout;
+            }
+        },
+        retained_);
 }
-bool ReferenceTrajectoryRuntime::activeExpired(double now) const { return now > activeEnd(); }
+bool ReferenceTrajectoryRuntime::activeExpired(double now) const {
+    return now > activeEnd();
+}
 double ReferenceTrajectoryRuntime::nextDeadline() const {
-    if (!std::holds_alternative<std::monostate>(request_)) return current_time_sec_;
-    return std::visit([this](const auto& state) -> double {
-        using T = std::decay_t<decltype(state)>;
-        if constexpr (std::is_same_v<T, Ready>) return state.status.next(current_time_sec_, 1.0 / config_.status_rate_hz);
-        else if constexpr (std::is_same_v<T, Active>) return std::min({
-            state.status.next(current_time_sec_, 1.0 / config_.status_rate_hz),
-            state.publication.next(current_time_sec_, 1.0 / config_.active_publish_rate_hz),
-            std::nextafter(activeEnd(), never)});
-        else return current_time_sec_;
-    }, machine_.state());
+    if (!std::holds_alternative<std::monostate>(request_))
+        return current_time_sec_;
+    return std::visit(
+        [this](const auto& state) -> double {
+            using T = std::decay_t<decltype(state)>;
+            if constexpr (std::is_same_v<T, Ready>)
+                return state.status.next(current_time_sec_, 1.0 / config_.status_rate_hz);
+            else if constexpr (std::is_same_v<T, Active>)
+                return std::min({state.status.next(current_time_sec_, 1.0 / config_.status_rate_hz),
+                                 state.publication.next(current_time_sec_,
+                                                        1.0 / config_.active_publish_rate_hz),
+                                 std::nextafter(activeEnd(), never)});
+            else
+                return current_time_sec_;
+        },
+        machine_.state());
 }
 reference::ReferenceStatus ReferenceTrajectoryRuntime::makeStatus(double stamp_sec) const {
     reference::ReferenceStatus status;
@@ -307,10 +372,18 @@ reference::ReferenceStatus ReferenceTrajectoryRuntime::makeStatus(double stamp_s
     status.active_trajectory_id = activeTrajectoryId();
     status.active_revision = activeRevision();
     switch (activeType()) {
-        case trajectory::TrajectoryModelType::kAnalytic: status.active_type = reference::ReferenceStatus::TYPE_ANALYTIC; break;
-        case trajectory::TrajectoryModelType::kPolynomial: status.active_type = reference::ReferenceStatus::TYPE_POLYNOMIAL; break;
-        case trajectory::TrajectoryModelType::kSampled: status.active_type = reference::ReferenceStatus::TYPE_SAMPLED; break;
-        default: status.active_type = reference::ReferenceStatus::TYPE_NONE; break;
+        case trajectory::TrajectoryModelType::kAnalytic:
+            status.active_type = reference::ReferenceStatus::TYPE_ANALYTIC;
+            break;
+        case trajectory::TrajectoryModelType::kPolynomial:
+            status.active_type = reference::ReferenceStatus::TYPE_POLYNOMIAL;
+            break;
+        case trajectory::TrajectoryModelType::kSampled:
+            status.active_type = reference::ReferenceStatus::TYPE_SAMPLED;
+            break;
+        default:
+            status.active_type = reference::ReferenceStatus::TYPE_NONE;
+            break;
     }
     return status;
 }
@@ -456,6 +529,5 @@ bool ReferenceTrajectoryRuntime::buildWaypointProblem(
     }
     return true;
 }
-
 
 }  // namespace unicycle_reference_trajectory

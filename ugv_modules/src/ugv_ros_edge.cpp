@@ -160,8 +160,10 @@ const xgc2_port_desc kPorts[kPortCount] = {
     port<int64_t>("clock", XGC2_PORT_OUT, XGC2_PORT_STATE, kClockSchema, 0U, kAsync),
     port<xgc2_ugv_reset_zero_publication>("reset_zero_publication", XGC2_PORT_OUT, XGC2_PORT_STATE,
                                           XGC2_UGV_SCHEMA_RESET_ZERO_PUBLICATION),
-    port<xgc2_ugv_wall_deadline>("wall_deadline", XGC2_PORT_IN, XGC2_PORT_STATE, XGC2_UGV_SCHEMA_WALL_DEADLINE),
-    port<xgc2_ugv_wall_wake>("wall_wake", XGC2_PORT_OUT, XGC2_PORT_STATE, XGC2_UGV_SCHEMA_WALL_WAKE, 0U, kAsync),
+    port<xgc2_ugv_wall_deadline>("wall_deadline", XGC2_PORT_IN, XGC2_PORT_STATE,
+                                 XGC2_UGV_SCHEMA_WALL_DEADLINE),
+    port<xgc2_ugv_wall_wake>("wall_wake", XGC2_PORT_OUT, XGC2_PORT_STATE, XGC2_UGV_SCHEMA_WALL_WAKE,
+                             0U, kAsync),
 };
 
 // ---- configuration
@@ -404,25 +406,33 @@ class Instance {
    private:
     void armWallDeadline() {
         const auto demand = host_.latest<xgc2_ugv_wall_deadline>(kWallDeadline);
-        if (!seen_.fresh(kWallDeadline, demand)) return;
+        if (!seen_.fresh(kWallDeadline, demand))
+            return;
         const int64_t deadline = demand->monotonic_deadline_ns;
-        if (armed_wall_ns_ && *armed_wall_ns_ == deadline) return;
+        if (armed_wall_ns_ && *armed_wall_ns_ == deadline)
+            return;
         // stop removes pending callbacks. An already-running wake may finish; it never
         // changes the current demand. disconnect() joins the spinner before destroying
         // the queue or this instance. No product handoff lock surrounds callbacks.
         wall_timer_.stop();
         armed_wall_ns_ = deadline;
-        if (deadline < 0) { wall_timer_ = {}; return; }
+        if (deadline < 0) {
+            wall_timer_ = {};
+            return;
+        }
         const int64_t now = static_cast<int64_t>(ros::SteadyTime::now().toNSec());
         ros::WallDuration delay;
         delay.fromNSec(std::max<int64_t>(0, deadline - now));
-        ros::SteadyTimerOptions options(delay, [this](const ros::SteadyTimerEvent&) {
-            auto slot = host_.write<xgc2_ugv_wall_wake>(kWallWake);
-            if (slot) {
-                slot->monotonic_now_ns = static_cast<int64_t>(ros::SteadyTime::now().toNSec());
-                slot.commit(host_.nowNs());
-            }
-        }, queue_.get(), true);
+        ros::SteadyTimerOptions options(
+            delay,
+            [this](const ros::SteadyTimerEvent&) {
+                auto slot = host_.write<xgc2_ugv_wall_wake>(kWallWake);
+                if (slot) {
+                    slot->monotonic_now_ns = static_cast<int64_t>(ros::SteadyTime::now().toNSec());
+                    slot.commit(host_.nowNs());
+                }
+            },
+            queue_.get(), true);
         wall_timer_ = nh_->createSteadyTimer(options);
     }
 

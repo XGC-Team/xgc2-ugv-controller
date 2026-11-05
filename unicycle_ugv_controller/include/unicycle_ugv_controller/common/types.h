@@ -1,12 +1,11 @@
 #pragma once
 
-#include <optional>
-#include <variant>
-#include <string>
-
 #include <Eigen/Dense>
 #include <cstdint>
 #include <limits>
+#include <optional>
+#include <string>
+#include <variant>
 
 #include "unicycle_ugv_controller/common/heading_recovery.h"
 #include "unicycle_ugv_controller/common/time.h"
@@ -190,9 +189,16 @@ struct NmpcSolveResult {
 
 // Public mode IDs are projections of the active CONTROL value, never a second state.
 enum class ControlMode : uint32_t { SelfCheck = 1, Ready = 2, Custom1 = 3, Reset = 5 };
-struct SolveNmpc { uint64_t sequence; double timestamp; };
-struct PublishCommand { double timestamp; };
-struct PublishZero { double timestamp; };
+struct SolveNmpc {
+    uint64_t sequence;
+    double timestamp;
+};
+struct PublishCommand {
+    double timestamp;
+};
+struct PublishZero {
+    double timestamp;
+};
 using ControllerOutput = std::variant<SolveNmpc, PublishCommand, PublishZero>;
 struct NmpcCompletion {
     uint64_t sequence;
@@ -202,7 +208,9 @@ struct CommandOutcome {
     enum class Code { Applied, Unmatched, PermissionActive, CreditUnavailable };
     Code code{Code::Unmatched};
     std::string message;
-    bool ok() const { return code == Code::Applied; }
+    bool ok() const {
+        return code == Code::Applied;
+    }
 };
 
 double wrapAngle(double value);

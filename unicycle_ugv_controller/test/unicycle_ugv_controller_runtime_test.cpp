@@ -27,12 +27,14 @@ namespace {
 
 enum class OutputTag { Solve, Command, Zero };
 OutputTag outputTag(const ControllerOutput& output) {
-    if (std::holds_alternative<SolveNmpc>(output)) return OutputTag::Solve;
+    if (std::holds_alternative<SolveNmpc>(output))
+        return OutputTag::Solve;
     return std::holds_alternative<PublishCommand>(output) ? OutputTag::Command : OutputTag::Zero;
 }
 bool hasOutputEvent(UnicycleUgvController& controller, OutputTag tag) {
     const auto& outputs = controller.outputs();
-    return std::any_of(outputs.begin(), outputs.end(), [tag](const auto& output) { return outputTag(output) == tag; });
+    return std::any_of(outputs.begin(), outputs.end(),
+                       [tag](const auto& output) { return outputTag(output) == tag; });
 }
 
 void setPose(UgvState& state, double t, double x, double y, double yaw) {
@@ -46,7 +48,8 @@ void setPose(UgvState& state, double t, double x, double y, double yaw) {
 
 void applyCommand(UnicycleUgvController& controller, OperatorCommand command, double now) {
     const auto before = controller.mode();
-    const bool permission = controller.resetExecutor().permissionPending() || controller.resetExecutor().active();
+    const bool permission =
+        controller.resetExecutor().permissionPending() || controller.resetExecutor().active();
     const auto outcome = controller.command(command, now, monotonicSeconds(), "test");
     if (command == OperatorCommand::kCustom1 && permission) {
         EXPECT_EQ(outcome.code, CommandOutcome::Code::PermissionActive);
@@ -417,8 +420,7 @@ TEST(UnicycleSm, MissingCustom1ReferencePublishesIdleZeroAtFiveHz) {
         goReadyPose(controller, state, 1.0);
 
         applyCommand(controller, OperatorCommand::kCustom1, 1.01);
-        ASSERT_EQ(controller.mode(),
-                  ControlMode::Custom1);
+        ASSERT_EQ(controller.mode(), ControlMode::Custom1);
 
         int zero_count = 0;
         for (int tick = 0; tick < 1000; ++tick) {
@@ -935,13 +937,17 @@ TEST(UnicycleCadence, WallSamplesKeepFlatnessNumericsWithOffGridInputWakes) {
     UnicycleUgvController sampled(state), wall(state);
     ControllerConfig cfg;
     cfg.tracking_strategy = TrackingStrategy::FLATNESS;
-    sampled.setConfig(cfg); wall.setConfig(cfg);
+    sampled.setConfig(cfg);
+    wall.setConfig(cfg);
     wall.setWallControlPhase(100000000000LL, false);
     for (auto* c : {&sampled, &wall}) {
         c->update(10.0, 100.0);
         ASSERT_TRUE(c->command(OperatorCommand::kCustom1, 10.002, 100.002).ok());
         WorldPvaReference ref;
-        ref.stamp = Time(10.002); ref.vx = 0.6; ref.ax = 0.1; ref.valid = true;
+        ref.stamp = Time(10.002);
+        ref.vx = 0.6;
+        ref.ax = 0.1;
+        ref.valid = true;
         c->setWorldPva(ref);
     }
     int changes = 0;
@@ -950,7 +956,10 @@ TEST(UnicycleCadence, WallSamplesKeepFlatnessNumericsWithOffGridInputWakes) {
         const double dt = j * 0.00025;
         const double domain = 10.002 + dt, steady = 100.002 + dt;
         wall.update(domain, steady);
-        if (wall.command().stamp.toSec() != previous) { ++changes; previous = wall.command().stamp.toSec(); }
+        if (wall.command().stamp.toSec() != previous) {
+            ++changes;
+            previous = wall.command().stamp.toSec();
+        }
         if (j % 8 == 0) {
             sampled.update(domain, steady);
             EXPECT_DOUBLE_EQ(wall.command().linear_speed, sampled.command().linear_speed) << j;
@@ -963,14 +972,21 @@ TEST(UnicycleCadence, WallSamplesKeepFlatnessNumericsWithOffGridInputWakes) {
 
 TEST(UnicycleCadence, PausedExternalClockHasNoRepeatedFlatnessSampleDemand) {
     UgvState state;
-    state.received = true; state.velocity_valid = true; state.estimator_state = 3;
+    state.received = true;
+    state.velocity_valid = true;
+    state.estimator_state = 3;
     state.stamp = Time(10.0);
     UnicycleUgvController c(state);
-    ControllerConfig cfg; cfg.tracking_strategy = TrackingStrategy::FLATNESS; c.setConfig(cfg);
+    ControllerConfig cfg;
+    cfg.tracking_strategy = TrackingStrategy::FLATNESS;
+    c.setConfig(cfg);
     c.setWallControlPhase(100000000000LL, true);
     c.update(10.0, 100.0);
     ASSERT_TRUE(c.command(OperatorCommand::kCustom1, 10.002, 100.0).ok());
-    WorldPvaReference ref; ref.valid = true; ref.vx = 0.5; c.setWorldPva(ref);
+    WorldPvaReference ref;
+    ref.valid = true;
+    ref.vx = 0.5;
+    c.setWorldPva(ref);
     c.update(10.02, 100.0003);
     EXPECT_FALSE(c.command().valid);
     c.update(10.02, 100.002);
@@ -979,7 +995,8 @@ TEST(UnicycleCadence, PausedExternalClockHasNoRepeatedFlatnessSampleDemand) {
     for (int j = 1; j <= 500; ++j) {
         const double steady = 100.002 + j * .0001;
         c.update(10.02, steady);
-        c.resetSessionPublished(); c.statusPublished();
+        c.resetSessionPublished();
+        c.statusPublished();
         EXPECT_DOUBLE_EQ(c.command().linear_speed, command.linear_speed);
         EXPECT_DOUBLE_EQ(c.command().stamp.toSec(), command.stamp.toSec());
         EXPECT_GT(c.nextWake().wall, steady + .002);
@@ -987,8 +1004,11 @@ TEST(UnicycleCadence, PausedExternalClockHasNoRepeatedFlatnessSampleDemand) {
 }
 
 TEST(UnicycleUgvControllerPriority, RetainsActualHealthAndCommandRuleOrderWithoutDeferredEdges) {
-    UgvState state; state.received = true; state.stamp = Time(1.0);
-    state.estimator_state = 3; state.velocity_valid = true;
+    UgvState state;
+    state.received = true;
+    state.stamp = Time(1.0);
+    state.estimator_state = 3;
+    state.velocity_valid = true;
     UnicycleUgvController custom(state);
     custom.update(1.0, 100.0);
     ASSERT_TRUE(custom.command(OperatorCommand::kCustom1, 1.01, 100.01).ok());
@@ -1008,11 +1028,19 @@ TEST(UnicycleUgvControllerPriority, RetainsActualHealthAndCommandRuleOrderWithou
 }
 
 TEST(UnicycleUgvControllerLifetime, CompletedOldRunCannotTerminateSameTurnReplacementRun) {
-    UgvState state; state.received = true; state.stamp = Time(1.0);
-    state.estimator_state = 3; state.velocity_valid = true;
+    UgvState state;
+    state.received = true;
+    state.stamp = Time(1.0);
+    state.estimator_state = 3;
+    state.velocity_valid = true;
     UnicycleUgvController c(state);
-    ControllerConfig config; config.reset_timeout = .01; c.setConfig(config);
-    ResetTarget goal; goal.valid = true; goal.x = 1; c.setResetTarget(goal);
+    ControllerConfig config;
+    config.reset_timeout = .01;
+    c.setConfig(config);
+    ResetTarget goal;
+    goal.valid = true;
+    goal.x = 1;
+    c.setResetTarget(goal);
     c.update(1.0, 100.0);
     ASSERT_TRUE(c.command(OperatorCommand::kReset, 1.002, 100.002).ok());
     const auto old_session = c.resetExecutor().sessionId();
@@ -1040,7 +1068,11 @@ TEST(UnicycleUgvControllerLifetime, CompletedOldRunCannotTerminateSameTurnReplac
 }
 
 TEST(UnicycleUgvControllerPriority, ResetAndReadyKeepTheirOriginalSimultaneousHealthSelections) {
-    struct Case { ControlMode from; OperatorCommand command; ControlMode expected; };
+    struct Case {
+        ControlMode from;
+        OperatorCommand command;
+        ControlMode expected;
+    };
     const Case cases[] = {
         {ControlMode::Ready, OperatorCommand::kReset, ControlMode::Reset},
         {ControlMode::Custom1, OperatorCommand::kReset, ControlMode::Reset},
@@ -1048,22 +1080,33 @@ TEST(UnicycleUgvControllerPriority, ResetAndReadyKeepTheirOriginalSimultaneousHe
         {ControlMode::Reset, OperatorCommand::kReset, ControlMode::Reset},
     };
     for (const auto& test : cases) {
-        UgvState state; state.received = true; state.stamp = Time(1.0);
-        state.estimator_state = 3; state.velocity_valid = true;
+        UgvState state;
+        state.received = true;
+        state.stamp = Time(1.0);
+        state.estimator_state = 3;
+        state.velocity_valid = true;
         UnicycleUgvController c(state);
-        ResetTarget goal; goal.valid = true; goal.x = 1; c.setResetTarget(goal);
+        ResetTarget goal;
+        goal.valid = true;
+        goal.x = 1;
+        c.setResetTarget(goal);
         c.update(1.0, 100.0);
         if (test.from != ControlMode::Ready)
-            ASSERT_TRUE(c.command(test.from == ControlMode::Custom1 ? OperatorCommand::kCustom1 :
-                                  OperatorCommand::kReset, 1.01, 100.01).ok());
+            ASSERT_TRUE(c.command(test.from == ControlMode::Custom1 ? OperatorCommand::kCustom1
+                                                                    : OperatorCommand::kReset,
+                                  1.01, 100.01)
+                            .ok());
         ASSERT_EQ(c.mode(), test.from);
         EXPECT_TRUE(c.command(test.command, 2.0, 100.02).ok());
         EXPECT_EQ(c.mode(), test.expected);
         c.update(2.002, 100.022);
         EXPECT_EQ(c.mode(), test.expected) << "no deferred HEALTH event in the old owner";
     }
-    UgvState recovered; recovered.received = true; recovered.stamp = Time(1.0);
-    recovered.estimator_state = 3; recovered.velocity_valid = true;
+    UgvState recovered;
+    recovered.received = true;
+    recovered.stamp = Time(1.0);
+    recovered.estimator_state = 3;
+    recovered.velocity_valid = true;
     UnicycleUgvController c(recovered);
     EXPECT_EQ(c.command(OperatorCommand::kReset, 1.0, 100.0).code, CommandOutcome::Code::Unmatched);
     EXPECT_EQ(c.mode(), ControlMode::Ready);  // SelfCheck has only its existing health edge.
@@ -1150,9 +1193,7 @@ TEST(UnicycleSm, ArrivalAtTheTargetEndsResetThroughTheCoordinatorsRoute) {
     controller.onResetGrant(goFor(controller, {0, 0, 0}, {}, {0.0, 0.0, 0.0}, 1e9));
     // Standing on the target: the gate (5 cm, 5 deg, measured stopped, held 0.4 s) closes.
     double t = 1.02;
-    for (int i = 0; i < 100 && controller.mode() ==
-                                   ControlMode::Reset;
-         ++i, t += 0.02) {
+    for (int i = 0; i < 100 && controller.mode() == ControlMode::Reset; ++i, t += 0.02) {
         setPose(state, t, 0.0, 0.0, 0.0);
         controller.update(t, monotonicSeconds());
         if (i % 10 == 0) {
@@ -1371,25 +1412,23 @@ TEST(UnicycleSm, NewResetReplacesActiveSessionWithoutRetirementOrOutcomeOverwrit
     const auto old_session = controller.resetExecutor().sessionId();
     const auto old_generation = controller.resetExecutor().requestGeneration();
     const auto old_go = goFor(controller, {0, 0, 0}, {}, {1, 0, 0}, 1e9);
-    ASSERT_TRUE(controller.command(OperatorCommand::kReset, 1.02, monotonicSeconds(), "test")
-                    .ok());
+    ASSERT_TRUE(controller.command(OperatorCommand::kReset, 1.02, monotonicSeconds(), "test").ok());
     setPose(state, 1.02, 0, 0, 0);
     controller.update(1.02, monotonicSeconds());
     EXPECT_EQ(controller.mode(), ControlMode::Reset);
     EXPECT_NE(controller.resetExecutor().sessionId(), old_session);
     EXPECT_GT(controller.resetExecutor().requestGeneration(), old_generation);
     controller.onResetGrant(old_go);
-    EXPECT_FALSE((controller.resetExecutor().tracker() && controller.resetExecutor().tracker()->active()));
+    EXPECT_FALSE(
+        (controller.resetExecutor().tracker() && controller.resetExecutor().tracker()->active()));
     EXPECT_TRUE(controller.resetExecutor().command().zero());
     ugv_reset_client::Result result;
     ASSERT_TRUE(controller.peekResetResult(&result));
     EXPECT_EQ(result.session, old_session);
     EXPECT_EQ(result.outcome, ugv_reset_client::Outcome::Stopped);
-    EXPECT_EQ(controller.command(OperatorCommand::kCustom1, 1.03, monotonicSeconds(), "test")
-                  .code,
+    EXPECT_EQ(controller.command(OperatorCommand::kCustom1, 1.03, monotonicSeconds(), "test").code,
               CommandOutcome::Code::PermissionActive);
-    EXPECT_EQ(controller.command(OperatorCommand::kReset, 1.03, monotonicSeconds(), "test")
-                  .code,
+    EXPECT_EQ(controller.command(OperatorCommand::kReset, 1.03, monotonicSeconds(), "test").code,
               CommandOutcome::Code::CreditUnavailable);
     ASSERT_TRUE(controller.peekResetResult(&result));
     EXPECT_EQ(result.session, old_session);

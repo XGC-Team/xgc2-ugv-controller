@@ -48,9 +48,9 @@
 
 #include "module_support.h"
 #include "unicycle_ugv_controller/common/core_log.h"
-#include "unicycle_ugv_controller/common/wall_clock.h"
 #include "unicycle_ugv_controller/common/reference_types.h"
 #include "unicycle_ugv_controller/common/types.h"
+#include "unicycle_ugv_controller/common/wall_clock.h"
 #include "unicycle_ugv_controller/config_loader.h"
 #include "unicycle_ugv_controller/nmpc/nmpc_execution.h"
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
@@ -110,11 +110,13 @@ const xgc2_port_desc kPorts[kPortCount] = {
     port<xgc2_ugv_reset_result>("reset_result", XGC2_PORT_OUT, XGC2_PORT_EVENT,
                                 XGC2_UGV_SCHEMA_RESET_RESULT, 4U),
     port<xgc2_ugv_wall_wake>("wall_wake", XGC2_PORT_IN, XGC2_PORT_STATE, XGC2_UGV_SCHEMA_WALL_WAKE),
-    port<xgc2_ugv_wall_deadline>("wall_deadline", XGC2_PORT_OUT, XGC2_PORT_STATE, XGC2_UGV_SCHEMA_WALL_DEADLINE),
+    port<xgc2_ugv_wall_deadline>("wall_deadline", XGC2_PORT_OUT, XGC2_PORT_STATE,
+                                 XGC2_UGV_SCHEMA_WALL_DEADLINE),
 };
 
 // The payload constants are the core's.
-static_assert(XGC2_UGV_CONTROL_SELF_CHECK == static_cast<uint32_t>(ugv::ControlMode::SelfCheck), "");
+static_assert(XGC2_UGV_CONTROL_SELF_CHECK == static_cast<uint32_t>(ugv::ControlMode::SelfCheck),
+              "");
 static_assert(XGC2_UGV_CONTROL_READY == static_cast<uint32_t>(ugv::ControlMode::Ready), "");
 static_assert(XGC2_UGV_CONTROL_CUSTOM1 == static_cast<uint32_t>(ugv::ControlMode::Custom1), "");
 static_assert(XGC2_UGV_CONTROL_RESET == static_cast<uint32_t>(ugv::ControlMode::Reset), "");
@@ -259,7 +261,9 @@ class Instance {
         if (config_.tracking_strategy == ugv::TrackingStrategy::NMPC && !execution_) {
             execution_ = std::make_unique<ugv::NmpcExecution>(
                 controller_,
-                [this](ugv::NmpcCompletion result) { controller_.postCompletion(std::move(result)); },
+                [this](ugv::NmpcCompletion result) {
+                    controller_.postCompletion(std::move(result));
+                },
                 [this] { return secondsOf<ugv::Time>(host_.nowNs()); }, [this] { host_.wake(); });
             if (started_) {
                 execution_->start();
@@ -302,7 +306,8 @@ class Instance {
         thread_.check("step");
         const double now = secondsOf<ugv::Time>(ctx.now_ns);
         const double wall = ugv::monotonicSeconds();
-        if (ctx.reasons & XGC2_STEP_DEADLINE) armed_domain_ns_ = -1;
+        if (ctx.reasons & XGC2_STEP_DEADLINE)
+            armed_domain_ns_ = -1;
         (void)host_.latest<xgc2_ugv_wall_wake>(kWallWake);
         readState(now);
         readResetTarget(now);
@@ -534,15 +539,25 @@ class Instance {
         bool handled = false;
         for (;;) {
             const auto sample = host_.next<xgc2_ugv_command>(kCommand);
-            if (!sample) return handled;
+            if (!sample)
+                return handled;
             ugv::OperatorCommand command;
             switch (sample->kind) {
-                case XGC2_UGV_COMMAND_CUSTOM1: command = ugv::OperatorCommand::kCustom1; break;
-                case XGC2_UGV_COMMAND_STOP: command = ugv::OperatorCommand::kStop; break;
-                case XGC2_UGV_COMMAND_RESET: command = ugv::OperatorCommand::kReset; break;
-                default: warn(kCommand, now, format("Unknown command kind %u", sample->kind)); continue;
+                case XGC2_UGV_COMMAND_CUSTOM1:
+                    command = ugv::OperatorCommand::kCustom1;
+                    break;
+                case XGC2_UGV_COMMAND_STOP:
+                    command = ugv::OperatorCommand::kStop;
+                    break;
+                case XGC2_UGV_COMMAND_RESET:
+                    command = ugv::OperatorCommand::kReset;
+                    break;
+                default:
+                    warn(kCommand, now, format("Unknown command kind %u", sample->kind));
+                    continue;
             }
-            const auto outcome = controller_.command(command, now, wall,
+            const auto outcome = controller_.command(
+                command, now, wall,
                 sample->source == XGC2_UGV_COMMAND_SOURCE_PUBLIC ? "/command" : "command");
             if (!outcome.ok() && outcome.code != ugv::CommandOutcome::Code::Unmatched)
                 host_.log(kLogWarn, outcome.message);
@@ -555,18 +570,23 @@ class Instance {
 
     void dispatchOutputs(const std::vector<ugv::ControllerOutput>& outputs, double now) {
         for (const auto& output : outputs) {
-            std::visit([&](const auto& value) {
-                using T = std::decay_t<decltype(value)>;
-                if constexpr (std::is_same_v<T, ugv::SolveNmpc>) {
-                    if (execution_) execution_->handle(value);
-                    else warn(kCmdVel, now, "An NMPC solve was requested but no solver runs");
-                } else if constexpr (std::is_same_v<T, ugv::PublishCommand>) {
-                    const auto twist = controller_.cmdVel();
-                    pending_ = {true, XGC2_UGV_CMD_VEL_COMMAND, twist.linear_x, twist.angular_z};
-                } else {
-                    pending_ = {true, XGC2_UGV_CMD_VEL_ZERO, 0.0, 0.0};
-                }
-            }, output);
+            std::visit(
+                [&](const auto& value) {
+                    using T = std::decay_t<decltype(value)>;
+                    if constexpr (std::is_same_v<T, ugv::SolveNmpc>) {
+                        if (execution_)
+                            execution_->handle(value);
+                        else
+                            warn(kCmdVel, now, "An NMPC solve was requested but no solver runs");
+                    } else if constexpr (std::is_same_v<T, ugv::PublishCommand>) {
+                        const auto twist = controller_.cmdVel();
+                        pending_ = {true, XGC2_UGV_CMD_VEL_COMMAND, twist.linear_x,
+                                    twist.angular_z};
+                    } else {
+                        pending_ = {true, XGC2_UGV_CMD_VEL_ZERO, 0.0, 0.0};
+                    }
+                },
+                output);
         }
     }
 
@@ -664,7 +684,8 @@ class Instance {
     }
 
     void publishStatusIfDue(int64_t now_ns) {
-        if (!controller_.statusDue()) return;
+        if (!controller_.statusDue())
+            return;
         auto slot = host_.write<xgc2_ugv_controller_status>(kStatus);
         if (!slot) {
             return;
@@ -674,7 +695,8 @@ class Instance {
         slot->control_state = static_cast<uint32_t>(controller_.mode());
         slot->health_state = 100U;
         std::strncpy(slot->control_state_name, name.c_str(), sizeof(slot->control_state_name) - 1U);
-        if (slot.commit(now_ns)) controller_.statusPublished();
+        if (slot.commit(now_ns))
+            controller_.statusPublished();
     }
 
     void logStateChanges() {
@@ -696,13 +718,17 @@ class Instance {
         if (pending_.valid || controller_.resetExecutor().resultPending())
             next.atDomain(controller_.currentTime() + 1.0 / config_.control_rate_hz);
         const int64_t domain = deadlineNs(next.domain);
-        if (domain != armed_domain_ns_) { host_.wakeAtNs(domain); armed_domain_ns_ = domain; }
+        if (domain != armed_domain_ns_) {
+            host_.wakeAtNs(domain);
+            armed_domain_ns_ = domain;
+        }
         const int64_t wall = deadlineNs(next.wall);
         if (!published_wall_ns_ || wall != *published_wall_ns_) {
             auto slot = host_.write<xgc2_ugv_wall_deadline>(kWallDeadline);
             if (slot) {
                 slot->monotonic_deadline_ns = wall;
-                if (slot.commit(now_ns)) published_wall_ns_ = wall;
+                if (slot.commit(now_ns))
+                    published_wall_ns_ = wall;
             }
         }
     }

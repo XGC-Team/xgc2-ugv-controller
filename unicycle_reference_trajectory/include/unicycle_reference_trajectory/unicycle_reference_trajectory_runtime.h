@@ -2,9 +2,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <state_machine/adt_machine.hpp>
 #include <variant>
 #include <vector>
-#include <state_machine/adt_machine.hpp>
 #include <xgc2_math/trajectory.hpp>
 
 #include "unicycle_reference_trajectory/reference_types.h"
@@ -23,7 +23,10 @@ struct ReferenceTrajectoryConfig {
 };
 
 enum class ReferenceOutput : uint32_t {
-    Status = 1000, Analytic = 1001, Polynomial = 1002, Sampled = 1003
+    Status = 1000,
+    Analytic = 1001,
+    Polynomial = 1002,
+    Sampled = 1003
 };
 struct ReferencePublication {
     ReferenceOutput kind;
@@ -42,19 +45,27 @@ class ReferenceTrajectoryRuntime {
     bool acceptSampled(const reference::SampledReference& msg, double receipt_time);
     bool acceptWaypoint(const reference::WaypointReferenceRequest& msg, double receipt_time);
     uint8_t currentState() const;
-    double currentTime() const { return current_time_sec_; }
+    double currentTime() const {
+        return current_time_sec_;
+    }
     double nextDeadline() const;
-    const ReferenceTrajectoryConfig& config() const { return config_; }
+    const ReferenceTrajectoryConfig& config() const {
+        return config_;
+    }
     trajectory::TrajectoryModelType activeType() const;
     uint32_t activeTrajectoryId() const;
     uint32_t activeRevision() const;
-    uint32_t flags() const { return flags_; }
+    uint32_t flags() const {
+        return flags_;
+    }
     const reference::AnalyticReference& activeAnalyticMessage() const;
     const reference::SampledReference& activeSampledMessage() const;
     const reference::ActivePolynomialReference& activePolynomialMessage() const;
     reference::ReferenceStatus makeStatus(double stamp_sec) const;
     const trajectory::TrajectoryEvaluator2* evaluator() const;
-    const std::vector<ReferencePublication>& outputs() const { return outputs_; }
+    const std::vector<ReferencePublication>& outputs() const {
+        return outputs_;
+    }
 
    private:
     struct Analytic {
@@ -80,9 +91,15 @@ class ReferenceTrajectoryRuntime {
     using Retained = std::variant<std::monostate, Analytic, Sampled, Polynomial>;
     using Request = std::variant<std::monostate, Analytic, Sampled, Waypoint>;
     struct SelfCheck {};
-    struct Ready { PeriodicGate status; };
-    struct Planning { Waypoint request; };
-    struct Active { PeriodicGate status, publication; };
+    struct Ready {
+        PeriodicGate status;
+    };
+    struct Planning {
+        Waypoint request;
+    };
+    struct Active {
+        PeriodicGate status, publication;
+    };
     struct Advance {};
     struct Spec {
         using State = std::variant<SelfCheck, Ready, Planning, Active>;
@@ -102,7 +119,7 @@ class ReferenceTrajectoryRuntime {
     std::unique_ptr<trajectory::TrajectoryEvaluator2> buildAnalyticEvaluator(
         const reference::AnalyticReference& msg, uint32_t& flags) const;
     bool buildSampledEvaluator(const reference::SampledReference& msg,
-                              trajectory::SampledEvaluator2& evaluator, uint32_t& flags) const;
+                               trajectory::SampledEvaluator2& evaluator, uint32_t& flags) const;
     bool buildWaypointProblem(const reference::WaypointReferenceRequest& msg,
                               trajectory::WaypointProblem2& problem, uint32_t& flags) const;
 

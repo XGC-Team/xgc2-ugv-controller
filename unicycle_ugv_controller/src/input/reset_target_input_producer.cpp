@@ -9,8 +9,7 @@ namespace unicycle_ugv_controller {
 
 ResetTargetInputProducer::ResetTargetInputProducer(ros::NodeHandle& nh,
                                                    UnicycleUgvController& controller,
-                                                   const std::string& topic,
-                                                   uint32_t queue_size)
+                                                   const std::string& topic, uint32_t queue_size)
     : controller_(controller) {
     sub_ = nh.subscribe(topic, queue_size, &ResetTargetInputProducer::callback, this);
 }

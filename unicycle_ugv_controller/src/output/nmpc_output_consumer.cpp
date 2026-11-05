@@ -27,9 +27,11 @@ geometry_msgs::Pose poseFromState(const NmpcStateVector& state) {
 }  // namespace
 
 NmpcOutputConsumer::NmpcOutputConsumer(ros::NodeHandle& nh, UnicycleUgvController& controller,
-                                       CompletionSink completion_sink, NmpcExecution::Notify notify, uint32_t queue_size)
+                                       CompletionSink completion_sink, NmpcExecution::Notify notify,
+                                       uint32_t queue_size)
     : execution_(
-          controller, std::move(completion_sink), [] { return ros::Time::now().toSec(); }, std::move(notify),
+          controller, std::move(completion_sink), [] { return ros::Time::now().toSec(); },
+          std::move(notify),
           [this](const Time& stamp, const NmpcTrackingBackend& backend) {
               publishPrediction(stamp, backend);
           }) {

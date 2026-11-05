@@ -1,9 +1,10 @@
 #pragma once
 
 #include <ugv_reset_client/reset_executor.h>
-#include <state_machine/adt_machine.hpp>
+
 #include <memory>
 #include <optional>
+#include <state_machine/adt_machine.hpp>
 #include <string>
 #include <vector>
 
@@ -16,33 +17,58 @@ class MecanumUgvController {
     explicit MecanumUgvController(const UgvState& state);
     void update(double domain_now, double wall_now);
     void observeInputs(double domain_now, double wall_now);
-    void setControlPhase(int64_t phase_ns) { control_phase_ns_ = phase_ns; }
+    void setControlPhase(int64_t phase_ns) {
+        control_phase_ns_ = phase_ns;
+    }
     // The ROS owner supplies its original wall sampling phase and domain-clock kind.
     void setWallControlPhase(int64_t phase_ns, bool external_domain) {
-        wall_control_ = ugv_reset_client::WallControlCadence{phase_ns, config_.control_rate_hz, external_domain};
+        wall_control_ = ugv_reset_client::WallControlCadence{phase_ns, config_.control_rate_hz,
+                                                             external_domain};
     }
     bool statusDue() const;
     void statusPublished();
     CommandOutcome command(OperatorCommand command, double domain_now, double wall_now,
                            const std::string& source = "command");
-    const std::vector<ControllerOutput>& outputs() const { return outputs_; }
+    const std::vector<ControllerOutput>& outputs() const {
+        return outputs_;
+    }
     ControlMode mode() const;
     const char* modeName() const;
     ugv_reset_client::NextWake nextWake() const;
-    const UgvState& state() const { return state_; }
-    double currentTime() const { return current_time_sec_; }
-    double wallTime() const { return wall_time_sec_; }
-    ControllerConfig config() const { return config_; }
+    const UgvState& state() const {
+        return state_;
+    }
+    double currentTime() const {
+        return current_time_sec_;
+    }
+    double wallTime() const {
+        return wall_time_sec_;
+    }
+    ControllerConfig config() const {
+        return config_;
+    }
     void setConfig(const ControllerConfig& config);
     bool healthReady() const;
     bool resetTargetReady() const;
-    void setResetTarget(ResetTarget target) { reset_target_ = std::move(target); }
-    ResetTarget resetTarget() const { return reset_target_; }
+    void setResetTarget(ResetTarget target) {
+        reset_target_ = std::move(target);
+    }
+    ResetTarget resetTarget() const {
+        return reset_target_;
+    }
     void setCommand(ControlCommand command);
-    ControlCommand command() const { return command_; }
-    void clearCommand() { command_ = {}; }
-    ugv_reset_client::ResetExecutor& resetExecutor() { return reset_executor_; }
-    const ugv_reset_client::ResetExecutor& resetExecutor() const { return reset_executor_; }
+    ControlCommand command() const {
+        return command_;
+    }
+    void clearCommand() {
+        command_ = {};
+    }
+    ugv_reset_client::ResetExecutor& resetExecutor() {
+        return reset_executor_;
+    }
+    const ugv_reset_client::ResetExecutor& resetExecutor() const {
+        return reset_executor_;
+    }
     ugv_reset_client::Measurement resetMeasurement() const;
     void onResetGrant(const ugv_reset_client::Grant& grant);
     bool takeResetSession(ugv_reset_client::Session* session);
@@ -52,22 +78,39 @@ class MecanumUgvController {
     void resetSessionPublished();
     void notifyResetZeroPublished(double now, uint32_t generation = 0, uint32_t brake = 0);
     bool worldReferenceReady() const;
-    void setWorldReference(WorldVelocityReference value) { world_reference_ = std::move(value); }
-    WorldVelocityReference worldReference() const { return world_reference_; }
-    const std::string& lastResetAdmissionMiss() const { return last_reset_admission_miss_; }
-    const std::string& lastResetHoldReason() const { return last_reset_hold_reason_; }
+    void setWorldReference(WorldVelocityReference value) {
+        world_reference_ = std::move(value);
+    }
+    WorldVelocityReference worldReference() const {
+        return world_reference_;
+    }
+    const std::string& lastResetAdmissionMiss() const {
+        return last_reset_admission_miss_;
+    }
+    const std::string& lastResetHoldReason() const {
+        return last_reset_hold_reason_;
+    }
 
    private:
-    struct SelfCheck { PeriodicGate command; };
-    struct Ready { PeriodicGate command; };
-    struct Custom1 { PeriodicGate command; std::optional<double> sample_wall{}; };
+    struct SelfCheck {
+        PeriodicGate command;
+    };
+    struct Ready {
+        PeriodicGate command;
+    };
+    struct Custom1 {
+        PeriodicGate command;
+        std::optional<double> sample_wall{};
+    };
     struct Reset {
         ugv_reset_client::ResetExecutor::RunPtr run;
         PeriodicGate command;
     };
     struct Tick {};
     struct Exit {};
-    struct Health { bool ready; };
+    struct Health {
+        bool ready;
+    };
     struct Operator {
         OperatorCommand command;
         CommandOutcome& outcome;

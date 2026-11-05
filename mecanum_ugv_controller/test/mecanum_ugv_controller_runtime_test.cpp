@@ -20,7 +20,8 @@ OutputTag outputTag(const ControllerOutput& output) {
 }
 bool hasOutputEvent(MecanumUgvController& controller, OutputTag tag) {
     const auto& outputs = controller.outputs();
-    return std::any_of(outputs.begin(), outputs.end(), [tag](const auto& output) { return outputTag(output) == tag; });
+    return std::any_of(outputs.begin(), outputs.end(),
+                       [tag](const auto& output) { return outputTag(output) == tag; });
 }
 
 void setPose(UgvState& state, double t, double x, double y, double yaw) {
@@ -34,7 +35,8 @@ void setPose(UgvState& state, double t, double x, double y, double yaw) {
 
 void applyCommand(MecanumUgvController& controller, OperatorCommand command, double now) {
     const auto before = controller.mode();
-    const bool permission = controller.resetExecutor().permissionPending() || controller.resetExecutor().active();
+    const bool permission =
+        controller.resetExecutor().permissionPending() || controller.resetExecutor().active();
     const auto outcome = controller.command(command, now, monotonicSeconds(), "test");
     if (command == OperatorCommand::kCustom1 && permission) {
         EXPECT_EQ(outcome.code, CommandOutcome::Code::PermissionActive);
@@ -667,7 +669,8 @@ bool logged(const std::string& needle) {
 }
 
 TEST(MecanumCadence, MissingReferenceKeepsFiveHundredWallZerosDuringClockPause) {
-    UgvState state; setPose(state, 10.0, 0, 0, 0);
+    UgvState state;
+    setPose(state, 10.0, 0, 0, 0);
     MecanumUgvController c(state);
     c.setWallControlPhase(100000000000LL, true);
     c.update(10.0, 100.0);
@@ -688,7 +691,9 @@ TEST(MecanumCadence, MissingReferenceKeepsFiveHundredWallZerosDuringClockPause) 
 }
 
 TEST(MecanumUgvControllerPriority, RetainsActualHealthAndCommandRuleOrderWithoutDeferredEdges) {
-    UgvState state; state.received = true; state.stamp = Time(1.0);
+    UgvState state;
+    state.received = true;
+    state.stamp = Time(1.0);
 
     MecanumUgvController custom(state);
     custom.update(1.0, 100.0);
@@ -709,11 +714,18 @@ TEST(MecanumUgvControllerPriority, RetainsActualHealthAndCommandRuleOrderWithout
 }
 
 TEST(MecanumUgvControllerLifetime, CompletedOldRunCannotTerminateSameTurnReplacementRun) {
-    UgvState state; state.received = true; state.stamp = Time(1.0);
+    UgvState state;
+    state.received = true;
+    state.stamp = Time(1.0);
 
     MecanumUgvController c(state);
-    ControllerConfig config; config.reset_timeout = .01; c.setConfig(config);
-    ResetTarget goal; goal.valid = true; goal.x = 1; c.setResetTarget(goal);
+    ControllerConfig config;
+    config.reset_timeout = .01;
+    c.setConfig(config);
+    ResetTarget goal;
+    goal.valid = true;
+    goal.x = 1;
+    c.setResetTarget(goal);
     c.update(1.0, 100.0);
     ASSERT_TRUE(c.command(OperatorCommand::kReset, 1.002, 100.002).ok());
     const auto old_session = c.resetExecutor().sessionId();
@@ -741,7 +753,11 @@ TEST(MecanumUgvControllerLifetime, CompletedOldRunCannotTerminateSameTurnReplace
 }
 
 TEST(MecanumUgvControllerPriority, ResetAndReadyKeepTheirOriginalSimultaneousHealthSelections) {
-    struct Case { ControlMode from; OperatorCommand command; ControlMode expected; };
+    struct Case {
+        ControlMode from;
+        OperatorCommand command;
+        ControlMode expected;
+    };
     const Case cases[] = {
         {ControlMode::Ready, OperatorCommand::kReset, ControlMode::Reset},
         {ControlMode::Custom1, OperatorCommand::kReset, ControlMode::Reset},
@@ -749,22 +765,31 @@ TEST(MecanumUgvControllerPriority, ResetAndReadyKeepTheirOriginalSimultaneousHea
         {ControlMode::Reset, OperatorCommand::kReset, ControlMode::Reset},
     };
     for (const auto& test : cases) {
-        UgvState state; state.received = true; state.stamp = Time(1.0);
-        
+        UgvState state;
+        state.received = true;
+        state.stamp = Time(1.0);
+
         MecanumUgvController c(state);
-        ResetTarget goal; goal.valid = true; goal.x = 1; c.setResetTarget(goal);
+        ResetTarget goal;
+        goal.valid = true;
+        goal.x = 1;
+        c.setResetTarget(goal);
         c.update(1.0, 100.0);
         if (test.from != ControlMode::Ready)
-            ASSERT_TRUE(c.command(test.from == ControlMode::Custom1 ? OperatorCommand::kCustom1 :
-                                  OperatorCommand::kReset, 1.01, 100.01).ok());
+            ASSERT_TRUE(c.command(test.from == ControlMode::Custom1 ? OperatorCommand::kCustom1
+                                                                    : OperatorCommand::kReset,
+                                  1.01, 100.01)
+                            .ok());
         ASSERT_EQ(c.mode(), test.from);
         EXPECT_TRUE(c.command(test.command, 2.0, 100.02).ok());
         EXPECT_EQ(c.mode(), test.expected);
         c.update(2.002, 100.022);
         EXPECT_EQ(c.mode(), test.expected) << "no deferred HEALTH event in the old owner";
     }
-    UgvState recovered; recovered.received = true; recovered.stamp = Time(1.0);
-    
+    UgvState recovered;
+    recovered.received = true;
+    recovered.stamp = Time(1.0);
+
     MecanumUgvController c(recovered);
     EXPECT_EQ(c.command(OperatorCommand::kReset, 1.0, 100.0).code, CommandOutcome::Code::Unmatched);
     EXPECT_EQ(c.mode(), ControlMode::Ready);  // SelfCheck has only its existing health edge.
@@ -818,9 +843,7 @@ TEST(MecanumSm, ArrivalAtTheTargetEndsResetThroughTheCoordinatorsRoute) {
     MecanumUgvController controller(state);
     enterReset(controller, state, 0.0);
     double t = 1.02;
-    for (int i = 0; i < 100 && controller.mode() ==
-                                   ControlMode::Reset;
-         ++i, t += 0.02) {
+    for (int i = 0; i < 100 && controller.mode() == ControlMode::Reset; ++i, t += 0.02) {
         if (i % 10 == 0) {
             controller.onResetGrant(goFor(controller, {0, 0, 0}, {}, {0.0, 0.0, 0.0}, 1e9));
         }
@@ -929,25 +952,23 @@ TEST(MecanumSm, NewResetReplacesActiveSessionWithoutRetirementOrOutcomeOverwrite
     const auto old_session = controller.resetExecutor().sessionId();
     const auto old_generation = controller.resetExecutor().requestGeneration();
     const auto old_go = goFor(controller, {0, 0, 0}, {}, {1, 0, 0}, 1e9);
-    ASSERT_TRUE(controller.command(OperatorCommand::kReset, 1.02, monotonicSeconds(), "test")
-                    .ok());
+    ASSERT_TRUE(controller.command(OperatorCommand::kReset, 1.02, monotonicSeconds(), "test").ok());
     setPose(state, 1.02, 0, 0, 0);
     controller.update(1.02, monotonicSeconds());
     EXPECT_EQ(controller.mode(), ControlMode::Reset);
     EXPECT_NE(controller.resetExecutor().sessionId(), old_session);
     EXPECT_GT(controller.resetExecutor().requestGeneration(), old_generation);
     controller.onResetGrant(old_go);
-    EXPECT_FALSE((controller.resetExecutor().tracker() && controller.resetExecutor().tracker()->active()));
+    EXPECT_FALSE(
+        (controller.resetExecutor().tracker() && controller.resetExecutor().tracker()->active()));
     EXPECT_TRUE(controller.resetExecutor().command().zero());
     ugv_reset_client::Result result;
     ASSERT_TRUE(controller.peekResetResult(&result));
     EXPECT_EQ(result.session, old_session);
     EXPECT_EQ(result.outcome, ugv_reset_client::Outcome::Stopped);
-    EXPECT_EQ(controller.command(OperatorCommand::kCustom1, 1.03, monotonicSeconds(), "test")
-                  .code,
+    EXPECT_EQ(controller.command(OperatorCommand::kCustom1, 1.03, monotonicSeconds(), "test").code,
               CommandOutcome::Code::PermissionActive);
-    EXPECT_EQ(controller.command(OperatorCommand::kReset, 1.03, monotonicSeconds(), "test")
-                  .code,
+    EXPECT_EQ(controller.command(OperatorCommand::kReset, 1.03, monotonicSeconds(), "test").code,
               CommandOutcome::Code::CreditUnavailable);
     ASSERT_TRUE(controller.peekResetResult(&result));
     EXPECT_EQ(result.session, old_session);

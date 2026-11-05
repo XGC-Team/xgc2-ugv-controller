@@ -419,8 +419,8 @@ void run(Glue& glue, const Config& config, FILE* out) {
         }
         glue.update(now);
         for (const auto& e : glue.events()) {
-            std::fprintf(out, "%" PRIu64 " ev %u ts %016" PRIx64,
-                         k, static_cast<unsigned>(e.kind), bits(e.timestamp));
+            std::fprintf(out, "%" PRIu64 " ev %u ts %016" PRIx64, k, static_cast<unsigned>(e.kind),
+                         bits(e.timestamp));
             // The output consumer's message for the event.
             if (static_cast<unsigned>(e.kind) == kPublishStatus) {
                 w.status(glue.runtime().makeStatus(e.timestamp > 0.0 ? e.timestamp : now));

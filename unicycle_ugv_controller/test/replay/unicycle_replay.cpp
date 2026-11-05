@@ -26,15 +26,15 @@
 //
 // Usage: unicycle_replay OUT.txt
 
+#include <chrono>
 #include <cinttypes>
 #include <cmath>
 #include <cstdio>
-#include <chrono>
-#include <optional>
-#include <type_traits>
 #include <cstring>
 #include <exception>
+#include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -109,8 +109,8 @@ class Run {
 
     void post(OperatorCommand command, double t) {
         pending_command_ = command;  // test script: deliver at the same original owner turn
-        const unsigned id = command == OperatorCommand::kCustom1 ? 1U :
-                            command == OperatorCommand::kStop ? 2U : 3U;
+        const unsigned id =
+            command == OperatorCommand::kCustom1 ? 1U : command == OperatorCommand::kStop ? 2U : 3U;
         std::fprintf(out, "post %u at", id);
         d(t);
         std::fprintf(out, " ok 1\n");
@@ -122,22 +122,30 @@ class Run {
         if (pose_available) {
             measure();
         }
-        const double wall = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        const double wall =
+            std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch())
+                .count();
         if (pending_command_) {
             controller_.command(*pending_command_, t_, wall, "replay");
             pending_command_.reset();
-        } else controller_.update(t_, wall);
+        } else
+            controller_.update(t_, wall);
         const auto events = controller_.outputs();
-        std::fprintf(out, "%.3f h %u c %u out", t_,
-                     100U,
+        std::fprintf(out, "%.3f h %u c %u out", t_, 100U,
                      static_cast<uint32_t>(controller_.mode()));
         for (const auto& event : events) {
-            std::fprintf(out, " %u", std::visit([](const auto& value) -> unsigned {
-                using T = std::decay_t<decltype(value)>;
-                if constexpr (std::is_same_v<T, SolveNmpc>) return 10000U;
-                else if constexpr (std::is_same_v<T, PublishCommand>) return 10001U;
-                else return 10002U;
-            }, event));
+            std::fprintf(out, " %u",
+                         std::visit(
+                             [](const auto& value) -> unsigned {
+                                 using T = std::decay_t<decltype(value)>;
+                                 if constexpr (std::is_same_v<T, SolveNmpc>)
+                                     return 10000U;
+                                 else if constexpr (std::is_same_v<T, PublishCommand>)
+                                     return 10001U;
+                                 else
+                                     return 10002U;
+                             },
+                             event));
         }
         const ControlCommand command = controller_.command();
         std::fprintf(out, " cmd %d", command.valid ? 1 : 0);

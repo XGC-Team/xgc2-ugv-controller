@@ -98,10 +98,16 @@ class ResetCoordinator {
         // Refused for this vehicle only.
         std::optional<std::string> bad_reason;
         // The last message sent to it, for the heartbeat.
-        struct Publication { ugv_reset_client::Grant grant; double sent; };
+        struct Publication {
+            ugv_reset_client::Grant grant;
+            double sent;
+        };
         std::optional<Publication> last;
         // Last valid declared body, even if a bad report arrives before the next planner tick.
-        struct Body { ugv_reset_client::Pose pose; ugv_reset_client::VehicleSpec spec; };
+        struct Body {
+            ugv_reset_client::Pose pose;
+            ugv_reset_client::VehicleSpec spec;
+        };
         std::optional<Body> body;
         uint32_t next_publication_seq{1};
     };

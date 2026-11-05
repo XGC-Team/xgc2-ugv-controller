@@ -10,8 +10,8 @@ namespace unicycle_ugv_controller {
 
 PvaReferenceInputProducer::PvaReferenceInputProducer(ros::NodeHandle& nh,
                                                      UnicycleUgvController& controller,
-                                                     const std::string& topic,
-                                                     uint32_t queue_size, std::function<double()> clock)
+                                                     const std::string& topic, uint32_t queue_size,
+                                                     std::function<double()> clock)
     : controller_(controller), clock_(std::move(clock)) {
     sub_ = nh.subscribe(topic, queue_size, &PvaReferenceInputProducer::callback, this);
 }

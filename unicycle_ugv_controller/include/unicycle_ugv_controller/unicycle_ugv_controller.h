@@ -1,16 +1,17 @@
 #pragma once
 
 #include <ugv_reset_client/reset_executor.h>
-#include <state_machine/adt_machine.hpp>
+
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <state_machine/adt_machine.hpp>
 #include <string>
 #include <vector>
 
+#include "unicycle_ugv_controller/common/operator_command.h"
 #include "unicycle_ugv_controller/common/reference_cache.h"
 #include "unicycle_ugv_controller/common/types.h"
-#include "unicycle_ugv_controller/common/operator_command.h"
 #include "unicycle_ugv_controller/state_machine/periodic_gate.h"
 
 namespace unicycle_ugv_controller {
@@ -19,10 +20,13 @@ class UnicycleUgvController {
     explicit UnicycleUgvController(const UgvState& state);
     void update(double domain_now, double wall_now);
     void observeInputs(double domain_now, double wall_now);
-    void setControlPhase(int64_t phase_ns) { control_phase_ns_ = phase_ns; }
+    void setControlPhase(int64_t phase_ns) {
+        control_phase_ns_ = phase_ns;
+    }
     // The ROS owner supplies its original wall sampling phase and domain-clock kind.
     void setWallControlPhase(int64_t phase_ns, bool external_domain) {
-        wall_control_ = ugv_reset_client::WallControlCadence{phase_ns, config_.control_rate_hz, external_domain};
+        wall_control_ = ugv_reset_client::WallControlCadence{phase_ns, config_.control_rate_hz,
+                                                             external_domain};
     }
     bool statusDue() const;
     void statusPublished();
@@ -30,28 +34,54 @@ class UnicycleUgvController {
                            const std::string& source = "command");
     // The only cross-thread handoff is the actual NMPC worker's typed result.
     void postCompletion(NmpcCompletion result);
-    const std::vector<ControllerOutput>& outputs() const { return outputs_; }
+    const std::vector<ControllerOutput>& outputs() const {
+        return outputs_;
+    }
     ControlMode mode() const;
     const char* modeName() const;
     ugv_reset_client::NextWake nextWake() const;
-    const UgvState& state() const { return state_; }
-    double currentTime() const { return current_time_sec_; }
-    double wallTime() const { return wall_time_sec_; }
-    ControllerConfig config() const { return config_; }
+    const UgvState& state() const {
+        return state_;
+    }
+    double currentTime() const {
+        return current_time_sec_;
+    }
+    double wallTime() const {
+        return wall_time_sec_;
+    }
+    ControllerConfig config() const {
+        return config_;
+    }
     void setConfig(const ControllerConfig& config);
-    ReferenceCache& referenceCache() { return reference_cache_; }
-    const ReferenceCache& referenceCache() const { return reference_cache_; }
+    ReferenceCache& referenceCache() {
+        return reference_cache_;
+    }
+    const ReferenceCache& referenceCache() const {
+        return reference_cache_;
+    }
     bool healthReady() const;
     bool referenceReady() const;
     bool commandReady() const;
     bool resetTargetReady() const;
-    void setResetTarget(ResetTarget target) { reset_target_ = std::move(target); }
-    ResetTarget resetTarget() const { return reset_target_; }
+    void setResetTarget(ResetTarget target) {
+        reset_target_ = std::move(target);
+    }
+    ResetTarget resetTarget() const {
+        return reset_target_;
+    }
     void setCommand(ControlCommand command);
-    ControlCommand command() const { return command_; }
-    void clearCommand() { command_ = {}; }
-    ugv_reset_client::ResetExecutor& resetExecutor() { return reset_executor_; }
-    const ugv_reset_client::ResetExecutor& resetExecutor() const { return reset_executor_; }
+    ControlCommand command() const {
+        return command_;
+    }
+    void clearCommand() {
+        command_ = {};
+    }
+    ugv_reset_client::ResetExecutor& resetExecutor() {
+        return reset_executor_;
+    }
+    const ugv_reset_client::ResetExecutor& resetExecutor() const {
+        return reset_executor_;
+    }
     ugv_reset_client::Measurement resetMeasurement() const;
     void onResetGrant(const ugv_reset_client::Grant& grant);
     bool takeResetSession(ugv_reset_client::Session* session);
@@ -65,16 +95,29 @@ class UnicycleUgvController {
     void setWorldPva(WorldPvaReference reference);
     WorldPvaReference worldPva() const;
     WorldPvaReference liftedWorldPva() const;
-    const PoseVelocityEstimator& poseVelocity() const { return pose_velocity_; }
+    const PoseVelocityEstimator& poseVelocity() const {
+        return pose_velocity_;
+    }
     UgvState controlState() const;
     bool velocityValid() const;
-    const std::string& lastResetAdmissionMiss() const { return last_reset_admission_miss_; }
-    const std::string& lastResetHoldReason() const { return last_reset_hold_reason_; }
+    const std::string& lastResetAdmissionMiss() const {
+        return last_reset_admission_miss_;
+    }
+    const std::string& lastResetHoldReason() const {
+        return last_reset_hold_reason_;
+    }
 
    private:
-    struct SelfCheck { PeriodicGate command; };
-    struct Ready { PeriodicGate command; };
-    struct SolveTicket { uint64_t sequence; double deadline; };
+    struct SelfCheck {
+        PeriodicGate command;
+    };
+    struct Ready {
+        PeriodicGate command;
+    };
+    struct SolveTicket {
+        uint64_t sequence;
+        double deadline;
+    };
     struct Custom1 {
         PeriodicGate solve, command, zero;
         std::optional<SolveTicket> in_flight;
@@ -86,10 +129,14 @@ class UnicycleUgvController {
         ugv_reset_client::ResetExecutor::RunPtr run;
         PeriodicGate command;
     };
-    struct SetPva { WorldPvaReference value; };
+    struct SetPva {
+        WorldPvaReference value;
+    };
     struct Tick {};
     struct Exit {};
-    struct Health { bool ready; };
+    struct Health {
+        bool ready;
+    };
     struct Operator {
         OperatorCommand command;
         CommandOutcome& outcome;

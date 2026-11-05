@@ -23,18 +23,18 @@
 #include <ugv_reset_client/reset_protocol.h>
 #include <ugv_reset_client/reset_route.h>
 #include <ugv_reset_client/reset_tracker.h>
+#include <ugv_reset_client/schedule.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <limits>
-#include <string>
-#include <vector>
-#include <variant>
 #include <memory>
 #include <optional>
+#include <string>
 #include <type_traits>
-#include <ugv_reset_client/schedule.h>
+#include <variant>
+#include <vector>
 
 namespace ugv_reset_client {
 
@@ -80,8 +80,13 @@ class ResetExecutor {
     struct None {};
     struct AwaitBrake {};
     struct AwaitZero {};
-    struct AwaitStopped { double zero_ros; };
-    struct DeferredGo { Grant grant; double deadline; };
+    struct AwaitStopped {
+        double zero_ros;
+    };
+    struct DeferredGo {
+        Grant grant;
+        double deadline;
+    };
     struct AwaitGo {
         double zero_ros;
         bool certified;
@@ -96,19 +101,31 @@ class ResetExecutor {
         double last_step_ros{-1}, settle{0}, stall_since;
         Pose stall_pose;
         Executing(const Grant& g, const VehicleSpec& spec, double deadline, const Measurement& m)
-            : final(g.final_move), grant_id(g.grant_id), s_limit(g.s_limit),
-              heartbeat_deadline(deadline), stall_since(m.ros_now), stall_pose(m.pose) {
-            tracker.start(Route(g.start, g.via, g.goal, spec.model == Model::Unicycle ? g.ell_plan : 0), spec);
+            : final(g.final_move),
+              grant_id(g.grant_id),
+              s_limit(g.s_limit),
+              heartbeat_deadline(deadline),
+              stall_since(m.ros_now),
+              stall_pose(m.pose) {
+            tracker.start(
+                Route(g.start, g.via, g.goal, spec.model == Model::Unicycle ? g.ell_plan : 0),
+                spec);
         }
     };
     struct Complete {};
-    using Permission = std::variant<None, AwaitBrake, AwaitZero, AwaitStopped, AwaitGo, Executing, Complete>;
-    struct SessionHeader { uint32_t session; Pose target; };
+    using Permission =
+        std::variant<None, AwaitBrake, AwaitZero, AwaitStopped, AwaitGo, Executing, Complete>;
+    struct SessionHeader {
+        uint32_t session;
+        Pose target;
+    };
     struct Requesting {};
     struct Waiting {};
     struct Moving {};
     struct Settling {};
-    struct Done { bool reported{false}; };
+    struct Done {
+        bool reported{false};
+    };
     using Progress = std::variant<Requesting, Waiting, Moving, Settling, Done>;
 
    public:
@@ -119,13 +136,19 @@ class ResetExecutor {
         Run(const Run&) = delete;
         Run& operator=(const Run&) = delete;
         std::string last_hold_logged;
-        double enteredDomain() const { return enter_ros; }
+        double enteredDomain() const {
+            return enter_ros;
+        }
 
        private:
         friend class ResetExecutor;
         Run(SessionHeader h, bool valid, double bound, const Measurement& m)
-            : header(std::move(h)), target_valid(valid), allowance(bound), enter_ros(m.ros_now),
-              enter_wall(m.wall_now), last_message_wall(m.wall_now) {}
+            : header(std::move(h)),
+              target_valid(valid),
+              allowance(bound),
+              enter_ros(m.ros_now),
+              enter_wall(m.wall_now),
+              last_message_wall(m.wall_now) {}
         ResetExecutor* owner{nullptr};
         SessionHeader header;
         Permission permission;
@@ -142,7 +165,10 @@ class ResetExecutor {
     explicit ResetExecutor(const ExecutorConfig& config = ExecutorConfig()) : cfg_(config) {
         ell_.setBound(cfg_.spec.ell_bound);
     }
-    ~ResetExecutor() { if (auto* r = run()) r->owner = nullptr; }
+    ~ResetExecutor() {
+        if (auto* r = run())
+            r->owner = nullptr;
+    }
     ResetExecutor(const ResetExecutor&) = delete;
     ResetExecutor& operator=(const ResetExecutor&) = delete;
 
@@ -157,75 +183,113 @@ class ResetExecutor {
             old.acc_w != spec.acc_w || old.ell_bound != spec.ell_bound;
         cfg_.spec = spec;
         ell_.setBound(spec.ell_bound);
-        if (changed && !is<None>() && !is<Complete>()) requestAuthority(!active());
+        if (changed && !is<None>() && !is<Complete>())
+            requestAuthority(!active());
     }
-    void setTimeout(double seconds) { cfg_.timeout = seconds; }
-    const ExecutorConfig& config() const { return cfg_; }
+    void setTimeout(double seconds) {
+        cfg_.timeout = seconds;
+    }
+    const ExecutorConfig& config() const {
+        return cfg_;
+    }
 
     void observe(const Measurement& m) {
         if (have_ros_clock_ && m.ros_now < last_ros_now_ - 1e-9) {
             clock_invalid_ = true;
-            if (auto* go = std::get_if<AwaitGo>(&permission())) go->certified = false;
+            if (auto* go = std::get_if<AwaitGo>(&permission()))
+                go->certified = false;
         }
         have_ros_clock_ = true;
         last_ros_now_ = m.ros_now;
         if (!std::isfinite(m.pose_stamp) || m.pose_stamp <= last_pose_stamp_ ||
-            !std::isfinite(m.pose.x) || !std::isfinite(m.pose.y) || !std::isfinite(m.pose.yaw)) return;
+            !std::isfinite(m.pose.x) || !std::isfinite(m.pose.y) || !std::isfinite(m.pose.yaw))
+            return;
         last_pose_stamp_ = m.pose_stamp;
-        if (cfg_.spec.model == Model::Unicycle) ell_.add(m.pose);
-        if (is<AwaitZero>() || is<AwaitBrake>()) return;
+        if (cfg_.spec.model == Model::Unicycle)
+            ell_.add(m.pose);
+        if (is<AwaitZero>() || is<AwaitBrake>())
+            return;
         const auto zero = zeroSince();
         if (zero && (clock_invalid_ || !m.pose_stamp_trusted || m.pose_stamp <= *zero ||
-                     m.pose_stamp > m.ros_now + 1e-9)) return;
+                     m.pose_stamp > m.ros_now + 1e-9))
+            return;
         velocity_.add(m.pose_stamp, m.pose);
         velocity_pose_stamp_ = m.pose_stamp;
     }
 
-    bool active() const { return run() && !std::holds_alternative<Done>(run()->progress); }
+    bool active() const {
+        return run() && !std::holds_alternative<Done>(run()->progress);
+    }
     Phase phase() const {
         const auto* r = run();
-        if (!r) return Phase::Idle;
-        return std::visit([](const auto& progress) {
-            using T = std::decay_t<decltype(progress)>;
-            if constexpr (std::is_same_v<T, Requesting>) return Phase::Requesting;
-            else if constexpr (std::is_same_v<T, Waiting>) return Phase::Waiting;
-            else if constexpr (std::is_same_v<T, Moving>) return Phase::Moving;
-            else if constexpr (std::is_same_v<T, Settling>) return Phase::Settling;
-            else return Phase::Done;
-        }, r->progress);
+        if (!r)
+            return Phase::Idle;
+        return std::visit(
+            [](const auto& progress) {
+                using T = std::decay_t<decltype(progress)>;
+                if constexpr (std::is_same_v<T, Requesting>)
+                    return Phase::Requesting;
+                else if constexpr (std::is_same_v<T, Waiting>)
+                    return Phase::Waiting;
+                else if constexpr (std::is_same_v<T, Moving>)
+                    return Phase::Moving;
+                else if constexpr (std::is_same_v<T, Settling>)
+                    return Phase::Settling;
+                else
+                    return Phase::Done;
+            },
+            r->progress);
     }
-    uint32_t sessionId() const { return header().session; }
-    uint32_t requestGeneration() const { return generation_; }
-    const Pose& target() const { return header().target; }
-    bool protocolFault() const { return protocol_fault_; }
-    bool permissionPending() const { return !is<None>() && !is<Executing>() && !is<Complete>(); }
-    bool requiresZeroCommand() const { return protocol_fault_ || clock_invalid_ || permissionPending(); }
-    bool needsZeroPublication() const { return is<AwaitZero>(); }
+    uint32_t sessionId() const {
+        return header().session;
+    }
+    uint32_t requestGeneration() const {
+        return generation_;
+    }
+    const Pose& target() const {
+        return header().target;
+    }
+    bool protocolFault() const {
+        return protocol_fault_;
+    }
+    bool permissionPending() const {
+        return !is<None>() && !is<Executing>() && !is<Complete>();
+    }
+    bool requiresZeroCommand() const {
+        return protocol_fault_ || clock_invalid_ || permissionPending();
+    }
+    bool needsZeroPublication() const {
+        return is<AwaitZero>();
+    }
 
     // Admission and value construction happen on the single owner. No reserved flag, event post,
     // result-credit duplicate, or post-update inference. Install is part of the same command turn,
     // after the previous CONTROL alternative's existing exit behavior has completed.
     RunPtr prepare(uint32_t session, const Pose& target, bool valid, const Measurement& m) const {
         if (protocol_fault_ || generation_ >= std::numeric_limits<uint32_t>::max() - 2 ||
-            pendingResults() + (active() ? 1u : 0u) >= 2u) return {};
+            pendingResults() + (active() ? 1u : 0u) >= 2u)
+            return {};
         const double spread = ell_.spread();
-        const double allowance = cfg_.spec.model == Model::Unicycle
-                                     ? (spread >= 0 ? spread : cfg_.spec.ell_bound) : 0;
+        const double allowance =
+            cfg_.spec.model == Model::Unicycle ? (spread >= 0 ? spread : cfg_.spec.ell_bound) : 0;
         return RunPtr(new Run({session, target}, valid, allowance, m));
     }
     void install(Run& value, const Measurement& m) {
-        if (active()) end(Outcome::Stopped, Reason::None, "replaced by a new Reset", m);
+        if (active())
+            end(Outcome::Stopped, Reason::None, "replaced by a new Reset", m);
         finish();
         value.owner = this;
         authority_.emplace<Run*>(&value);
         requestAuthority(false);
     }
     void abort(Outcome outcome, const std::string& detail, const Measurement& m) {
-        if (active()) end(outcome, Reason::None, detail, m);
+        if (active())
+            end(outcome, Reason::None, detail, m);
     }
     void finish() {
         if (auto* value = run()) {
-            if (is<Executing>()) requestAuthority(true);
+            if (is<Executing>())
+                requestAuthority(true);
             Retirement retired{value->header, std::move(value->permission)};
             value->owner = nullptr;
             authority_.emplace<Retirement>(std::move(retired));
@@ -235,7 +299,8 @@ class ResetExecutor {
     void onZeroPublished(double ros_now, uint32_t generation = 0, uint32_t brake = 0) {
         if (!is<AwaitZero>() || clock_invalid_ || protocol_fault_ || !std::isfinite(ros_now) ||
             !command().zero() || (generation != 0 && generation != generation_) ||
-            (brake != 0 && brake != brake_id_)) return;
+            (brake != 0 && brake != brake_id_))
+            return;
         velocity_.reset();
         velocity_pose_stamp_ = -1;
         permission().emplace<AwaitStopped>(AwaitStopped{ros_now});
@@ -245,25 +310,32 @@ class ResetExecutor {
         if (protocol_fault_ || is<None>() || g.session != sessionId() ||
             g.request_generation != generation_ || generation_ == 0 || g.grant_id == 0 ||
             !std::isfinite(g.ttl) || g.ttl <= 0 ||
-            (have_publication_ && g.publication_seq <= last_publication_)) return;
-        if (g.grant_id < last_decision_id_) return;
+            (have_publication_ && g.publication_seq <= last_publication_))
+            return;
+        if (g.grant_id < last_decision_id_)
+            return;
         if (g.grant_id == last_decision_id_ &&
-            (!have_decision_ || !sameDecision(last_decision_, g))) return;
+            (!have_decision_ || !sameDecision(last_decision_, g)))
+            return;
         if (g.state == GrantState::Go) {
-            if (!validGo(g)) return;
+            if (!validGo(g))
+                return;
             if (const auto* motion = executing()) {
                 if (!motion->tracker.active() || !sameRoute(motion->tracker.route(), g) ||
-                    g.final_move != motion->final || g.s_limit + 1e-9 < motion->s_limit) return;
+                    g.final_move != motion->final || g.s_limit + 1e-9 < motion->s_limit)
+                    return;
             } else {
                 const auto* go = std::get_if<AwaitGo>(&permission());
                 if (!go || !active() || !go->certified || g.grant_id <= brake_id_ ||
-                    (go->deferred && g.grant_id != go->deferred->grant.grant_id)) return;
+                    (go->deferred && g.grant_id != go->deferred->grant.grant_id))
+                    return;
             }
         } else if (g.state == GrantState::Hold) {
-            if (!is<Executing>() &&
-                !(is<AwaitGo>() && stopCertified() && g.grant_id > brake_id_) &&
-                !(is<Complete>() && !active() && g.grant_id == acknowledged_id_)) return;
-        } else if (g.state != GrantState::Brake && g.state != GrantState::Reject) return;
+            if (!is<Executing>() && !(is<AwaitGo>() && stopCertified() && g.grant_id > brake_id_) &&
+                !(is<Complete>() && !active() && g.grant_id == acknowledged_id_))
+                return;
+        } else if (g.state != GrantState::Brake && g.state != GrantState::Reject)
+            return;
         have_publication_ = true;
         last_publication_ = g.publication_seq;
         have_decision_ = true;
@@ -282,7 +354,8 @@ class ResetExecutor {
                     brake_id_ = g.grant_id;
                     acknowledged_id_ = brake_id_;
                     permission().emplace<AwaitZero>();
-                } else if (g.grant_id != brake_id_) requestAuthority(!active());
+                } else if (g.grant_id != brake_id_)
+                    requestAuthority(!active());
                 break;
             case GrantState::Go:
                 if (auto* motion = executing()) {
@@ -301,18 +374,21 @@ class ResetExecutor {
                 }
                 break;
             case GrantState::Reject:
-                if (active()) end(g.reason == Reason::BadSession || g.reason == Reason::SceneChanged ||
-                                      g.reason == Reason::SceneUnavailable ||
-                                      g.reason == Reason::NonParticipantMoving || g.reason == Reason::None
-                                      ? Outcome::RejectedByCoordinator : Outcome::Infeasible,
-                                  g.reason, g.detail, m);
+                if (active())
+                    end(g.reason == Reason::BadSession || g.reason == Reason::SceneChanged ||
+                                g.reason == Reason::SceneUnavailable ||
+                                g.reason == Reason::NonParticipantMoving || g.reason == Reason::None
+                            ? Outcome::RejectedByCoordinator
+                            : Outcome::Infeasible,
+                        g.reason, g.detail, m);
                 break;
         }
     }
 
     void poll(const Measurement& m) {
         if (protocol_fault_) {
-            if (auto* motion = executing()) motion->command = {};
+            if (auto* motion = executing())
+                motion->command = {};
             return;
         }
         if (auto* stopped = std::get_if<AwaitStopped>(&permission())) {
@@ -338,12 +414,15 @@ class ResetExecutor {
         StepOutput out;
         out.phase = phase();
         if (auto* value = run()) {
-            if (auto* done = std::get_if<Done>(&value->progress); done && !done->reported) return finished();
+            if (auto* done = std::get_if<Done>(&value->progress); done && !done->reported)
+                return finished();
         }
-        if (!active()) return out;
+        if (!active())
+            return out;
         Run& value = *run();
         if (protocol_fault_) {
-            end(Outcome::RejectedByCoordinator, Reason::BadSession, "Reset authority counter exhausted", m);
+            end(Outcome::RejectedByCoordinator, Reason::BadSession,
+                "Reset authority counter exhausted", m);
             return finished();
         }
         if (cfg_.timeout > 0 && (m.ros_now - value.enter_ros >= cfg_.timeout ||
@@ -352,7 +431,8 @@ class ResetExecutor {
             return finished();
         }
         if (!m.healthy) {
-            if (auto* motion = executing()) motion->command = {};
+            if (auto* motion = executing())
+                motion->command = {};
             return held();
         }
         if (!value.target_valid) {
@@ -365,16 +445,19 @@ class ResetExecutor {
         }
         if (m.wall_now - value.last_message_wall >= cfg_.no_coordinator) {
             end(value.heard ? Outcome::AbortedCoordinatorLost : Outcome::RejectedNoCoordinator,
-                Reason::None, value.heard ? "the coordinator stopped answering" : "no coordinator answered", m);
+                Reason::None,
+                value.heard ? "the coordinator stopped answering" : "no coordinator answered", m);
             return finished();
         }
         if (clock_invalid_) {
-            if (is<Executing>()) requestAuthority(false);
+            if (is<Executing>())
+                requestAuthority(false);
             return held();
         }
         auto* motion = executing();
         if (!motion || !motion->tracker.active()) {
-            if (motion) motion->command = {};
+            if (motion)
+                motion->command = {};
             return held();
         }
         if (m.wall_now > motion->heartbeat_deadline) {
@@ -384,18 +467,24 @@ class ResetExecutor {
         const bool due = motion->last_step_ros < 0 ||
                          m.ros_now - motion->last_step_ros >= cfg_.control_period - 1e-9;
         if (due) {
-            const double dt = motion->last_step_ros < 0 ? cfg_.control_period
-                : std::clamp(m.ros_now - motion->last_step_ros, 1e-3, .1);
+            const double dt = motion->last_step_ros < 0
+                                  ? cfg_.control_period
+                                  : std::clamp(m.ros_now - motion->last_step_ros, 1e-3, .1);
             motion->last_step_ros = m.ros_now;
-            motion->command = motion->tracker.step(m.pose, ell_.ell(), velocity_.valid() ? velocity_.speed() : 0,
-                                                   dt, motion->s_limit);
-            if (!checkTube(m) || !checkProgress(m)) return finished();
-            if (checkArrival(m, dt)) return finished();
-            const bool complete_prefix = RouteTracker::wholeRouteGranted(motion->tracker.route(), motion->s_limit);
+            motion->command = motion->tracker.step(
+                m.pose, ell_.ell(), velocity_.valid() ? velocity_.speed() : 0, dt, motion->s_limit);
+            if (!checkTube(m) || !checkProgress(m))
+                return finished();
+            if (checkArrival(m, dt))
+                return finished();
+            const bool complete_prefix =
+                RouteTracker::wholeRouteGranted(motion->tracker.route(), motion->s_limit);
             if (complete_prefix && !motion->final && motion->tracker.atEnd() && m.healthy &&
                 velocity_.valid() && velocity_.speed() <= cfg_.stop_speed &&
-                std::abs(velocity_.yawRate()) <= cfg_.stop_yaw_rate) motion->command = {};
-            const double perr = std::hypot(m.pose.x - header().target.x, m.pose.y - header().target.y);
+                std::abs(velocity_.yawRate()) <= cfg_.stop_yaw_rate)
+                motion->command = {};
+            const double perr =
+                std::hypot(m.pose.x - header().target.x, m.pose.y - header().target.y);
             const double yerr = std::abs(wrapAngle(header().target.yaw - m.pose.yaw));
             if (complete_prefix && stopped(m) && motion->command.zero() &&
                 ((!motion->final && motion->tracker.atEnd()) ||
@@ -406,9 +495,12 @@ class ResetExecutor {
             }
         }
         out.command = motion->command;
-        if (motion->final && motion->tracker.atEnd()) value.progress.emplace<Settling>();
-        else if (moving()) value.progress.emplace<Moving>();
-        else value.progress.emplace<Waiting>();
+        if (motion->final && motion->tracker.atEnd())
+            value.progress.emplace<Settling>();
+        else if (moving())
+            value.progress.emplace<Moving>();
+        else
+            value.progress.emplace<Waiting>();
         out.phase = phase();
         return out;
     }
@@ -435,10 +527,12 @@ class ResetExecutor {
         return s;
     }
     bool sessionDue(const Measurement& m) const {
-        if (protocol_fault_) return false;
+        if (protocol_fault_)
+            return false;
         return !published_ || phase() != published_phase_ || sessionId() != published_session_ ||
                generation_ != published_generation_ || acknowledged_id_ != published_ack_ ||
-               stopCertified() != published_cert_ || m.wall_now - published_wall_ >= kSessionPeriod - 1e-9;
+               stopCertified() != published_cert_ ||
+               m.wall_now - published_wall_ >= kSessionPeriod - 1e-9;
     }
     void markSessionPublished(const Measurement& m) {
         published_ = true;
@@ -448,19 +542,38 @@ class ResetExecutor {
         published_ack_ = acknowledged_id_;
         published_cert_ = stopCertified();
         published_wall_ = m.wall_now;
-        if (next_publication_ == std::numeric_limits<uint32_t>::max()) protocol_fault_ = true;
-        else ++next_publication_;
+        if (next_publication_ == std::numeric_limits<uint32_t>::max())
+            protocol_fault_ = true;
+        else
+            ++next_publication_;
     }
-    bool resultPending() const { return result_pending_ || previous_pending_; }
+    bool resultPending() const {
+        return result_pending_ || previous_pending_;
+    }
     bool peekResult(Result* out) const {
-        if (!out || !resultPending()) return false;
+        if (!out || !resultPending())
+            return false;
         *out = previous_pending_ ? previous_result_ : result_;
         return true;
     }
-    void commitResult() { if (previous_pending_) previous_pending_ = false; else result_pending_ = false; }
-    bool takeResult(Result* out) { if (!peekResult(out)) return false; commitResult(); return true; }
-    const Result& result() const { return result_; }
-    Reason holdReason() const { return run() ? run()->hold_reason : Reason::None; }
+    void commitResult() {
+        if (previous_pending_)
+            previous_pending_ = false;
+        else
+            result_pending_ = false;
+    }
+    bool takeResult(Result* out) {
+        if (!peekResult(out))
+            return false;
+        commitResult();
+        return true;
+    }
+    const Result& result() const {
+        return result_;
+    }
+    Reason holdReason() const {
+        return run() ? run()->hold_reason : Reason::None;
+    }
     const std::string& holdDetail() const {
         static const std::string empty;
         return run() ? run()->hold_detail : empty;
@@ -469,36 +582,64 @@ class ResetExecutor {
         static const std::vector<std::string> empty;
         return run() ? run()->hold_blockers : empty;
     }
-    const EllEstimator& ell() const { return ell_; }
-    const VelocityEstimator& velocity() const { return velocity_; }
-    const RouteTracker* tracker() const { const auto* e = executing(); return e ? &e->tracker : nullptr; }
-    double sLimit() const { const auto* e = executing(); return e ? e->s_limit : 0; }
-    Command command() const { const auto* e = executing(); return e ? e->command : Command{}; }
+    const EllEstimator& ell() const {
+        return ell_;
+    }
+    const VelocityEstimator& velocity() const {
+        return velocity_;
+    }
+    const RouteTracker* tracker() const {
+        const auto* e = executing();
+        return e ? &e->tracker : nullptr;
+    }
+    double sLimit() const {
+        const auto* e = executing();
+        return e ? e->s_limit : 0;
+    }
+    Command command() const {
+        const auto* e = executing();
+        return e ? e->command : Command{};
+    }
     NextWake nextWake(const Measurement& m) const {
         NextWake next;
-        if (!protocol_fault_) next.atWall(sessionDue(m) ? m.wall_now : std::nextafter(published_wall_ + kSessionPeriod - 1e-9, std::numeric_limits<double>::infinity()));
-        if (!active()) return next;
+        if (!protocol_fault_)
+            next.atWall(sessionDue(m) ? m.wall_now
+                                      : std::nextafter(published_wall_ + kSessionPeriod - 1e-9,
+                                                       std::numeric_limits<double>::infinity()));
+        if (!active())
+            return next;
         const Run& value = *run();
         if (cfg_.timeout > 0) {
-            next.atDomain(std::nextafter(value.enter_ros + cfg_.timeout, std::numeric_limits<double>::infinity()));
-            next.atWall(std::nextafter(value.enter_wall + cfg_.timeout, std::numeric_limits<double>::infinity()));
+            next.atDomain(std::nextafter(value.enter_ros + cfg_.timeout,
+                                         std::numeric_limits<double>::infinity()));
+            next.atWall(std::nextafter(value.enter_wall + cfg_.timeout,
+                                       std::numeric_limits<double>::infinity()));
         }
         if (m.healthy) {
-            if (!value.target_valid) next.atWall(std::nextafter(value.enter_wall + cfg_.no_target_hold, std::numeric_limits<double>::infinity()));
-            else next.atWall(std::nextafter(value.last_message_wall + cfg_.no_coordinator, std::numeric_limits<double>::infinity()));
+            if (!value.target_valid)
+                next.atWall(std::nextafter(value.enter_wall + cfg_.no_target_hold,
+                                           std::numeric_limits<double>::infinity()));
+            else
+                next.atWall(std::nextafter(value.last_message_wall + cfg_.no_coordinator,
+                                           std::numeric_limits<double>::infinity()));
         }
-        if (const auto* e = executing(); e && m.healthy && value.target_valid &&
-            !clock_invalid_ && e->tracker.active()) {
-            next.atWall(std::nextafter(e->heartbeat_deadline, std::numeric_limits<double>::infinity()));
-            next.atDomain(e->last_step_ros < 0 ? m.ros_now :
-                std::nextafter(e->last_step_ros + cfg_.control_period - 1e-9,
-                               std::numeric_limits<double>::infinity()));
+        if (const auto* e = executing();
+            e && m.healthy && value.target_valid && !clock_invalid_ && e->tracker.active()) {
+            next.atWall(
+                std::nextafter(e->heartbeat_deadline, std::numeric_limits<double>::infinity()));
+            next.atDomain(e->last_step_ros < 0
+                              ? m.ros_now
+                              : std::nextafter(e->last_step_ros + cfg_.control_period - 1e-9,
+                                               std::numeric_limits<double>::infinity()));
         }
         return next;
     }
 
    private:
-    struct Retirement { SessionHeader header; Permission permission; };
+    struct Retirement {
+        SessionHeader header;
+        Permission permission;
+    };
     Run* run() {
         auto* ptr = std::get_if<Run*>(&authority_);
         return ptr ? *ptr : nullptr;
@@ -507,25 +648,43 @@ class ResetExecutor {
         const auto* ptr = std::get_if<Run*>(&authority_);
         return ptr ? *ptr : nullptr;
     }
-    Permission& permission() { return run() ? run()->permission : std::get<Retirement>(authority_).permission; }
-    const Permission& permission() const { return run() ? run()->permission : std::get<Retirement>(authority_).permission; }
-    const SessionHeader& header() const { return run() ? run()->header : std::get<Retirement>(authority_).header; }
-    template<class T> bool is() const { return std::holds_alternative<T>(permission()); }
-    Executing* executing() { return std::get_if<Executing>(&permission()); }
-    const Executing* executing() const { return std::get_if<Executing>(&permission()); }
+    Permission& permission() {
+        return run() ? run()->permission : std::get<Retirement>(authority_).permission;
+    }
+    const Permission& permission() const {
+        return run() ? run()->permission : std::get<Retirement>(authority_).permission;
+    }
+    const SessionHeader& header() const {
+        return run() ? run()->header : std::get<Retirement>(authority_).header;
+    }
+    template <class T>
+    bool is() const {
+        return std::holds_alternative<T>(permission());
+    }
+    Executing* executing() {
+        return std::get_if<Executing>(&permission());
+    }
+    const Executing* executing() const {
+        return std::get_if<Executing>(&permission());
+    }
     std::optional<double> zeroSince() const {
-        if (const auto* stopped = std::get_if<AwaitStopped>(&permission())) return stopped->zero_ros;
-        if (const auto* go = std::get_if<AwaitGo>(&permission())) return go->zero_ros;
+        if (const auto* stopped = std::get_if<AwaitStopped>(&permission()))
+            return stopped->zero_ros;
+        if (const auto* go = std::get_if<AwaitGo>(&permission()))
+            return go->zero_ros;
         return std::nullopt;
     }
     bool stopCertified() const {
         const auto* go = std::get_if<AwaitGo>(&permission());
         return go && go->certified;
     }
-    size_t pendingResults() const { return (result_pending_ ? 1u : 0u) + (previous_pending_ ? 1u : 0u); }
+    size_t pendingResults() const {
+        return (result_pending_ ? 1u : 0u) + (previous_pending_ ? 1u : 0u);
+    }
     bool stopped(const Measurement& m) const {
         return m.healthy && m.external_command_zero && command().zero() && velocity_.valid() &&
-               velocity_.speed() <= cfg_.stop_speed && std::abs(velocity_.yawRate()) <= cfg_.stop_yaw_rate;
+               velocity_.speed() <= cfg_.stop_speed &&
+               std::abs(velocity_.yawRate()) <= cfg_.stop_yaw_rate;
     }
     bool causalStopped(const Measurement& m, double zero_ros) const {
         return !clock_invalid_ && m.pose_stamp_trusted && m.pose_stamp > zero_ros &&
@@ -535,14 +694,19 @@ class ResetExecutor {
         permission().emplace<AwaitBrake>();
         brake_id_ = 0;
         acknowledged_id_ = 0;
-        if (generation_ == std::numeric_limits<uint32_t>::max()) protocol_fault_ = true;
-        else ++generation_;
-        if (!terminal) run()->progress.emplace<Requesting>();
+        if (generation_ == std::numeric_limits<uint32_t>::max())
+            protocol_fault_ = true;
+        else
+            ++generation_;
+        if (!terminal)
+            run()->progress.emplace<Requesting>();
     }
     StepOutput held() {
         StepOutput out;
-        if (permissionPending() || phase() == Phase::Requesting) run()->progress.emplace<Requesting>();
-        else run()->progress.emplace<Waiting>();
+        if (permissionPending() || phase() == Phase::Requesting)
+            run()->progress.emplace<Requesting>();
+        else
+            run()->progress.emplace<Waiting>();
         out.phase = phase();
         return out;
     }
@@ -600,35 +764,43 @@ class ResetExecutor {
                                       std::abs(velocity_.yawRate()) > cfg_.stop_yaw_rate * 1.5));
     }
     bool checkTube(const Measurement& m) {
-        if (std::abs(executing()->tracker.crossTrack()) <= cfg_.tube_cross_track + 2.0 * run()->allowance) return true;
+        if (std::abs(executing()->tracker.crossTrack()) <=
+            cfg_.tube_cross_track + 2.0 * run()->allowance)
+            return true;
         char text[96];
-        std::snprintf(text, sizeof(text), "left the route tube: cross-track %.2f m", executing()->tracker.crossTrack());
+        std::snprintf(text, sizeof(text), "left the route tube: cross-track %.2f m",
+                      executing()->tracker.crossTrack());
         end(Outcome::AbortedDeviation, Reason::None, text, m);
         return false;
     }
     bool checkProgress(const Measurement& m) {
         auto& motion = *executing();
         const bool may_move = motion.s_limit - motion.tracker.progress() > 0.1;
-        const double moved = std::hypot(m.pose.x - motion.stall_pose.x, m.pose.y - motion.stall_pose.y) +
-                             0.3 * std::abs(wrapAngle(m.pose.yaw - motion.stall_pose.yaw));
+        const double moved =
+            std::hypot(m.pose.x - motion.stall_pose.x, m.pose.y - motion.stall_pose.y) +
+            0.3 * std::abs(wrapAngle(m.pose.yaw - motion.stall_pose.yaw));
         if (!may_move || moved > 0.03 || !motion.tracker.active()) {
             motion.stall_since = m.ros_now;
             motion.stall_pose = m.pose;
             return true;
         }
-        if (m.ros_now - motion.stall_since < cfg_.stall) return true;
+        if (m.ros_now - motion.stall_since < cfg_.stall)
+            return true;
         end(Outcome::AbortedStalled, Reason::None, "allowed to move but did not for 10 s", m);
         return false;
     }
     bool checkArrival(const Measurement& m, double dt) {
         auto& motion = *executing();
-        if (!motion.final || !motion.tracker.active()) return false;
+        if (!motion.final || !motion.tracker.active())
+            return false;
         const double perr = std::hypot(m.pose.x - header().target.x, m.pose.y - header().target.y);
         const double yerr = std::abs(wrapAngle(header().target.yaw - m.pose.yaw));
         const bool stopped = velocity_.valid() && velocity_.speed() <= cfg_.stop_speed &&
                              std::abs(velocity_.yawRate()) <= cfg_.stop_yaw_rate;
-        if (perr <= cfg_.position_tolerance && yerr <= cfg_.yaw_tolerance && stopped) motion.settle += dt;
-        else motion.settle = 0.0;
+        if (perr <= cfg_.position_tolerance && yerr <= cfg_.yaw_tolerance && stopped)
+            motion.settle += dt;
+        else
+            motion.settle = 0.0;
         if (motion.settle >= cfg_.settle_hold) {
             end(Outcome::Arrived, Reason::None, "", m);
             return true;
@@ -636,13 +808,18 @@ class ResetExecutor {
         return false;
     }
     void end(Outcome outcome, Reason reason, const std::string& detail, const Measurement& m) {
-        if (!active()) return;
-        if (result_pending_) { previous_result_ = result_; previous_pending_ = true; }
+        if (!active())
+            return;
+        if (result_pending_) {
+            previous_result_ = result_;
+            previous_pending_ = true;
+        }
         result_.session = sessionId();
         result_.outcome = outcome;
         result_.reason = reason;
         result_.detail = detail;
-        result_.final_planar_error = std::hypot(m.pose.x - header().target.x, m.pose.y - header().target.y);
+        result_.final_planar_error =
+            std::hypot(m.pose.x - header().target.x, m.pose.y - header().target.y);
         result_.final_yaw_error = std::abs(wrapAngle(header().target.yaw - m.pose.yaw));
         result_.duration = m.ros_now - run()->enter_ros;
         result_pending_ = true;
@@ -667,9 +844,13 @@ class ResetExecutor {
     bool result_pending_{false}, previous_pending_{false};
     bool published_{false}, published_cert_{false};
     Phase published_phase_{Phase::Idle};
-    uint32_t published_session_{0}, published_generation_{0}, published_ack_{0}, next_publication_{0};
+    uint32_t published_session_{0}, published_generation_{0}, published_ack_{0},
+        next_publication_{0};
     double published_wall_{0};
 };
-inline ResetExecutor::Run::~Run() { if (owner) owner->finish(); }
+inline ResetExecutor::Run::~Run() {
+    if (owner)
+        owner->finish();
+}
 
 }  // namespace ugv_reset_client

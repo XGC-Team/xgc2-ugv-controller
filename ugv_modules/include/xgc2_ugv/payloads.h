@@ -66,8 +66,12 @@ extern "C" {
 /* Independent monotonic-clock wake transport. These payloads explicitly use CLOCK_MONOTONIC,
  * unlike normal host-domain stamps. A new deadline replaces the instance's old demand; <0 cancels.
  * The edge carries no business timeout or retry policy. */
-typedef struct xgc2_ugv_wall_deadline { int64_t monotonic_deadline_ns; } xgc2_ugv_wall_deadline;
-typedef struct xgc2_ugv_wall_wake { int64_t monotonic_now_ns; } xgc2_ugv_wall_wake;
+typedef struct xgc2_ugv_wall_deadline {
+    int64_t monotonic_deadline_ns;
+} xgc2_ugv_wall_deadline;
+typedef struct xgc2_ugv_wall_wake {
+    int64_t monotonic_now_ns;
+} xgc2_ugv_wall_wake;
 
 /* Vehicle state (edge -> controller) */
 

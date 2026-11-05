@@ -2,7 +2,6 @@
 #include <ugv_reset_safety/reset_planner.h>
 
 #include <algorithm>
-#include <variant>
 #include <chrono>
 #include <cmath>
 #include <limits>
@@ -10,6 +9,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <utility>
+#include <variant>
 
 namespace ugv_reset_safety {
 namespace {
@@ -138,8 +138,8 @@ bool clearAtLeast(const View& a, const View& b, double margin) {
     return exactDistance(a, b) >= margin;
 }
 
-double segmentClosest(double px, double py, double ax, double ay, double bx, double by,
-                      double* t, double* qx, double* qy) {
+double segmentClosest(double px, double py, double ax, double ay, double bx, double by, double* t,
+                      double* qx, double* qy) {
     const double ex = bx - ax, ey = by - ay;
     const double l2 = ex * ex + ey * ey;
     *t = l2 > 0.0 ? std::clamp(((px - ax) * ex + (py - ay) * ey) / l2, 0.0, 1.0) : 0.0;
@@ -310,8 +310,8 @@ struct EscapeCert {
     //        vertices swing around it (resolves the s=0 tangent lock).
     bool body_fixed{false};
     double nx{0.0}, ny{0.0};
-    double d0{0.0};    // the inherited gap the certificate preserves
-    double rhs{0.0};   // n . self_vertex_min >= rhs  (n . peer_vertex_min >= rhs in body frame)
+    double d0{0.0};   // the inherited gap the certificate preserves
+    double rhs{0.0};  // n . self_vertex_min >= rhs  (n . peer_vertex_min >= rhs in body frame)
     // Per sweep variant: the first route sample whose footprint clears the
     // peer by the full pair margin (kNoEscape = never). Cached at admission so
     // the escape state is a pure function of the frozen route index - no
@@ -345,7 +345,7 @@ bool escapeStepClear(const Shape& self_shape, const SampleSet& set, size_t i,
         double m = kInf;
         for (int k = 0; k < cert.peer_verts.n; ++k) {
             const double dx = cert.peer_verts.x[k] - q.x, dy = cert.peer_verts.y[k] - q.y;
-            const double bx = dx * c + dy * s;   // R(-yaw) * (peer_vertex - origin)
+            const double bx = dx * c + dy * s;  // R(-yaw) * (peer_vertex - origin)
             const double by = -dx * s + dy * c;
             m = std::min(m, cert.nx * bx + cert.ny * by);
         }
@@ -372,8 +372,7 @@ bool escapeStepClear(const Shape& self_shape, const SampleSet& set, size_t i,
     auto interior_clear = [&](double A, double B, double C) {
         const double psi = std::atan2(-B, -A);  // the global-min critical angle
         const double off = rc::wrapAngle(psi - prev.yaw);
-        return off < lo || off > hi ||
-               C + A * std::cos(psi) + B * std::sin(psi) >= cert.rhs - kTol;
+        return off < lo || off > hi || C + A * std::cos(psi) + B * std::sin(psi) >= cert.rhs - kTol;
     };
     if (!cert.body_fixed) {
         // World vertex of body corner k: c + R(psi) (bx-ell, by); its
@@ -398,8 +397,7 @@ bool escapeStepClear(const Shape& self_shape, const SampleSet& set, size_t i,
             const double dx = cert.peer_verts.x[k] - cx, dy = cert.peer_verts.y[k] - cy;
             const double A = cert.nx * dx + cert.ny * dy;
             const double B = cert.nx * dy - cert.ny * dx;
-            if (std::hypot(A, B) >= 1e-12 &&
-                !interior_clear(A, B, cert.nx * set.ell)) {
+            if (std::hypot(A, B) >= 1e-12 && !interior_clear(A, B, cert.nx * set.ell)) {
                 return false;
             }
         }
@@ -453,8 +451,12 @@ struct Plan {
 };
 
 struct Uncertified {};
-struct AwaitingStop { uint32_t brake_id; };
-struct Certified { uint32_t brake_id; };
+struct AwaitingStop {
+    uint32_t brake_id;
+};
+struct Certified {
+    uint32_t brake_id;
+};
 struct Unreserved {};
 struct AwaitGoReceipt {};
 struct GoReceived {};
@@ -485,7 +487,9 @@ struct Body {
     Shape shape;
     std::variant<Unreserved, Reserved> reservation{Unreserved{}};
     std::variant<Uncertified, AwaitingStop, Certified> certificate{Uncertified{}};
-    bool hasPlan() const { return std::holds_alternative<Reserved>(reservation); }
+    bool hasPlan() const {
+        return std::holds_alternative<Reserved>(reservation);
+    }
     bool retiring() const {
         const auto* r = std::get_if<Reserved>(&reservation);
         return r && std::holds_alternative<Retiring>(r->phase);
@@ -494,19 +498,34 @@ struct Body {
         const auto* r = std::get_if<Reserved>(&reservation);
         return r && std::holds_alternative<GoReceived>(r->phase);
     }
-    bool awaitingStop() const { return std::holds_alternative<AwaitingStop>(certificate); }
-    bool certified() const { return std::holds_alternative<Certified>(certificate); }
-    uint32_t barrier() const { return std::get<AwaitingStop>(certificate).brake_id; }
-    Plan& plan() { return std::get<Reserved>(reservation).value; }
-    const Plan& plan() const { return std::get<Reserved>(reservation).value; }
-    void retire() {
-        if (auto* r = std::get_if<Reserved>(&reservation)) r->phase.emplace<Retiring>();
+    bool awaitingStop() const {
+        return std::holds_alternative<AwaitingStop>(certificate);
     }
-    void awaitReceipt() { std::get<Reserved>(reservation).phase.emplace<AwaitGoReceipt>(); }
-    void receiveGo() { std::get<Reserved>(reservation).phase.emplace<GoReceived>(); }
+    bool certified() const {
+        return std::holds_alternative<Certified>(certificate);
+    }
+    uint32_t barrier() const {
+        return std::get<AwaitingStop>(certificate).brake_id;
+    }
+    Plan& plan() {
+        return std::get<Reserved>(reservation).value;
+    }
+    const Plan& plan() const {
+        return std::get<Reserved>(reservation).value;
+    }
+    void retire() {
+        if (auto* r = std::get_if<Reserved>(&reservation))
+            r->phase.emplace<Retiring>();
+    }
+    void awaitReceipt() {
+        std::get<Reserved>(reservation).phase.emplace<AwaitGoReceipt>();
+    }
+    void receiveGo() {
+        std::get<Reserved>(reservation).phase.emplace<GoReceived>();
+    }
     bool participates() const {
-        return phase == Phase::Requesting || phase == Phase::Waiting ||
-               phase == Phase::Moving || phase == Phase::Settling;
+        return phase == Phase::Requesting || phase == Phase::Waiting || phase == Phase::Moving ||
+               phase == Phase::Settling;
     }
     uint32_t session{0};
     uint32_t request_generation{0}, budget_session{0};
@@ -515,7 +534,7 @@ struct Body {
     bool uncontrolled{false};
     bool available{true};
     bool rejected{false};  // the planner ended this session
-    bool emitted{false};  // whether the last decision has been handed out
+    bool emitted{false};   // whether the last decision has been handed out
     GrantState last_state{GrantState::Hold};
     Reason last_reason{Reason::None};
     Reason hold_reason{Reason::None};  // what the vehicle is told while it waits
@@ -596,8 +615,7 @@ struct ResetPlanner::Impl {
     // pose the certificate froze must both match. A peer that parked or moved
     // after this route's admission has no certificate and clears by the full
     // pair margin.
-    static const EscapeCert* matchCert(const Body& peer,
-                                       const std::vector<EscapeCert>& certs) {
+    static const EscapeCert* matchCert(const Body& peer, const std::vector<EscapeCert>& certs) {
         for (const EscapeCert& cert : certs) {
             if (cert.peer_id == peer.id && samePose(cert.peer_pose, peer.pose)) {
                 return &cert;
@@ -762,9 +780,8 @@ struct ResetPlanner::Impl {
                         // the broadphase skips of far chunks and a from[v] > 0
                         // extension cursor - no prefix replay, no regained
                         // allowance.
-                        const bool escaped = cert == nullptr ||
-                                             (v < cert->escaped_at.size() &&
-                                              i > cert->escaped_at[v]);
+                        const bool escaped = cert == nullptr || (v < cert->escaped_at.size() &&
+                                                                 i > cert->escaped_at[v]);
                         const bool clear =
                             escaped ? sampleClear(self, q, *p, poseSample(*p, p->pose), m_parked)
                                     : escapeStepClear(self.shape, set, i, *cert);
@@ -797,14 +814,15 @@ struct ResetPlanner::Impl {
                                 continue;
                             }
                             const double m = cfg.pair_margin + self.delta + other.delta;
-                            if (separated(q.box, other.plan().sets[mc.variant].chunks[mc.chunk], m)) {
+                            if (separated(q.box, other.plan().sets[mc.variant].chunks[mc.chunk],
+                                          m)) {
                                 continue;
                             }
                             const SampleSet& reserved = other.plan().sets[mc.variant];
-                            const size_t lo = std::max(mc.chunk * kChunk,
-                                                       other.plan().cursor[mc.variant] > kBehind
-                                                           ? other.plan().cursor[mc.variant] - kBehind
-                                                           : size_t{0});
+                            const size_t lo = std::max(
+                                mc.chunk * kChunk, other.plan().cursor[mc.variant] > kBehind
+                                                       ? other.plan().cursor[mc.variant] - kBehind
+                                                       : size_t{0});
                             const size_t hi =
                                 std::min({(mc.chunk + 1) * kChunk, reserved.pts.size(),
                                           other.plan().hi[mc.variant]});
@@ -994,8 +1012,7 @@ struct ResetPlanner::Impl {
                 const int nv = body.shape.rect ? 4 : 16;
                 double mx = -kInf;
                 for (int k = 0; k < nv; ++k) {
-                    mx = std::max(mx, cert.nx * body.shape.bx[k] +
-                                          cert.ny * body.shape.by[k]);
+                    mx = std::max(mx, cert.nx * body.shape.bx[k] + cert.ny * body.shape.by[k]);
                 }
                 cert.rhs = mx + cp.d;
             }
@@ -1015,8 +1032,8 @@ struct ResetPlanner::Impl {
                         obstacles.push_back(retiringRoutingObstacle(other));
                     } else if (other.hasPlan()) {
                         // Coarse stand-in for the remaining sweep (the exact verifier follows).
-                        const SampleSet& set =
-                            other.plan().sets.size() == 3 ? other.plan().sets[1] : other.plan().sets[0];
+                        const SampleSet& set = other.plan().sets.size() == 3 ? other.plan().sets[1]
+                                                                             : other.plan().sets[0];
                         const size_t stride = static_cast<size_t>(std::ceil(1.0 / cfg.step));
                         const size_t lo = other.plan().cursor[0];
                         const size_t hi = std::min(
@@ -1098,8 +1115,7 @@ struct ResetPlanner::Impl {
                 }
             }
             const Violation violation =
-                firstViolation(body, view, std::vector<size_t>(view.size(), 0),
-                               plan.escape_certs);
+                firstViolation(body, view, std::vector<size_t>(view.size(), 0), plan.escape_certs);
             if (violation.hard) {
                 std::ostringstream text;
                 text << "sweep: hard at s=" << violation.s;
@@ -1279,8 +1295,8 @@ struct ResetPlanner::Impl {
             for (size_t w = 0; w < plan.sets.size(); ++w) {
                 const SampleSet& s = plan.sets[w];
                 const size_t hi = std::min(plan.hi[w], s.pts.size());
-                for (size_t c = plan.cursor[w] / kChunk;
-                     c < s.chunks.size() && c * kChunk < hi; ++c) {
+                for (size_t c = plan.cursor[w] / kChunk; c < s.chunks.size() && c * kChunk < hi;
+                     ++c) {
                     if (!separated(s.chunks[c], box, m)) {
                         return true;
                     }
@@ -1341,8 +1357,8 @@ struct ResetPlanner::Impl {
             }
             body.ell_hat = v.ell_hat;
             body.ell_spread = v.ell_spread;
-            body.uncontrolled = v.uncontrolled_moving ||
-                                (body.participates() && !body.hasPlan() && v.phase == Phase::Moving);
+            body.uncontrolled = v.uncontrolled_moving || (body.participates() && !body.hasPlan() &&
+                                                          v.phase == Phase::Moving);
             if (new_request) {
                 body.session = v.session;
                 body.request_generation = v.request_generation;
@@ -1391,7 +1407,8 @@ struct ResetPlanner::Impl {
                 dirty = true;
             }
             if (body.hasPlan() && !body.retiring() && !v.stop_certified &&
-                v.acknowledged_grant_id == body.plan().grant_id && body.plan().session == v.session &&
+                v.acknowledged_grant_id == body.plan().grant_id &&
+                body.plan().session == v.session &&
                 body.plan().request_generation == v.request_generation) {
                 body.receiveGo();
             }
@@ -1485,8 +1502,7 @@ struct ResetPlanner::Impl {
             for (const SampleSet& s : plan.sets) {
                 rest.push_back(&s);
             }
-            const Violation violation =
-                firstViolation(body, rest, plan.cursor, plan.escape_certs);
+            const Violation violation = firstViolation(body, rest, plan.cursor, plan.escape_certs);
             const bool held = body.phase == Phase::Waiting;
             if (violation.hard && (held || world_changed)) {
                 // The rest of the frozen route is blocked by a body that will not go away
@@ -1650,8 +1666,8 @@ struct ResetPlanner::Impl {
         std::vector<Body*> waiting;
         for (auto& entry : bodies) {
             Body& b = entry.second;
-            if (b.participates() && b.certified() && !b.awaitingStop() && !b.hasPlan() && !b.rejected &&
-                (b.phase == Phase::Requesting || b.phase == Phase::Waiting)) {
+            if (b.participates() && b.certified() && !b.awaitingStop() && !b.hasPlan() &&
+                !b.rejected && (b.phase == Phase::Requesting || b.phase == Phase::Waiting)) {
                 waiting.push_back(&b);
             }
         }
@@ -1826,7 +1842,8 @@ struct ResetPlanner::Impl {
         Choice best;
         for (auto& entry : bodies) {
             Body& k = entry.second;
-            if (!k.participates() || !k.certified() || k.awaitingStop() || k.hasPlan() || k.rejected) {
+            if (!k.participates() || !k.certified() || k.awaitingStop() || k.hasPlan() ||
+                k.rejected) {
                 continue;
             }
             for (double r : {1.6, 2.4, 3.2}) {
@@ -1897,8 +1914,8 @@ struct ResetPlanner::Impl {
     void deadlock() {
         std::vector<std::string> stuck;
         for (const auto& entry : bodies) {
-            if (entry.second.participates() && entry.second.certified() && !entry.second.awaitingStop() &&
-                !entry.second.hasPlan() && !entry.second.rejected) {
+            if (entry.second.participates() && entry.second.certified() &&
+                !entry.second.awaitingStop() && !entry.second.hasPlan() && !entry.second.rejected) {
                 stuck.push_back(entry.first);
             }
         }
@@ -1914,9 +1931,8 @@ struct ResetPlanner::Impl {
         auto inflight_blocker = [&](const Body& b) {
             for (const std::string& id : b.blockers) {
                 const auto it = bodies.find(id);
-                if (it != bodies.end() && it->second.participates() &&
-                    it->second.awaitingStop() && it->second.available &&
-                    !it->second.uncontrolled) {
+                if (it != bodies.end() && it->second.participates() && it->second.awaitingStop() &&
+                    it->second.available && !it->second.uncontrolled) {
                     return true;
                 }
             }
@@ -2116,8 +2132,9 @@ double ResetPlanner::nextDeadline(bool admit) const {
                 next = std::min(next, extension);
             // The original stall check runs only in an extension turn.
             if (b.phase == Phase::Waiting)
-                next = std::min(next, std::max(extension,
-                    std::nextafter(m.fleet_progress + m.cfg.stall_s, kInf)));
+                next = std::min(
+                    next,
+                    std::max(extension, std::nextafter(m.fleet_progress + m.cfg.stall_s, kInf)));
         }
         if (admit && b.participates() && b.certified() && !b.hasPlan() && !b.rejected &&
             (b.phase == Phase::Requesting || b.phase == Phase::Waiting)) {

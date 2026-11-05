@@ -17,9 +17,9 @@
 // A startup error is the node's own non-zero exit, so a Session-managed instance that is
 // misconfigured fails its Run instead of idling.
 
-#include <ugv_reset_client/owner_loop.h>
 #include <ros/master.h>
 #include <ros/ros.h>
+#include <ugv_reset_client/owner_loop.h>
 #include <ugv_reset_msgs/ResetFleet.h>
 #include <ugv_reset_msgs/ResetGrant.h>
 #include <ugv_reset_msgs/ResetSession.h>
@@ -183,40 +183,41 @@ class CoordinatorNode {
         // without pending input has no additional floor.
         auto due = [&] {
             const double deadline = core_->nextDeadline(wallSeconds());
-            return event_ ? last_step + 0.02
-                          : deadline;
+            return event_ ? last_step + 0.02 : deadline;
         };
-        loop_.run([&] {
-            const double now = wallSeconds();
-            if (now >= next_discovery) {
-                next_discovery = now + 1.0;
-                discover();
-            }
-            updateSceneAvailability(now);
-            if (now >= due()) {
-                last_step = now;
-                event_ = false;
-                for (const OutgoingGrant& g : core_->step(now)) {
-                    auto found = grant_pubs_.find(g.vehicle);
-                    if (found != grant_pubs_.end())
-                        found->second.publish(toMessage(g.grant, world_frame_));
-                    logGrant(g);
+        loop_.run(
+            [&] {
+                const double now = wallSeconds();
+                if (now >= next_discovery) {
+                    next_discovery = now + 1.0;
+                    discover();
                 }
-            }
-            if (now >= next_fleet) {
-                next_fleet = now + (core_->busy() ? 0.2 : 1.0);
-                publishFleet(now);
-            }
-        }, [&] {
-            rc::NextWake next;
-            next.atWall(next_discovery);
-            next.atWall(next_fleet);
-            next.atWall(due());
-            if (scene_live_)
-                next.atWall(std::nextafter(scene_state_wall_ + 1.0,
-                                           std::numeric_limits<double>::infinity()));
-            return next;
-        });
+                updateSceneAvailability(now);
+                if (now >= due()) {
+                    last_step = now;
+                    event_ = false;
+                    for (const OutgoingGrant& g : core_->step(now)) {
+                        auto found = grant_pubs_.find(g.vehicle);
+                        if (found != grant_pubs_.end())
+                            found->second.publish(toMessage(g.grant, world_frame_));
+                        logGrant(g);
+                    }
+                }
+                if (now >= next_fleet) {
+                    next_fleet = now + (core_->busy() ? 0.2 : 1.0);
+                    publishFleet(now);
+                }
+            },
+            [&] {
+                rc::NextWake next;
+                next.atWall(next_discovery);
+                next.atWall(next_fleet);
+                next.atWall(due());
+                if (scene_live_)
+                    next.atWall(std::nextafter(scene_state_wall_ + 1.0,
+                                               std::numeric_limits<double>::infinity()));
+                return next;
+            });
     }
 
    private:

@@ -1,4 +1,5 @@
 #include "unicycle_reference_trajectory/reference_driver.h"
+
 #include <cmath>
 
 namespace unicycle_reference_trajectory {

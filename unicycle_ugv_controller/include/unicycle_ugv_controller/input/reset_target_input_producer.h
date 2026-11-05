@@ -11,7 +11,6 @@ namespace unicycle_ugv_controller {
 
 class ResetTargetInputProducer {
    public:
-
     ResetTargetInputProducer(ros::NodeHandle& nh, UnicycleUgvController& controller,
                              const std::string& topic, uint32_t queue_size);
 

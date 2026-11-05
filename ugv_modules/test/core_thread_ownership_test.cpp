@@ -60,11 +60,9 @@ TEST(CoreThreads, ControllerUsesSerialOwnerWithoutAConstructionThreadGate) {
         }
     };
     threads.run([&] { update_for(500); });  // thread 1: a healthy vehicle for a second
-    EXPECT_EQ(controller->mode(),
-              ugv::ControlMode::Ready);
+    EXPECT_EQ(controller->mode(), ugv::ControlMode::Ready);
     threads.run([&] { update_for(500); });  // thread 0: the builder
-    EXPECT_EQ(controller->mode(),
-              ugv::ControlMode::Ready);
+    EXPECT_EQ(controller->mode(), ugv::ControlMode::Ready);
 }
 
 }  // namespace

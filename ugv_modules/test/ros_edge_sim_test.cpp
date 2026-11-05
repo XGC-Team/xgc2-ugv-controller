@@ -37,7 +37,10 @@ class Simulator {
         : pub_(nh.advertise<rosgraph_msgs::Clock>("/clock", 100)) {
         thread_ = std::thread([this] {
             while (!stop_.load()) {
-                if (paused_.load()) { std::this_thread::sleep_for(std::chrono::milliseconds(5)); continue; }
+                if (paused_.load()) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    continue;
+                }
                 rosgraph_msgs::Clock clock;
                 clock.clock.fromNSec(static_cast<uint64_t>(now_.load()));
                 pub_.publish(clock);
@@ -50,7 +53,9 @@ class Simulator {
         stop_.store(true);
         thread_.join();
     }
-    void pause() { paused_.store(true); }
+    void pause() {
+        paused_.store(true);
+    }
     int64_t now() const {
         return now_.load();
     }
@@ -130,7 +135,8 @@ TEST_F(EdgeSimTest, InputAndWallWakeCanOverlapAndTeardownJoinsTheTimerCallback) 
     ASSERT_EQ(host_.start(), XGC2_OK);
     simulator_.pause();
     host_.setNow(123 * kSecond);
-    auto publisher = nh_.advertise<rigid_state_estimator_msgs::RigidStateEstimate>("alg/state_estimator/state", 5);
+    auto publisher = nh_.advertise<rigid_state_estimator_msgs::RigidStateEstimate>(
+        "alg/state_estimator/state", 5);
     ASSERT_TRUE(connected(publisher));
     rigid_state_estimator_msgs::RigidStateEstimate pose;
     pose.header.stamp = ros::Time(123);
@@ -140,8 +146,10 @@ TEST_F(EdgeSimTest, InputAndWallWakeCanOverlapAndTeardownJoinsTheTimerCallback) 
         ASSERT_EQ(host_.step(XGC2_STEP_INPUT), XGC2_OK);
         publisher.publish(pose);
     }
-    ASSERT_TRUE(waitUntil([&] { return !host_.outputs("state").empty() && !host_.outputs("wall_wake").empty(); }));
-    host_.push("wall_deadline", xgc2_ugv_wall_deadline{TestHost::monotonicNs() + 1000000LL}, host_.now());
+    ASSERT_TRUE(waitUntil(
+        [&] { return !host_.outputs("state").empty() && !host_.outputs("wall_wake").empty(); }));
+    host_.push("wall_deadline", xgc2_ugv_wall_deadline{TestHost::monotonicNs() + 1000000LL},
+               host_.now());
     ASSERT_EQ(host_.step(XGC2_STEP_INPUT), XGC2_OK);
     host_.destroy();
     const auto count = host_.outputs("wall_wake").size();

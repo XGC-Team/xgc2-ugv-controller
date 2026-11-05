@@ -20,17 +20,17 @@ struct RosParamSource {
 
 }  // namespace
 
-ReferenceTrajectoryNode::ReferenceTrajectoryNode(ros::NodeHandle& nh)
-    : nh_(nh), private_nh_("~") {
+ReferenceTrajectoryNode::ReferenceTrajectoryNode(ros::NodeHandle& nh) : nh_(nh), private_nh_("~") {
     loop_.attach(nh_);
     loadParams();
     driver_.configure(config_, default_analytic_);
     output_ = std::make_unique<ReferenceOutputConsumer>(
-        nh_, driver_.runtime(), status_topic_, active_analytic_topic_,
-        active_polynomial_topic_, active_sampled_topic_, reference_path_topic_,
-        reference_path_sample_dt_, reference_path_preview_duration_, queue_size_);
+        nh_, driver_.runtime(), status_topic_, active_analytic_topic_, active_polynomial_topic_,
+        active_sampled_topic_, reference_path_topic_, reference_path_sample_dt_,
+        reference_path_preview_duration_, queue_size_);
     input_producer_ = std::make_unique<ReferenceInputProducer>(
-        nh_, driver_, analytic_topic_, waypoint_topic_, sampled_topic_, reset_topic_, queue_size_, [this] { return loop_.now(); });
+        nh_, driver_, analytic_topic_, waypoint_topic_, sampled_topic_, reset_topic_, queue_size_,
+        [this] { return loop_.now(); });
     ROS_INFO(
         "[ReferenceTrajectoryNode] Initialized: analytic=%s waypoint=%s sampled=%s "
         "status=%s active_analytic=%s active_polynomial=%s active_sampled=%s reference_path=%s",
@@ -41,16 +41,20 @@ ReferenceTrajectoryNode::ReferenceTrajectoryNode(ros::NodeHandle& nh)
 
 ReferenceTrajectoryNode::~ReferenceTrajectoryNode() = default;
 void ReferenceTrajectoryNode::run() {
-    loop_.run([this] {
-        const auto update = driver_.update(loop_.now());
-        if (update.default_analytic == ReferenceTrajectoryDriver::Request::kRejected)
-            ROS_WARN_THROTTLE(1.0, "[ReferenceTrajectoryNode] Rejected default analytic reference");
-        for (const auto& output : update.events) output_->handle(output);
-    }, [this] {
-        ugv_reset_client::NextWake next;
-        next.atDomain(driver_.runtime().nextDeadline());
-        return next;
-    });
+    loop_.run(
+        [this] {
+            const auto update = driver_.update(loop_.now());
+            if (update.default_analytic == ReferenceTrajectoryDriver::Request::kRejected)
+                ROS_WARN_THROTTLE(1.0,
+                                  "[ReferenceTrajectoryNode] Rejected default analytic reference");
+            for (const auto& output : update.events)
+                output_->handle(output);
+        },
+        [this] {
+            ugv_reset_client::NextWake next;
+            next.atDomain(driver_.runtime().nextDeadline());
+            return next;
+        });
 }
 
 void ReferenceTrajectoryNode::loadParams() {

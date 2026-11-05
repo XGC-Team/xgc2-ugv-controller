@@ -120,16 +120,15 @@ TEST(ResetPlanner, SwappingPlacesHeadOnIsResolvedWithoutAContact) {
 // leave while never closing the inherited gap, then its neighbour follows.
 TEST(ResetPlanner, ScoutsParkedInsideThePairMarginSequenceOutOfTheOverlap) {
     ScenarioFile world;
-    const auto s =
-        scenario("overlap-start",
-                 {{-4.5613497, -1.6651842, -0.0872233},
-                  {-5.5977380, -2.0857238, 0.6334592},
-                  {-5.4382727, -4.7342245, 0.0046286},
-                  {-4.5565166, -5.4201524, 0.4086611}},
-                 {{-6.0, -1.2, -0.3929740},
-                  {-6.0, -2.8, 1.0791080},
-                  {-6.0, -4.4, -1.5279221},
-                  {-6.0, -6.0, 0.5332720}});
+    const auto s = scenario("overlap-start",
+                            {{-4.5613497, -1.6651842, -0.0872233},
+                             {-5.5977380, -2.0857238, 0.6334592},
+                             {-5.4382727, -4.7342245, 0.0046286},
+                             {-4.5565166, -5.4201524, 0.4086611}},
+                            {{-6.0, -1.2, -0.3929740},
+                             {-6.0, -2.8, 1.0791080},
+                             {-6.0, -4.4, -1.5279221},
+                             {-6.0, -6.0, 0.5332720}});
     const DriveResult r = drive(world, s, scoutOptions());
     EXPECT_TRUE(r.all_arrived) << "rejections: " << r.rejected;
     EXPECT_EQ(r.rejected, 0);
@@ -142,16 +141,15 @@ TEST(ResetPlanner, TheParkedEscapeNeverClosesTheInheritedGap) {
     ScenarioFile world;
     // Both scouts start inside the pair margin (~0.09 m edge gap) with goals pointing away
     // from each other: both have to pull out of the same overlap without a contact.
-    const auto s = scenario("overlap-escape",
-                            {{-0.94, 0.0, 0.0}, {0.0, 0.0, 1.5707963}},
+    const auto s = scenario("overlap-escape", {{-0.94, 0.0, 0.0}, {0.0, 0.0, 1.5707963}},
                             {{-3.0, 0.0, 0.0}, {2.0, 0.0, 0.0}});
     const DriveResult r = drive(world, s, scoutOptions());
     EXPECT_TRUE(r.all_arrived) << "rejections: " << r.rejected;
     EXPECT_GE(r.min_chassis_clearance, 0.0);
     // The escape certificate's bound is the exact inherited gap of THIS pair, not merely
     // non-penetration: the planning footprints may never come closer than where they started.
-    const double inherited = clearance(rect(-0.94, 0.0, 0.0, 0.45, 0.40),
-                                       rect(0.0, 0.0, 1.5707963, 0.45, 0.40));
+    const double inherited =
+        clearance(rect(-0.94, 0.0, 0.0, 0.45, 0.40), rect(0.0, 0.0, 1.5707963, 0.45, 0.40));
     ASSERT_LT(inherited, scoutOptions().planner.pair_margin);
     const auto it = r.pair_gaps.find({0, 1});
     ASSERT_NE(it, r.pair_gaps.end()) << "the start-overlapped pair must still be audited";
@@ -232,13 +230,12 @@ TEST(ResetPlanner, AStartInContactWithAParkedBodyIsRefused) {
 TEST(ResetPlanner, AReturnInsideThePairMarginIsRefused) {
     ScenarioFile world;
     world.obstacles.push_back({{-1.5, 2.0}, {1.5, 2.0}, {1.5, 6.0}, {-1.5, 6.0}});
-    const auto s = scenario("return-inside-margin",
-                            {{-0.94, 0.0, 0.0}, {0.0, 0.0, 1.5707963}},
+    const auto s = scenario("return-inside-margin", {{-0.94, 0.0, 0.0}, {0.0, 0.0, 1.5707963}},
                             {{0.90, 0.0, 0.0}, {0.0, 4.0, 1.5707963}});
     const DriveResult r = drive(world, s, scoutOptions());
     EXPECT_FALSE(r.arrived.at("ugv1")) << "the route ends inside the margin: refused";
-    const double inherited = clearance(rect(-0.94, 0.0, 0.0, 0.45, 0.40),
-                                       rect(0.0, 0.0, 1.5707963, 0.45, 0.40));
+    const double inherited =
+        clearance(rect(-0.94, 0.0, 0.0, 0.45, 0.40), rect(0.0, 0.0, 1.5707963, 0.45, 0.40));
     const auto it = r.pair_gaps.find({0, 1});
     ASSERT_NE(it, r.pair_gaps.end());
     EXPECT_GE(it->second, inherited - 1e-6);
@@ -281,8 +278,10 @@ TEST(ResetPlanner, ANewSessionKeepsTheFullMarginAgainstTheSameParkedPeer) {
     }
     ASSERT_TRUE(go) << "the escape itself must be grantable";
     // Drive the granted route, then close the session out.
-    planner.update(0.3, {vehicle(7, 1, rc::Phase::Moving, {-1.5, 0.0, 0.0}, {-3.0, 0.0, 0.0}), peer});
-    planner.update(0.6, {vehicle(7, 1, rc::Phase::Moving, {-2.2, 0.0, 0.0}, {-3.0, 0.0, 0.0}), peer});
+    planner.update(0.3,
+                   {vehicle(7, 1, rc::Phase::Moving, {-1.5, 0.0, 0.0}, {-3.0, 0.0, 0.0}), peer});
+    planner.update(0.6,
+                   {vehicle(7, 1, rc::Phase::Moving, {-2.2, 0.0, 0.0}, {-3.0, 0.0, 0.0}), peer});
     planner.update(0.9, {vehicle(7, 1, rc::Phase::Done, {-3.0, 0.0, 0.0}, {-3.0, 0.0, 0.0}), peer});
     // Session 8: a goal 0.095 into the same peer's margin - above the old inherited gap (~0.09),
     // below the pair margin. A leaked d0 allowance would grant it; the full margin must not.
@@ -845,9 +844,8 @@ TEST(ResetPlanner, ABlockerAwaitingItsStopCertificateDefersTheDeadlockVerdict) {
     bool rejected_on_lost = false;
     for (const auto& d : run(false, false)) {
         rejected_on_lost =
-            rejected_on_lost ||
-            (d.id == "ugv1" && d.state == rc::GrantState::Reject &&
-             d.reason == rc::Reason::Deadlock);
+            rejected_on_lost || (d.id == "ugv1" && d.state == rc::GrantState::Reject &&
+                                 d.reason == rc::Reason::Deadlock);
     }
     EXPECT_TRUE(rejected_on_lost)
         << "an unavailable blocker defers nothing - the verdict must not wait forever";
@@ -882,10 +880,8 @@ TEST(ResetPlanner, AnIndependentDeadlockedComponentStillGetsItsVerdict) {
                                {-5.523253, -2.032793, 0.586472},
                                {5.0, 0.0, 0.0},
                                {5.6, 0.0, 0.0}};
-    const rc::Pose goals[4] = {{-6.0, -1.2, -0.392974},
-                               {-6.0, -2.8, 1.079108},
-                               {8.0, 0.0, 0.0},
-                               {2.0, 0.0, 0.0}};
+    const rc::Pose goals[4] = {
+        {-6.0, -1.2, -0.392974}, {-6.0, -2.8, 1.079108}, {8.0, 0.0, 0.0}, {2.0, 0.0, 0.0}};
     for (size_t i = 0; i < vehicles.size(); ++i) {
         PlannerVehicle& v = vehicles[i];
         v.id = "ugv" + std::to_string(i + 1);
@@ -914,12 +910,10 @@ TEST(ResetPlanner, AnIndependentDeadlockedComponentStillGetsItsVerdict) {
     vehicles[3].stop_certified = true;
     std::map<std::string, bool> deadlocked;
     for (const auto& d : planner.update(0.268, vehicles)) {
-        deadlocked[d.id] =
-            deadlocked[d.id] ||
-            (d.state == rc::GrantState::Reject && d.reason == rc::Reason::Deadlock);
+        deadlocked[d.id] = deadlocked[d.id] ||
+                           (d.state == rc::GrantState::Reject && d.reason == rc::Reason::Deadlock);
         if (d.id == "ugv1") {
-            EXPECT_FALSE(d.state == rc::GrantState::Reject &&
-                         d.reason == rc::Reason::Deadlock)
+            EXPECT_FALSE(d.state == rc::GrantState::Reject && d.reason == rc::Reason::Deadlock)
                 << "the pending component still defers its verdict";
         }
     }

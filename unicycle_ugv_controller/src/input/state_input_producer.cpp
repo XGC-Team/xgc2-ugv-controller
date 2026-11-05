@@ -10,8 +10,8 @@ namespace unicycle_ugv_controller {
 
 StateInputProducer::StateInputProducer(ros::NodeHandle& nh, UgvState& state,
                                        StateSource state_source, const std::string& state_topic,
-                                       const std::string& platform_pose_topic,
-                                       uint32_t queue_size, std::function<double()> clock)
+                                       const std::string& platform_pose_topic, uint32_t queue_size,
+                                       std::function<double()> clock)
     : state_(state), state_source_(state_source), clock_(std::move(clock)) {
     if (state_source_ == StateSource::STATE_ESTIMATOR) {
         state_sub_ =

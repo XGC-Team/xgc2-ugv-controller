@@ -69,9 +69,9 @@ void ResetCoordinator::onSession(const std::string& vehicle, const rc::Session& 
     Entry& e = inserted.first->second;
     // Source publication freshness is checked before health, phase, pose, receipt time or cache.
     if (!inserted.second && (s.publication_seq <= e.session.publication_seq ||
-                   s.request_generation < e.session.request_generation ||
-                   (s.request_generation == e.session.request_generation &&
-                    s.session != e.session.session))) {
+                             s.request_generation < e.session.request_generation ||
+                             (s.request_generation == e.session.request_generation &&
+                              s.session != e.session.session))) {
         return;
     }
     const bool participant = participantPhase(s.phase);
@@ -193,13 +193,14 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
     if (!admit) {
         for (const PlannerBodyReport& r : planner_.report()) {
             Entry& e = entries_.find(r.id)->second;
-            if (!participant(e, now) || r.has_route || sent.count(r.id) || !e.session.stop_certified ||
-                e.session.request_generation == 0) {
+            if (!participant(e, now) || r.has_route || sent.count(r.id) ||
+                !e.session.stop_certified || e.session.request_generation == 0) {
                 continue;
             }
             const rc::Reason reason =
                 scene ? rc::Reason::WaitingForPeer : rc::Reason::SceneUnavailable;
-            if (e.last.has_value() && e.last->grant.state == rc::GrantState::Hold && e.last->grant.reason == reason) {
+            if (e.last.has_value() && e.last->grant.state == rc::GrantState::Hold &&
+                e.last->grant.reason == reason) {
                 continue;
             }
             rc::Grant g;
@@ -224,7 +225,8 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
         if (e.bad_reason || outside) {
             const std::string detail =
                 e.bad_reason ? *e.bad_reason : "namespace is outside the declared Reset scope";
-            if (e.last.has_value() && e.last->grant.state == rc::GrantState::Reject && e.last->grant.detail == detail) {
+            if (e.last.has_value() && e.last->grant.state == rc::GrantState::Reject &&
+                e.last->grant.detail == detail) {
                 if (now - e.last->sent >= config_.refresh_period) {
                     send(entry.first, e.last->grant);
                 }
@@ -256,7 +258,9 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
     return out;
 }
 
-bool ResetCoordinator::lost(const Entry& e, double now) const { return now - e.received > config_.lost_after; }
+bool ResetCoordinator::lost(const Entry& e, double now) const {
+    return now - e.received > config_.lost_after;
+}
 bool ResetCoordinator::participant(const Entry& e, double now) const {
     return participantPhase(e.session.phase) && !lost(e, now);
 }
@@ -266,8 +270,10 @@ double ResetCoordinator::nextDeadline(double now) const {
     for (const auto& item : entries_) {
         const Entry& e = item.second;
         const double expiry = e.received + config_.lost_after;
-        if (now <= expiry) next = std::min(next, std::nextafter(expiry, never));
-        if (lost(e, now) || e.session.request_generation == 0 || !e.last) continue;
+        if (now <= expiry)
+            next = std::min(next, std::nextafter(expiry, never));
+        if (lost(e, now) || e.session.request_generation == 0 || !e.last)
+            continue;
         const bool outside = !config_.expected_namespaces.empty() &&
                              !std::binary_search(config_.expected_namespaces.begin(),
                                                  config_.expected_namespaces.end(), item.first);

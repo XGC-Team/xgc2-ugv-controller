@@ -333,8 +333,12 @@ class TestHost {
         std::unique_lock<std::mutex> lock(wake_mutex_);
         return wake_cv_.wait_for(lock, timeout, [&] { return wakes_.load() > seen; });
     }
-    int64_t deadlineNs() const { return deadline_ns_.load(); }
-    uint64_t deadlineArms() const { return deadline_arms_.load(); }
+    int64_t deadlineNs() const {
+        return deadline_ns_.load();
+    }
+    uint64_t deadlineArms() const {
+        return deadline_arms_.load();
+    }
     int64_t periodNs() const {
         return period_ns_.load();
     }
@@ -486,8 +490,13 @@ class TestHost {
         }
         h.wake_cv_.notify_all();
     }
-    static int64_t phaseT0(void*) { return 0; }
-    static void setDeadline(void* ctx, int64_t at) { self(ctx).deadline_ns_.store(at); ++self(ctx).deadline_arms_; }
+    static int64_t phaseT0(void*) {
+        return 0;
+    }
+    static void setDeadline(void* ctx, int64_t at) {
+        self(ctx).deadline_ns_.store(at);
+        ++self(ctx).deadline_arms_;
+    }
     static void setPeriod(void* ctx, int64_t period_ns) {
         self(ctx).period_ns_.store(period_ns);
     }

@@ -11,8 +11,8 @@ namespace unicycle_reference_trajectory {
 
 class ReferenceOutputConsumer {
    public:
-    ReferenceOutputConsumer(ros::NodeHandle& nh,
-                            ReferenceTrajectoryRuntime& runtime, const std::string& status_topic,
+    ReferenceOutputConsumer(ros::NodeHandle& nh, ReferenceTrajectoryRuntime& runtime,
+                            const std::string& status_topic,
                             const std::string& active_analytic_topic,
                             const std::string& active_polynomial_topic,
                             const std::string& active_sampled_topic,

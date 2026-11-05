@@ -227,7 +227,6 @@ Trace nodePath() {
     double linear = 0.0, angular = 0.0;
     size_t next_command = 0;
 
-
     for (int64_t j = 0; j < kSteps; ++j) {
         const int64_t ns = kT0 + j * kControlStep;
         ugv::Time stamp;
@@ -312,22 +311,24 @@ Trace nodePath() {
                kT0 + static_cast<int64_t>(kCommands[next_command].at * 1e9) <= ns) {
             const uint32_t kind = kCommands[next_command++].kind;
             controller.command(kind == XGC2_UGV_COMMAND_CUSTOM1
-                     ? ugv::OperatorCommand::kCustom1
-                     : kind == XGC2_UGV_COMMAND_STOP ? ugv::OperatorCommand::kStop
-                                                     : ugv::OperatorCommand::kReset,
+                                   ? ugv::OperatorCommand::kCustom1
+                                   : kind == XGC2_UGV_COMMAND_STOP ? ugv::OperatorCommand::kStop
+                                                                   : ugv::OperatorCommand::kReset,
                                now, now, "command");
             commanded = true;
         }
 
         // the controller's loop (UnicycleUgvRosNode::updateOnce)
-        if (!commanded) controller.update(now, now);
+        if (!commanded)
+            controller.update(now, now);
         Control control;
         for (const auto& event : controller.outputs()) {
             if (std::holds_alternative<ugv::SolveNmpc>(event)) {
                 control.solve_requested = true;
                 ugv::NmpcRequest request;
                 ugv::NmpcOutcome outcome;
-                if (ugv::makeNmpcRequest(controller, std::get<ugv::SolveNmpc>(event), now, request)) {
+                if (ugv::makeNmpcRequest(controller, std::get<ugv::SolveNmpc>(event), now,
+                                         request)) {
                     control.worker_solve = true;
                     outcome = ugv::solveNmpcRequest(backend, entered, request);
                 }
@@ -379,7 +380,6 @@ Trace moduleChain(const Trace& expected) {
     size_t next_command = 0;
     Plant plant;
     double linear = 0.0, angular = 0.0;
-
 
     for (int64_t j = 0; j < kSteps; ++j) {
         const int64_t ns = kT0 + j * kControlStep;

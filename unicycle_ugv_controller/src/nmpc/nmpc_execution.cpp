@@ -64,11 +64,12 @@ NmpcOutcome solveNmpcRequest(NmpcTrackingBackend& backend, bool& entered,
 
 NmpcCompletion makeNmpcCompletion(uint64_t sequence, const NmpcOutcome& outcome) {
     return {sequence, outcome.success && outcome.command.valid
-                          ? std::optional<ControlCommand>{outcome.command} : std::nullopt};
+                          ? std::optional<ControlCommand>{outcome.command}
+                          : std::nullopt};
 }
 
-NmpcExecution::NmpcExecution(UnicycleUgvController& controller, CompletionSink completion_sink, Clock clock,
-                             Notify notify, PredictionSink prediction)
+NmpcExecution::NmpcExecution(UnicycleUgvController& controller, CompletionSink completion_sink,
+                             Clock clock, Notify notify, PredictionSink prediction)
     : controller_(controller),
       completion_sink_(std::move(completion_sink)),
       clock_(std::move(clock)),
@@ -109,7 +110,8 @@ void NmpcExecution::handle(const SolveNmpc& event) {
     NmpcRequest request;
     if (!makeNmpcRequest(controller_, event, clock_(), request)) {
         postResult(event.sequence, NmpcOutcome{});
-        if (notify_) notify_();
+        if (notify_)
+            notify_();
         return;
     }
     bool rejected = false;
@@ -119,14 +121,14 @@ void NmpcExecution::handle(const SolveNmpc& event) {
             rejected = true;
         } else {
             pending_ = std::move(request);
-
         }
     }
     if (rejected) {
         UGV_LOG_WARN_THROTTLE(1.0, "[UgvNmpcExecution] Reject solve seq=%lu: backend busy",
                               static_cast<unsigned long>(event.sequence));
         postResult(event.sequence, NmpcOutcome{});
-        if (notify_) notify_();
+        if (notify_)
+            notify_();
         return;
     }
     condition_.notify_one();

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <ugv_reset_client/owner_loop.h>
+
 #include <atomic>
 #include <boost/make_shared.hpp>
 #include <chrono>
@@ -11,13 +12,19 @@ using namespace std::chrono_literals;
 class Callback : public ros::CallbackInterface {
    public:
     explicit Callback(std::function<void()> value) : value_(std::move(value)) {}
-    CallResult call() override { value_(); return Success; }
+    CallResult call() override {
+        value_();
+        return Success;
+    }
+
    private:
     std::function<void()> value_;
 };
-template<class Predicate> bool await(Predicate predicate) {
+template <class Predicate>
+bool await(Predicate predicate) {
     const auto end = std::chrono::steady_clock::now() + 3s;
-    while (!predicate() && std::chrono::steady_clock::now() < end) std::this_thread::sleep_for(1ms);
+    while (!predicate() && std::chrono::steady_clock::now() < end)
+        std::this_thread::sleep_for(1ms);
     return predicate();
 }
 TEST(OwnerLoop, ClockInputCompletionWallAndShutdownWakeOneSleepingOwner) {
@@ -36,7 +43,9 @@ TEST(OwnerLoop, ClockInputCompletionWallAndShutdownWakeOneSleepingOwner) {
     };
     std::thread actor([&] {
         EXPECT_TRUE(await([&] { return turns.load() > 0 && clock.getNumSubscribers() >= 1; }));
-        rosgraph_msgs::Clock message; message.clock = ros::Time(123.0); clock.publish(message);
+        rosgraph_msgs::Clock message;
+        message.clock = ros::Time(123.0);
+        clock.publish(message);
         EXPECT_TRUE(await([&] { return observed_clock.load() == 123.0; }));
         std::this_thread::sleep_for(20ms);
         const auto paused = turns.load();
@@ -62,23 +71,26 @@ TEST(OwnerLoop, ClockInputCompletionWallAndShutdownWakeOneSleepingOwner) {
         EXPECT_TRUE(await([&] { return turns.load() > during; }));
         ros::requestShutdown();
     });
-    loop.run([&] {
-        ++turns;
-        observed_clock = loop.now();
-        if (loop.wallNow() >= wall_deadline) {
-            ++wall_fires;
-            wall_deadline = std::numeric_limits<double>::infinity();
-        }
-        if (request_barrier.exchange(false)) {
-            in_work = true;
-            while (!release_work.load()) std::this_thread::yield();
-        }
-    }, [&] {
-        ugv_reset_client::NextWake next;
-        next.atDomain(124.0);
-        next.atWall(wall_deadline);
-        return next;
-    });
+    loop.run(
+        [&] {
+            ++turns;
+            observed_clock = loop.now();
+            if (loop.wallNow() >= wall_deadline) {
+                ++wall_fires;
+                wall_deadline = std::numeric_limits<double>::infinity();
+            }
+            if (request_barrier.exchange(false)) {
+                in_work = true;
+                while (!release_work.load())
+                    std::this_thread::yield();
+            }
+        },
+        [&] {
+            ugv_reset_client::NextWake next;
+            next.atDomain(124.0);
+            next.atWall(wall_deadline);
+            return next;
+        });
     actor.join();
     EXPECT_EQ(inputs.load(), 1U);
     EXPECT_EQ(wall_fires.load(), 1U);
