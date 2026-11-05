@@ -14,6 +14,7 @@
 #include <ugv_reset_safety/reset_planner.h>
 
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -76,8 +77,9 @@ class ResetCoordinator {
     std::vector<OutgoingGrant> step(double now);
 
     FleetSummary fleet(double now) const;
-    // True while a participant, a mover or a message in flight needs the 10 Hz tick.
+    // Existing fleet-publication cadence selection; does not drive a planner pump.
     bool busy() const;
+    double nextDeadline(double now) const;
     const PlannerStats& stats() const {
         return planner_.stats();
     }
@@ -88,26 +90,19 @@ class ResetCoordinator {
    private:
     struct Entry {
         ugv_reset_client::Session session;
-        bool have{false};
         double received{0.0};
         // For the motion of a body outside a session.
         ugv_reset_client::Pose reference;
         double reference_stamp{0.0};
         double speed{0.0};
         // Refused for this vehicle only.
-        bool bad{false};
-        std::string bad_reason;
+        std::optional<std::string> bad_reason;
         // The last message sent to it, for the heartbeat.
-        bool has_last{false};
-        ugv_reset_client::Grant last;
-        double last_sent{0.0};
-        double first_reject{-1.0};
-        bool lost{false};
-        bool participant{false};
-        bool scope_seen{false};
+        struct Publication { ugv_reset_client::Grant grant; double sent; };
+        std::optional<Publication> last;
         // Last valid declared body, even if a bad report arrives before the next planner tick.
-        ugv_reset_client::Pose body_pose;
-        ugv_reset_client::VehicleSpec body_spec;
+        struct Body { ugv_reset_client::Pose pose; ugv_reset_client::VehicleSpec spec; };
+        std::optional<Body> body;
         uint32_t next_publication_seq{1};
     };
 
@@ -116,6 +111,8 @@ class ResetCoordinator {
     static bool participantPhase(ugv_reset_client::Phase phase);
 
     bool scopeReady() const;
+    bool lost(const Entry& entry, double now) const;
+    bool participant(const Entry& entry, double now) const;
     CoordinatorConfig config_;
     ResetPlanner planner_;
     std::map<std::string, Entry> entries_;

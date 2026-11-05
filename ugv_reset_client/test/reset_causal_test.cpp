@@ -34,7 +34,7 @@ void certify(rc::ResetExecutor& e, uint32_t id, uint32_t seq, double t) {
 }
 }  // namespace
 TEST(ResetCausal, InitialGoNeedsExactBrakeRealZeroAndFreshPoseWindow) {
-    rc::ResetExecutor e;
+    reset_test::Executor e;
     e.begin(42, {1, 0, 0}, true, at(10, 9.95));
     auto go = decision(e, rc::GrantState::Go, 8, 1);
     e.onGrant(go, at(10.1, 10.05));
@@ -69,14 +69,14 @@ TEST(ResetCausal, InitialGoNeedsExactBrakeRealZeroAndFreshPoseWindow) {
     EXPECT_FALSE(s.stop_certified);
 }
 TEST(ResetCausal, OldGenerationAndRepeatedPublicationDoNotRenewSilence) {
-    rc::ResetExecutor e;
+    reset_test::Executor e;
     e.begin(42, {1, 0, 0}, true, at(10, 9.95));
     auto old = decision(e, rc::GrantState::Brake, 700, 100);
     --old.request_generation;
     e.onGrant(old, at(11.99, 11.94));
     e.step(at(12.01, 11.96));
     EXPECT_EQ(e.result().outcome, rc::Outcome::RejectedNoCoordinator);
-    rc::ResetExecutor x;
+    reset_test::Executor x;
     x.begin(42, {1, 0, 0}, true, at(10, 9.95));
     auto b = decision(x, rc::GrantState::Brake, 7, 0);
     x.onGrant(b, at(10.1, 10.05));
@@ -85,7 +85,7 @@ TEST(ResetCausal, OldGenerationAndRepeatedPublicationDoNotRenewSilence) {
     EXPECT_EQ(x.result().outcome, rc::Outcome::AbortedCoordinatorLost);
 }
 TEST(ResetCausal, MutatedLogicalDecisionDoesNotRenewHeartbeat) {
-    rc::ResetExecutor e;
+    reset_test::Executor e;
     e.begin(42, {1, 0, 0}, true, at(10, 9.95));
     certify(e, 7, 0, 10.1);
     auto go = decision(e, rc::GrantState::Go, 8, 1);
@@ -99,7 +99,7 @@ TEST(ResetCausal, MutatedLogicalDecisionDoesNotRenewHeartbeat) {
     EXPECT_EQ(e.result().outcome, rc::Outcome::AbortedCoordinatorLost);
 }
 TEST(ResetCausal, TerminalNeedsNewBrakeCertificateAndCompletedHold) {
-    rc::ResetExecutor e;
+    reset_test::Executor e;
     e.begin(42, {1, 0, 0}, true, at(10, 9.95));
     const auto first = e.requestGeneration();
     e.abort(rc::Outcome::Stopped, "stop", at(10.1, 10.05));
@@ -119,14 +119,14 @@ TEST(ResetCausal, TerminalNeedsNewBrakeCertificateAndCompletedHold) {
     EXPECT_TRUE(e.command().zero());
 }
 TEST(ResetCausal, NewResetDoesNotWaitForOldRetirementOrOverwriteOutcome) {
-    rc::ResetExecutor e;
+    reset_test::Executor e;
     e.begin(99, {1, 0, 0}, true, at(10, 9.95));
     e.abort(rc::Outcome::Stopped, "old", at(10.1, 10.05));
     e.finish();
     const auto old = e.requestGeneration();
     ASSERT_TRUE(e.begin(1, {2, 0, 0}, true, at(10.2, 10.15)));
     EXPECT_GT(e.requestGeneration(), old);
-    EXPECT_FALSE(e.reserveBegin());
+    EXPECT_FALSE(e.prepare(2, {3, 0, 0}, true, at(10.3, 10.25)));
     e.abort(rc::Outcome::Timeout, "new", at(10.3, 10.25));
     rc::Result r;
     ASSERT_TRUE(e.peekResult(&r));
@@ -140,7 +140,7 @@ TEST(ResetCausal, NewResetDoesNotWaitForOldRetirementOrOverwriteOutcome) {
     EXPECT_FALSE(e.takeResult(&r));
 }
 TEST(ResetCausal, WrongReceiptUntrustedPoseAndOuterAxisCannotCertify) {
-    rc::ResetExecutor e;
+    reset_test::Executor e;
     e.begin(42, {1, 0, 0}, true, at(10, 9.95));
     e.onGrant(decision(e, rc::GrantState::Brake, 7, 0), at(10.1, 10.05));
     e.onZeroPublished(10.2, e.requestGeneration() + 1, 7);
@@ -167,7 +167,7 @@ TEST(ResetCausal, WrongReceiptUntrustedPoseAndOuterAxisCannotCertify) {
     EXPECT_FALSE(e.makeSession(at(10.99, 10.94)).stop_certified);
 }
 TEST(ResetCausal, SessionPublicationBookkeepingWaitsForSuccessfulCommit) {
-    rc::ResetExecutor e;
+    reset_test::Executor e;
     auto m = at(10, 9.95);
     ASSERT_TRUE(e.sessionDue(m));
     const auto seq = e.makeSession(m).publication_seq;
@@ -215,7 +215,7 @@ TEST(ResetCausal, SameSessionResidualFencesQueuedOldBrakeGoAndKeepsOriginalDeadl
     EXPECT_NEAR(rig.exec().result().duration, rig.time(), 1e-8);
 }
 TEST(ResetCausal, BackwardClockCannotCertifyOrInstallPendingGo) {
-    rc::ResetExecutor e;
+    reset_test::Executor e;
     e.begin(42, {1, 0, 0}, true, at(10, 9.95));
     certify(e, 7, 0, 10.1);
     auto go = decision(e, rc::GrantState::Go, 8, 1);
@@ -229,7 +229,7 @@ TEST(ResetCausal, BackwardClockCannotCertifyOrInstallPendingGo) {
 }
 
 TEST(ResetCausal, CertificateClearsIfCurrentEvidenceStopsProvingStopped) {
-    rc::ResetExecutor e;
+    reset_test::Executor e;
     e.begin(42, {1, 0, 0}, true, at(10, 9.95));
     certify(e, 7, 0, 10.1);
     auto m = at(10.5, 10.45);

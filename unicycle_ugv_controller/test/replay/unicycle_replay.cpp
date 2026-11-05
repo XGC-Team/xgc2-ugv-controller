@@ -29,6 +29,9 @@
 #include <cinttypes>
 #include <cmath>
 #include <cstdio>
+#include <chrono>
+#include <optional>
+#include <type_traits>
 #include <cstring>
 #include <exception>
 #include <string>
@@ -104,14 +107,13 @@ class Run {
         return t_;
     }
 
-    void post(uint32_t id, double t) {
-        ::state_machine::Event event(id, ::state_machine::EventTimestamp{t});
-        event.source = "replay";
-        event.category = ::state_machine::EventCategory::kInput;
-        const bool ok = controller_.postEvent(std::move(event)).ok();
+    void post(OperatorCommand command, double t) {
+        pending_command_ = command;  // test script: deliver at the same original owner turn
+        const unsigned id = command == OperatorCommand::kCustom1 ? 1U :
+                            command == OperatorCommand::kStop ? 2U : 3U;
         std::fprintf(out, "post %u at", id);
         d(t);
-        std::fprintf(out, " ok %d\n", ok ? 1 : 0);
+        std::fprintf(out, " ok 1\n");
     }
 
     // One control period: measure the plant, update the controller, serve its
@@ -120,13 +122,22 @@ class Run {
         if (pose_available) {
             measure();
         }
-        controller_.update(t_);
-        const auto events = controller_.stateMachine().currentOutputEvents();
+        const double wall = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (pending_command_) {
+            controller_.command(*pending_command_, t_, wall, "replay");
+            pending_command_.reset();
+        } else controller_.update(t_, wall);
+        const auto events = controller_.outputs();
         std::fprintf(out, "%.3f h %u c %u out", t_,
-                     controller_.stateMachine().currentState(region_type::HEALTH),
-                     controller_.stateMachine().currentState(region_type::CONTROL));
+                     100U,
+                     static_cast<uint32_t>(controller_.mode()));
         for (const auto& event : events) {
-            std::fprintf(out, " %u", event.id);
+            std::fprintf(out, " %u", std::visit([](const auto& value) -> unsigned {
+                using T = std::decay_t<decltype(value)>;
+                if constexpr (std::is_same_v<T, SolveNmpc>) return 10000U;
+                else if constexpr (std::is_same_v<T, PublishCommand>) return 10001U;
+                else return 10002U;
+            }, event));
         }
         const ControlCommand command = controller_.command();
         std::fprintf(out, " cmd %d", command.valid ? 1 : 0);
@@ -139,13 +150,13 @@ class Run {
         d(plant_.yaw);
         std::fputc('\n', out);
         for (const auto& event : events) {
-            if (event.id == output_event_type::REQUEST_NMPC_SOLVE) {
-                solve(event);
+            if (std::holds_alternative<SolveNmpc>(event)) {
+                solve(std::get<SolveNmpc>(event));
             }
-            if (event.id == output_event_type::PUBLISH_CMD_VEL) {
+            if (std::holds_alternative<PublishCommand>(event)) {
                 apply();
             }
-            if (event.id == output_event_type::PUBLISH_ZERO_CMD_VEL) {
+            if (std::holds_alternative<PublishZero>(event)) {
                 linear_ = 0.0;
                 angular_ = 0.0;
             }
@@ -179,7 +190,7 @@ class Run {
         }
     }
 
-    void solve(const ::state_machine::Event& request) {
+    void solve(const SolveNmpc& request) {
         const double t = request.timestamp > 0.0 ? request.timestamp : t_;
         NmpcRequest nmpc;
         NmpcOutcome outcome;
@@ -187,7 +198,7 @@ class Run {
             outcome = solveNmpcRequest(backend_, entered_, nmpc);
         }
         const ControlCommand& command = outcome.command;
-        std::fprintf(out, "  solve %" PRIu64 " ok %d status %d cmd %d", request.correlation_id,
+        std::fprintf(out, "  solve %" PRIu64 " ok %d status %d cmd %d", request.sequence,
                      outcome.success ? 1 : 0, backend_.status(), command.valid ? 1 : 0);
         d(command.stamp.toSec());
         d(command.linear_speed);
@@ -207,7 +218,7 @@ class Run {
             }
         }
         std::fputc('\n', out);
-        (void)controller_.postEvent(makeNmpcResultEvent(request.correlation_id, outcome, t));
+        controller_.postCompletion(makeNmpcCompletion(request.sequence, outcome));
     }
 
     // The twist the chassis would be given.
@@ -217,6 +228,7 @@ class Run {
         angular_ = twist.angular_z;
     }
 
+    std::optional<OperatorCommand> pending_command_;
     UgvState state_;
     UnicycleUgvController controller_;
     NmpcTrackingBackend backend_;
@@ -248,7 +260,7 @@ void runAnalyticCircle() {
     const bool accepted = run.controller().referenceCache().updateAnalytic(analytic(
         refmsg::AnalyticReference::ANALYTIC_CIRCLE, 10.004, 30.0, {1.5, 0.6, 3.0, 0.0, 1.5}));
     std::fprintf(out, "reference %d\n", accepted ? 1 : 0);
-    run.post(event_type::CUSTOM1_REQUESTED, run.now());
+    run.post(OperatorCommand::kCustom1, run.now());
     run.steps(2500);
 }
 
@@ -261,11 +273,11 @@ void runFigureEightStopRestart() {
         analytic(refmsg::AnalyticReference::ANALYTIC_FIGURE_EIGHT, 20.004, 40.0,
                  {1.2, 0.5, 3.0, 0.2, -0.1}));
     std::fprintf(out, "reference %d\n", accepted ? 1 : 0);
-    run.post(event_type::CUSTOM1_REQUESTED, run.now());
+    run.post(OperatorCommand::kCustom1, run.now());
     run.steps(1200);
-    run.post(event_type::STOP_REQUESTED, run.now());
+    run.post(OperatorCommand::kStop, run.now());
     run.steps(150);
-    run.post(event_type::CUSTOM1_REQUESTED, run.now());
+    run.post(OperatorCommand::kCustom1, run.now());
     run.steps(900);
 }
 
@@ -301,7 +313,7 @@ void runSampled() {
     }
     const bool accepted = run.controller().referenceCache().updateSampled(msg);
     std::fprintf(out, "reference %d\n", accepted ? 1 : 0);
-    run.post(event_type::CUSTOM1_REQUESTED, run.now());
+    run.post(OperatorCommand::kCustom1, run.now());
     run.steps(2000);
 }
 
@@ -323,7 +335,7 @@ void runPolynomialPose() {
     msg.coeff_yaw = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     const bool accepted = run.controller().referenceCache().updatePolynomial(msg);
     std::fprintf(out, "reference %d\n", accepted ? 1 : 0);
-    run.post(event_type::CUSTOM1_REQUESTED, run.now());
+    run.post(OperatorCommand::kCustom1, run.now());
     run.steps(1000);
     run.steps(60, false);  // a brief pose dropout (below state_timeout)
     run.steps(500);
@@ -338,7 +350,7 @@ void runFlatnessFence() {
     cfg.fence_x_max = 1.2;
     Run run("E flatness world PVA, fence exit", cfg, 50.0);
     run.steps(3);
-    run.post(event_type::CUSTOM1_REQUESTED, run.now());
+    run.post(OperatorCommand::kCustom1, run.now());
     for (int k = 0; k < 2500; ++k) {
         const double s = run.now() - 50.0;
         WorldPvaReference ref;
@@ -367,7 +379,7 @@ void runResetTimeout() {
     goal.y = 0.5;
     goal.valid = true;
     run.controller().setResetTarget(goal);
-    run.post(event_type::RESET_REQUESTED, run.now());
+    run.post(OperatorCommand::kReset, run.now());
     run.steps(250);
 }
 

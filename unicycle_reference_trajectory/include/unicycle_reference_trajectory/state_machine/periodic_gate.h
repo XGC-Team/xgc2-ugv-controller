@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <limits>
 
 namespace unicycle_reference_trajectory {
 
@@ -26,6 +27,10 @@ class PeriodicGate {
             }
         }
         return true;
+    }
+    double next(double now, double period) const {
+        if (!initialized_ || now < last_sec_) return now;
+        return std::nextafter(last_sec_ + period, std::numeric_limits<double>::infinity());
     }
     void reset() {
         initialized_ = false;

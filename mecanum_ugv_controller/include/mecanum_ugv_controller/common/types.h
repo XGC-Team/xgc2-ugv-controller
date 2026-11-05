@@ -2,7 +2,8 @@
 
 #include <cstdint>
 #include <limits>
-#include <state_machine/state_machine.hpp>
+#include <variant>
+#include <string>
 
 #include "mecanum_ugv_controller/common/time.h"
 
@@ -78,41 +79,17 @@ struct HolonomicTrackOutput {
     double angular_z{0.0};
 };
 
-namespace state_type {
-constexpr uint32_t HealthMonitor = 100;
-constexpr uint32_t SelfCheck = 1;
-constexpr uint32_t Ready = 2;
-constexpr uint32_t Custom1 = 3;
-constexpr uint32_t Reset = 5;
-}  // namespace state_type
-
-namespace region_type {
-constexpr uint32_t HEALTH = 1;
-constexpr uint32_t CONTROL = 2;
-}  // namespace region_type
-
-namespace event_type {
-constexpr uint32_t CUSTOM1_REQUESTED = 1;
-constexpr uint32_t STOP_REQUESTED = 2;
-constexpr uint32_t RESET_REQUESTED = 3;
-constexpr uint32_t RESET_ARRIVED = 4;
-constexpr uint32_t RESET_TIMEOUT = 5;
-constexpr uint32_t RESET_REJECTED = 6;
-constexpr uint32_t INPUT_STATE_UPDATED = 20;
-constexpr uint32_t INPUT_REFERENCE_UPDATED = 21;
-constexpr uint32_t HEALTH_READY = 40;
-constexpr uint32_t HEALTH_UNHEALTHY = 41;
-}  // namespace event_type
-
-namespace output_event_type {
-constexpr uint32_t PUBLISH_CMD_VEL = 10001;
-constexpr uint32_t PUBLISH_ZERO_CMD_VEL = 10002;
-}  // namespace output_event_type
-
-namespace transition_priority {
-constexpr int COMMAND = 50;
-constexpr int AUTOMATIC = 20;
-}  // namespace transition_priority
+enum class OperatorCommand { kUnknown, kCustom1, kStop, kReset };
+enum class ControlMode : uint32_t { SelfCheck = 1, Ready = 2, Custom1 = 3, Reset = 5 };
+struct PublishCommand { double timestamp; };
+struct PublishZero { double timestamp; };
+using ControllerOutput = std::variant<PublishCommand, PublishZero>;
+struct CommandOutcome {
+    enum class Code { Applied, Unmatched, PermissionActive, CreditUnavailable };
+    Code code{Code::Unmatched};
+    std::string message;
+    bool ok() const { return code == Code::Applied; }
+};
 
 double wrapAngle(double value);
 double yawFromQuaternion(double x, double y, double z, double w);

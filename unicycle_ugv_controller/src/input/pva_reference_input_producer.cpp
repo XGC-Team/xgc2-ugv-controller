@@ -10,9 +10,9 @@ namespace unicycle_ugv_controller {
 
 PvaReferenceInputProducer::PvaReferenceInputProducer(ros::NodeHandle& nh,
                                                      UnicycleUgvController& controller,
-                                                     const std::string& topic, EventSink event_sink,
-                                                     uint32_t queue_size)
-    : controller_(controller), event_sink_(std::move(event_sink)) {
+                                                     const std::string& topic,
+                                                     uint32_t queue_size, std::function<double()> clock)
+    : controller_(controller), clock_(std::move(clock)) {
     sub_ = nh.subscribe(topic, queue_size, &PvaReferenceInputProducer::callback, this);
 }
 
@@ -24,7 +24,7 @@ void PvaReferenceInputProducer::callback(
         return;
     }
     WorldPvaReference reference;
-    reference.stamp = toCoreTime(ros::Time::now());
+    reference.stamp = toCoreTime(ros::Time(clock_()));
     reference.x = msg->x;
     reference.y = msg->y;
     reference.yaw = std::isfinite(msg->yaw) ? wrapAngle(msg->yaw) : 0.0;
@@ -34,21 +34,6 @@ void PvaReferenceInputProducer::callback(
     reference.ay = msg->ay;
     reference.valid = true;
     controller_.setWorldPva(reference);
-    post(event_type::INPUT_REFERENCE_UPDATED, "reference_pva", toRosTime(reference.stamp));
-}
-
-void PvaReferenceInputProducer::post(::state_machine::EventId id, const char* source,
-                                     const ros::Time& stamp) {
-    if (!event_sink_) {
-        return;
-    }
-    ::state_machine::Event event(id, ::state_machine::EventTimestamp{stamp.toSec()});
-    event.source = source;
-    event.category = ::state_machine::EventCategory::kInput;
-    const auto status = event_sink_(std::move(event));
-    if (!status.ok()) {
-        ROS_WARN("[UgvPvaReferenceInputProducer] Failed to post event: %s", status.message.c_str());
-    }
 }
 
 }  // namespace unicycle_ugv_controller

@@ -1,0 +1,4 @@
+<launch>
+  <param name="use_sim_time" value="true"/>
+  <test test-name="owner_loop_test" pkg="ugv_reset_client" type="owner_loop_test" time-limit="20"/>
+</launch>

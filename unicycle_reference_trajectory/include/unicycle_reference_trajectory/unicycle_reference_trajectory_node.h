@@ -1,10 +1,9 @@
 #pragma once
 
 #include <ros/ros.h>
+#include <ugv_reset_client/owner_loop.h>
 
 #include <memory>
-#include <state_machine/runtime/async_task_executor.hpp>
-#include <state_machine/runtime/event_dispatcher.hpp>
 #include <string>
 #include <vector>
 
@@ -19,17 +18,16 @@ class ReferenceTrajectoryNode {
     explicit ReferenceTrajectoryNode(ros::NodeHandle& nh);
     ~ReferenceTrajectoryNode();
 
-    void run(double main_frequency_hz);
+    void run();
 
    private:
     void loadParams();
-    void dispatchOutputEvents(const std::vector<::state_machine::Event>& events);
 
+    ugv_reset_client::OwnerLoop loop_;
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
     ReferenceTrajectoryDriver driver_;
-    ::state_machine::runtime::AsyncTaskExecutor<ros::NodeHandle> output_executor_;
-    ::state_machine::runtime::EventDispatcher output_dispatcher_;
+    std::unique_ptr<ReferenceOutputConsumer> output_;
     std::unique_ptr<ReferenceInputProducer> input_producer_;
 
     uint32_t queue_size_{10U};

@@ -23,7 +23,7 @@ struct CoreGlue {
     using Request = urt::ReferenceTrajectoryDriver::Request;
 
     urt::ReferenceTrajectoryDriver driver;
-    std::vector<state_machine::Event> out;
+    std::vector<urt::ReferencePublication> out;
 
     urt::Time time(double sec) const {
         return sec <= 0.0 ? urt::Time() : urt::Time(sec);
@@ -32,14 +32,18 @@ struct CoreGlue {
     static double clockSec(double now) {
         return urt::Time(now).toSec();
     }
-    bool analytic(const Analytic& m, double now) {
-        return driver.acceptAnalytic(m, clockSec(now)) == Request::kPosted;
+    // Explicit future starts isolate unchanged numerical/publication behavior from
+    // the separately tested removal of the old saved-clock receipt lag.
+    bool analytic(Analytic m, double now) {
+        m.start_time = time(std::max(m.start_time.toSec(), clockSec(now) + 1.0));
+        return driver.acceptAnalytic(m, clockSec(now)) == Request::kAccepted;
     }
-    bool sampled(const Sampled& m, double now) {
-        return driver.acceptSampled(m, clockSec(now)) == Request::kPosted;
+    bool sampled(Sampled m, double now) {
+        m.start_time = time(std::max(m.start_time.toSec(), clockSec(now) + 1.0));
+        return driver.acceptSampled(m, clockSec(now)) == Request::kAccepted;
     }
     bool waypoint(const Waypoint& m, double now) {
-        return driver.acceptWaypoint(m, clockSec(now)) == Request::kPosted;
+        return driver.acceptWaypoint(m, clockSec(now)) == Request::kAccepted;
     }
     void reset(double now) {
         (void)driver.reset(clockSec(now));
@@ -50,7 +54,7 @@ struct CoreGlue {
     const urt::ReferenceTrajectoryRuntime& runtime() const {
         return driver.runtime();
     }
-    const std::vector<state_machine::Event>& events() const {
+    const std::vector<urt::ReferencePublication>& events() const {
         return out;
     }
     uint64_t activeStartNs() const {

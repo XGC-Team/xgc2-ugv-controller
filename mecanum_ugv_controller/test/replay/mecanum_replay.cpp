@@ -20,6 +20,9 @@
 #include <cinttypes>
 #include <cmath>
 #include <cstdio>
+#include <chrono>
+#include <optional>
+#include <type_traits>
 #include <cstring>
 #include <exception>
 #include <utility>
@@ -80,14 +83,13 @@ class Run {
         return t_;
     }
 
-    void post(uint32_t id, double t) {
-        ::state_machine::Event event(id, ::state_machine::EventTimestamp{t});
-        event.source = "replay";
-        event.category = ::state_machine::EventCategory::kInput;
-        const bool ok = controller_.postEvent(std::move(event)).ok();
+    void post(OperatorCommand command, double t) {
+        pending_command_ = command;  // test script: deliver at the same original owner turn
+        const unsigned id = command == OperatorCommand::kCustom1 ? 1U :
+                            command == OperatorCommand::kStop ? 2U : 3U;
         std::fprintf(out, "post %u at", id);
         d(t);
-        std::fprintf(out, " ok %d\n", ok ? 1 : 0);
+        std::fprintf(out, " ok 1\n");
     }
 
     void reference(double vx, double vy) {
@@ -107,13 +109,17 @@ class Run {
             state_.y = plant_.y;
             state_.yaw = plant_.yaw;
         }
-        controller_.update(t_);
-        const auto events = controller_.stateMachine().currentOutputEvents();
+        const double wall = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (pending_command_) {
+            controller_.command(*pending_command_, t_, wall, "replay");
+            pending_command_.reset();
+        } else controller_.update(t_, wall);
+        const auto events = controller_.outputs();
         std::fprintf(out, "%.3f h %u c %u out", t_,
-                     controller_.stateMachine().currentState(region_type::HEALTH),
-                     controller_.stateMachine().currentState(region_type::CONTROL));
+                     100U,
+                     static_cast<uint32_t>(controller_.mode()));
         for (const auto& event : events) {
-            std::fprintf(out, " %u", event.id);
+            std::fprintf(out, " %u", (std::holds_alternative<PublishCommand>(event) ? 10001U : 10002U));
         }
         const ControlCommand command = controller_.command();
         std::fprintf(out, " cmd %d", command.valid ? 1 : 0);
@@ -127,14 +133,14 @@ class Run {
         d(plant_.yaw);
         std::fputc('\n', out);
         for (const auto& event : events) {
-            if (event.id == output_event_type::PUBLISH_CMD_VEL) {
-                const bool reset = controller_.stateMachine().currentState(region_type::CONTROL) ==
-                                   state_type::Reset;
+            if (std::holds_alternative<PublishCommand>(event)) {
+                const bool reset = static_cast<uint32_t>(controller_.mode()) ==
+                                   static_cast<uint32_t>(ControlMode::Reset);
                 vx_ = command.valid && !reset ? command.linear_x : 0.0;
                 vy_ = command.valid && !reset ? command.linear_y : 0.0;
                 wz_ = command.valid && !reset ? command.angular_z : 0.0;
             }
-            if (event.id == output_event_type::PUBLISH_ZERO_CMD_VEL) {
+            if (std::holds_alternative<PublishZero>(event)) {
                 vx_ = vy_ = wz_ = 0.0;
             }
         }
@@ -149,6 +155,7 @@ class Run {
     }
 
    private:
+    std::optional<OperatorCommand> pending_command_;
     UgvState state_;
     MecanumUgvController controller_;
     Plant plant_;
@@ -164,7 +171,7 @@ void runCurve() {
     Run run("A world velocity curve, heading hold", cfg, 10.0);
     run.plant().yaw = -0.3;
     run.steps(3);
-    run.post(event_type::CUSTOM1_REQUESTED, run.now());
+    run.post(OperatorCommand::kCustom1, run.now());
     for (int k = 0; k < 2000; ++k) {
         const double s = run.now() - 10.0;
         run.reference(0.4 * std::cos(0.3 * s), 0.3 * std::sin(0.5 * s));
@@ -176,14 +183,14 @@ void runStopDropout() {
     ControllerConfig cfg;
     Run run("B stop, restart, pose dropout, pose timeout", cfg, 20.0);
     run.steps(3);
-    run.post(event_type::CUSTOM1_REQUESTED, run.now());
+    run.post(OperatorCommand::kCustom1, run.now());
     for (int k = 0; k < 600; ++k) {
         run.reference(0.3, -0.1);
         run.step();
     }
-    run.post(event_type::STOP_REQUESTED, run.now());
+    run.post(OperatorCommand::kStop, run.now());
     run.steps(100);
-    run.post(event_type::CUSTOM1_REQUESTED, run.now());
+    run.post(OperatorCommand::kCustom1, run.now());
     for (int k = 0; k < 400; ++k) {
         run.reference(-0.2, 0.25);
         run.step();
@@ -204,7 +211,7 @@ void runFence() {
     cfg.fence_x_max = 0.8;
     Run run("C fence exit", cfg, 30.0);
     run.steps(3);
-    run.post(event_type::CUSTOM1_REQUESTED, run.now());
+    run.post(OperatorCommand::kCustom1, run.now());
     for (int k = 0; k < 1500; ++k) {
         run.reference(0.5, 0.05);
         run.step();
@@ -222,7 +229,7 @@ void runResetTimeout() {
     goal.yaw = 0.2;
     goal.valid = true;
     run.controller().setResetTarget(goal);
-    run.post(event_type::RESET_REQUESTED, run.now());
+    run.post(OperatorCommand::kReset, run.now());
     run.steps(250);
 }
 

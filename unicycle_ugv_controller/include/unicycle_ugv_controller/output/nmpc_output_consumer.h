@@ -5,7 +5,6 @@
 #include <ros/ros.h>
 
 #include <functional>
-#include <state_machine/runtime/event_dispatcher.hpp>
 #include <string>
 
 #include "unicycle_ugv_controller/nmpc/nmpc_execution.h"
@@ -14,19 +13,14 @@
 namespace unicycle_ugv_controller {
 
 // Runs the NMPC solve requests of Custom1 (NmpcExecution) and publishes the predicted path.
-class NmpcOutputConsumer final : public ::state_machine::runtime::EventConsumer {
+class NmpcOutputConsumer {
    public:
-    using EventSink = std::function<::state_machine::Status(::state_machine::Event)>;
+    using CompletionSink = NmpcExecution::CompletionSink;
 
-    NmpcOutputConsumer(ros::NodeHandle& nh, UnicycleUgvController& controller, EventSink event_sink,
-                       uint32_t queue_size);
+    NmpcOutputConsumer(ros::NodeHandle& nh, UnicycleUgvController& controller, CompletionSink completion_sink,
+                       NmpcExecution::Notify notify, uint32_t queue_size);
 
-    std::string name() const override {
-        return "NmpcOutputConsumer";
-    }
-    bool handle(const ::state_machine::Event& event) override {
-        return execution_.handle(event);
-    }
+    void handle(const SolveNmpc& request) { execution_.handle(request); }
 
    private:
     void publishPrediction(const Time& time, const NmpcTrackingBackend& backend);

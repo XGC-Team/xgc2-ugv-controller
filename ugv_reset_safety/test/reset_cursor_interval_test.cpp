@@ -26,8 +26,8 @@ Body line(rc::Model model) {
     b.spec.footprint = {.001, .001, 0, 0};
     b.shape = rs::makeShape(b.spec);
     b.pose = {1, 0, 3.0};
-    b.plan_active = true;
-    b.go_received = true;
+    b.reservation.emplace<rs::Reserved>();
+    b.receiveGo();
     rs::ResetPlanner::Impl m{rs::PlannerConfig{}};
     SampleSet ss;
     for (size_t i = 0; i <= 100; ++i) {
@@ -42,27 +42,27 @@ Body line(rc::Model model) {
         }
         ss.chunks.push_back(box);
     }
-    b.plan.sets = {ss};
-    b.plan.cursor = {0};
-    b.plan.hi = {ss.pts.size()};
+    b.plan().sets = {ss};
+    b.plan().cursor = {0};
+    b.plan().hi = {ss.pts.size()};
     return b;
 }
 TEST(Cursor, OmniConcurrentYawCannotReleaseTranslationAheadOfTheNearestPosition) {
     auto b = line(rc::Model::Omni);
     rs::ResetPlanner::Impl::advanceCursor(b);
-    EXPECT_EQ(b.plan.cursor[0], 50u);
+    EXPECT_EQ(b.plan().cursor[0], 50u);
 }
 TEST(Cursor, UnicycleKeepsTheOriginalYawMetricForRepeatedPositionTurns) {
     auto b = line(rc::Model::Unicycle);
     rs::ResetPlanner::Impl::advanceCursor(b);
-    EXPECT_EQ(b.plan.cursor[0], 100u);
-    for (auto& q : b.plan.sets[0].pts) {
+    EXPECT_EQ(b.plan().cursor[0], 100u);
+    for (auto& q : b.plan().sets[0].pts) {
         q.x = 1;
         q.y = 0;
     }
-    b.plan.cursor[0] = 0;
+    b.plan().cursor[0] = 0;
     rs::ResetPlanner::Impl::advanceCursor(b);
-    EXPECT_EQ(b.plan.cursor[0], 100u);
+    EXPECT_EQ(b.plan().cursor[0], 100u);
 }
 TEST(Cursor, OmniFootprintReallyIsExactlyHeadingIndependent) {
     auto b = line(rc::Model::Omni);
@@ -77,20 +77,20 @@ TEST(Cursor, OmniFootprintReallyIsExactlyHeadingIndependent) {
 }
 TEST(Cursor, OmniCursorStaysMonotoneWithTheSameSearchWindow) {
     auto b = line(rc::Model::Omni);
-    b.plan.cursor[0] = 60;
+    b.plan().cursor[0] = 60;
     b.pose = {.5, 0, 0};
     rs::ResetPlanner::Impl::advanceCursor(b);
-    EXPECT_EQ(b.plan.cursor[0], 60u);
-    auto s = b.plan.sets[0].pts.back();
+    EXPECT_EQ(b.plan().cursor[0], 60u);
+    auto s = b.plan().sets[0].pts.back();
     for (size_t i = 101; i < 400; ++i) {
         s.x = .02 * i;
         s.s = s.x;
-        b.plan.sets[0].pts.push_back(s);
+        b.plan().sets[0].pts.push_back(s);
     }
-    b.plan.cursor[0] = 0;
+    b.plan().cursor[0] = 0;
     b.pose = {7, 0, 0};
     rs::ResetPlanner::Impl::advanceCursor(b);
-    EXPECT_EQ(b.plan.cursor[0], 159u);
+    EXPECT_EQ(b.plan().cursor[0], 159u);
 }
 rs::Violation query(size_t cursor, size_t hi, double x) {
     rs::PlannerConfig cfg;
@@ -98,8 +98,8 @@ rs::Violation query(size_t cursor, size_t hi, double x) {
     rs::ResetPlanner::Impl m{cfg};
     auto b = line(rc::Model::Unicycle);
     b.pose = {2, 1, 0};
-    b.plan.cursor[0] = cursor;
-    b.plan.hi[0] = hi;
+    b.plan().cursor[0] = cursor;
+    b.plan().hi[0] = hi;
     m.bodies.emplace(b.id, b);
     Body self;
     self.id = "candidate";
@@ -132,9 +132,9 @@ TEST(Behind, ATrulyEmptyRetainedIntervalStaysEmpty) {
 TEST(Behind, RetiringRoutingAlsoIncludesTheExistingBehindFootprintAtHiEqualsCursor) {
     auto b = line(rc::Model::Unicycle);
     b.pose = {2, 1, 0};
-    b.plan_retiring = true;
-    b.plan.cursor[0] = 50;
-    b.plan.hi[0] = 50;
+    b.retire();
+    b.plan().cursor[0] = 50;
+    b.plan().hi[0] = 50;
     const auto obstacle = rs::ResetPlanner::Impl::retiringRoutingObstacle(b);
     ASSERT_EQ(obstacle.vertices.size(), 4u);
     // Sample45 at x=.90 is still in the original [44,50) interval, far from last pose.

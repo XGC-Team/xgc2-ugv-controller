@@ -2,7 +2,7 @@
 
 The vehicle's side of the UGV Reset protocol with the station's coordinator (`ugv_reset_safety`). The vehicle owns
 its motion, its 90 s deadline and its fail-stop; the coordinator only grants permission to move. Everything here is
-header-only and ROS-free except `reset_ros.h`, so the controllers, the module entity and the scenario harness
+header-only and ROS-free except the `reset_ros.h` and `owner_loop.h` transport edges, so the controllers, the module entity and the scenario harness
 exercise one definition.
 
 | header | what it is |
@@ -10,13 +10,22 @@ exercise one definition.
 | `reset_protocol.h` | The vocabulary as plain C++: `Session` (what a vehicle declares: footprint, limits, target, health, phase), `Grant` (HOLD, GO, BRAKE, REJECT; the frozen route and the free prefix of it), `Result` (the one typed outcome), `Reason`, `Outcome`, and the numbers of the requirement (90 s, 5 cm, 5 degrees). |
 | `reset_route.h` | `Route`: the polyline of the rotation centre from the pose the route was planned from, through the via points, to the goal, with in-place turns at the vertices and forward or reverse per segment. Both sides sample it the same way. |
 | `reset_tracker.h` | `VelocityEstimator`, `EllEstimator` (windowed rotation-centre offset of a skid-steer unicycle, learned only from turns in place) and `RouteTracker`: follows the segment direction, stops and turns in place at every vertex, stops inside the granted prefix with a lag-aware stopping profile, finishes with a latched final stage. |
-| `reset_executor.h` | `ResetExecutor`: one session of one vehicle. Begin, grants in, command out, `Session` messages out, one `Result`. Its fail-stops: 90 s on the wall and the ROS clock; the heartbeat of the grant (a second after the last message the vehicle brakes to a stop inside its prefix and waits, and goes on if the coordinator is back); no message from the coordinator for 2 s (typed result AbortedCoordinatorLost, or RejectedNoCoordinator if none ever answered); no target (2 s); health lost; the route tube (cross-track); no progress for 10 s while allowed to move. |
-| `reset_ros.h` | `ResetRosEdge`, the only ROS part: publishes `reset/session`, the latched `reset/result`, takes `reset/grant`. |
+| `reset_executor.h` | `ResetExecutor`: grants in, command out, `Session` messages out, one `Result`. Its fail-stops: 90 s on the wall and the ROS clock; the heartbeat of the grant (a second after the last message the vehicle brakes to a stop inside its prefix and waits, and goes on if the coordinator is back); no message from the coordinator for 2 s (typed result AbortedCoordinatorLost, or RejectedNoCoordinator if none ever answered); no target (2 s); health lost; the route tube (cross-track); no progress for 10 s while allowed to move. |
+| `schedule.h` | Explicit domain/wall deadlines and the existing ROS wall sampling phase. |
+| `owner_loop.h` | Serial ROS callback/clock/completion/deadline owner with a latched sleep and shutdown wake. |
+| `reset_ros.h` | `ResetRosEdge`: publishes `reset/session`, the latched `reset/result`, takes `reset/grant`. |
 
-The controller owns the executor as a member: it feeds the measured pose and health every control cycle in every
-CONTROL state (the offset is learned during the mission, before any Reset), asks for the command only in Reset, and maps
-the one `Result` to its CONTROL transitions (`Arrived` to RESET_ARRIVED, `Timeout` to RESET_TIMEOUT, everything else to
-RESET_REJECTED). The shared messages `ResetSession`, `ResetGrant`, `ResetResult` and `ResetFleet` are in `ugv_reset_msgs`
+The controller owns the executor's passive observation and protocol retirement context. Its active
+`Reset` alternative owns a stable `unique_ptr<ResetExecutor::Run>` obtained by `prepare` and bound by
+`install` on the same serial owner. The executor borrows that Run; the current permission alternative
+owns the active route, tracker and certificate evidence. Exiting Reset destroys its continuation while
+retaining the original header, brake/zero retirement, passive offset/velocity learning and two pending
+result credits. Typed command dispatch returns admission directly, and a completed Run's result drives
+the existing return to Ready. An old completed Run cannot terminate a same-turn replacement Run.
+
+Both domain and monotonic wall time are explicit in each observation/step. `nextWake` projects the
+original timeouts, heartbeat and numerical/session obligations. `OwnerLoop` reuses the standalone
+node's owner thread and existing ROS callback queue; native modules consume the same deadlines. The shared messages `ResetSession`, `ResetGrant`, `ResetResult` and `ResetFleet` are in `ugv_reset_msgs`
 (ros1-msgs).
 
 Used by `unicycle_ugv_controller`, `mecanum_ugv_controller` and the ROS edge of `ugv_modules`. A vehicle package knows one

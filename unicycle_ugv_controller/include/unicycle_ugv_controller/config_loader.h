@@ -84,6 +84,7 @@ void loadControllerConfig(const Source& source, ControllerConfig& config) {
     }
 
     source.get("control_rate_hz", config.control_rate_hz);
+    source.get("status_publish_rate_hz", config.status_publish_rate_hz);
     source.get("nmpc/control_period", config.control_period);
     source.get("nmpc/prediction_horizon", config.prediction_horizon);
     source.get("state_timeout", config.state_timeout);
@@ -139,6 +140,7 @@ void loadControllerConfig(const Source& source, ControllerConfig& config) {
     source.get("nmpc/weights/terminal_speed", config.nmpc_weights.terminal_speed);
 
     config.control_rate_hz = finitePositiveOr(config.control_rate_hz, 500.0);
+    config.status_publish_rate_hz = finitePositiveOr(config.status_publish_rate_hz, 5.0);
     config.control_period = finitePositiveOr(config.control_period, 0.1);
     config.prediction_horizon = finitePositiveOr(config.prediction_horizon, 1.0);
     config.state_timeout = finitePositiveOr(config.state_timeout, 0.5);

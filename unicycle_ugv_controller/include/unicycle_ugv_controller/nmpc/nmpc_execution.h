@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
-#include <state_machine/state_machine.hpp>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -29,34 +29,33 @@ struct NmpcOutcome {
     ControlCommand command;
 };
 
-// Snapshots the controller for a REQUEST_NMPC_SOLVE event. `fallback_now_sec` stands in
-// for an event without a time. False when the reference horizon is unavailable.
-bool makeNmpcRequest(const UnicycleUgvController& controller, const ::state_machine::Event& event,
+// Snapshots the controller for a typed solve request. `fallback_now_sec` stands in
+// for a request without a time. False when the reference horizon is unavailable.
+bool makeNmpcRequest(const UnicycleUgvController& controller, const SolveNmpc& event,
                      double fallback_now_sec, NmpcRequest& request);
 
 // Solves the request on `backend`, entering it on first use (`entered`).
 NmpcOutcome solveNmpcRequest(NmpcTrackingBackend& backend, bool& entered,
                              const NmpcRequest& request);
 
-// The input event with which the Custom1 state takes the result of request `sequence`.
-::state_machine::Event makeNmpcResultEvent(uint64_t sequence, const NmpcOutcome& outcome,
-                                           double timestamp_sec);
+// Typed completion consumed by the active Custom1 value, with its original sequence/deadline.
+NmpcCompletion makeNmpcCompletion(uint64_t sequence, const NmpcOutcome& outcome);
 
 // The NMPC solve off the control thread: a snapshot on the caller's thread, one
 // worker, one pending request, a busy worker rejects (the controller then keeps
 // its previous command until it expires). The result goes back as an input
-// event through `event_sink`; `notify` runs after it on the worker, so the
+// value through `completion_sink`; `notify` runs after it on the worker, so the
 // owner can wake its control loop. The ROS node and the aggregator module both
 // run this class.
 class NmpcExecution {
    public:
-    using EventSink = std::function<::state_machine::Status(::state_machine::Event)>;
+    using CompletionSink = std::function<void(NmpcCompletion)>;
     using Clock = std::function<double()>;
     using Notify = std::function<void()>;
-    // Runs on the worker after a successful solve, before the result is posted.
+    // Runs on the worker after a successful solve, before the result is published.
     using PredictionSink = std::function<void(const Time& stamp, const NmpcTrackingBackend&)>;
 
-    NmpcExecution(UnicycleUgvController& controller, EventSink event_sink, Clock clock,
+    NmpcExecution(UnicycleUgvController& controller, CompletionSink completion_sink, Clock clock,
                   Notify notify = {}, PredictionSink prediction = {});
     ~NmpcExecution();
     NmpcExecution(const NmpcExecution&) = delete;
@@ -66,15 +65,15 @@ class NmpcExecution {
     void start();
     void stop();
 
-    // Takes a REQUEST_NMPC_SOLVE event; false for any other event.
-    bool handle(const ::state_machine::Event& event);
+    // Consumes the solve request on the control owner.
+    void handle(const SolveNmpc& request);
 
    private:
     void workerLoop();
     void postResult(uint64_t sequence, const NmpcOutcome& outcome);
 
     UnicycleUgvController& controller_;
-    EventSink event_sink_;
+    CompletionSink completion_sink_;
     Clock clock_;
     Notify notify_;
     PredictionSink prediction_;
@@ -84,8 +83,7 @@ class NmpcExecution {
     std::thread worker_;
     bool stop_{false};
     bool busy_{false};
-    bool has_pending_{false};
-    NmpcRequest pending_;
+    std::optional<NmpcRequest> pending_;
 };
 
 }  // namespace unicycle_ugv_controller

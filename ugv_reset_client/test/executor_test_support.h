@@ -17,6 +17,27 @@ namespace reset_test {
 
 namespace rc = ugv_reset_client;
 
+// Test owner of the state-local Run. Production CONTROL::Reset owns the same unique value.
+class Executor : public rc::ResetExecutor {
+   public:
+    using rc::ResetExecutor::ResetExecutor;
+    bool begin(uint32_t session, const rc::Pose& target, bool valid, const rc::Measurement& m) {
+        auto next = prepare(session, target, valid, m);
+        if (!next) return false;
+        install(*next, m);
+        run_ = std::move(next);
+        return true;
+    }
+    void finish() { rc::ResetExecutor::finish(); run_.reset(); }
+    const rc::RouteTracker& tracker() const {
+        const auto* active = rc::ResetExecutor::tracker();
+        static const rc::RouteTracker absent;
+        return active ? *active : absent;
+    }
+   private:
+    RunPtr run_;
+};
+
 struct PlantParams {
     double ell{-0.229};
     double lin_lag{0.12};
@@ -39,7 +60,7 @@ class SoloRig {
         history_.push_back({0.0, q_});
     }
 
-    rc::ResetExecutor& exec() {
+    Executor& exec() {
         return exec_;
     }
     // A test station, not a vehicle fallback: each request receives a correlated Brake,
@@ -218,7 +239,7 @@ class SoloRig {
         return history_.front().second;
     }
 
-    rc::ResetExecutor exec_;
+    Executor exec_;
     uint32_t fixture_generation_{0}, fixture_id_{0}, fixture_seq_{0};
     rc::Grant fixture_brake_;
     std::map<uint32_t, uint32_t> fixture_go_ids_;

@@ -37,6 +37,7 @@ class Simulator {
         : pub_(nh.advertise<rosgraph_msgs::Clock>("/clock", 100)) {
         thread_ = std::thread([this] {
             while (!stop_.load()) {
+                if (paused_.load()) { std::this_thread::sleep_for(std::chrono::milliseconds(5)); continue; }
                 rosgraph_msgs::Clock clock;
                 clock.clock.fromNSec(static_cast<uint64_t>(now_.load()));
                 pub_.publish(clock);
@@ -49,6 +50,7 @@ class Simulator {
         stop_.store(true);
         thread_.join();
     }
+    void pause() { paused_.store(true); }
     int64_t now() const {
         return now_.load();
     }
@@ -57,6 +59,7 @@ class Simulator {
     ros::Publisher pub_;
     std::atomic<int64_t> now_{100 * kSecond};
     std::atomic<bool> stop_{false};
+    std::atomic<bool> paused_{false};
     std::thread thread_;
 };
 
@@ -74,6 +77,78 @@ class EdgeSimTest : public ::testing::Test {
     TestHost host_;
     Simulator simulator_;
 };
+
+TEST_F(EdgeSimTest, MonotonicOneShotWakesWhileExternalClockIsPausedAndNeverBeforeDeadline) {
+    ASSERT_TRUE(waitUntil([&] { return ros::Time::now().toNSec() > 0; }));
+    ASSERT_EQ(host_.create("{\"sim_time\": true}"), XGC2_OK);
+    ASSERT_EQ(host_.start(), XGC2_OK);
+    simulator_.pause();
+    host_.setNow(123 * kSecond);
+    const int64_t deadline = TestHost::monotonicNs() + 30 * 1000000LL;
+    host_.push("wall_deadline", xgc2_ugv_wall_deadline{deadline}, host_.now());
+    ASSERT_EQ(host_.step(XGC2_STEP_INPUT), XGC2_OK);
+    ASSERT_TRUE(waitUntil([&] { return host_.outputs("wall_wake").size() == 1; }));
+    const auto wake = host_.outputsAs<xgc2_ugv_wall_wake>("wall_wake").front();
+    EXPECT_GE(wake.monotonic_now_ns, deadline);
+    EXPECT_EQ(host_.outputs("wall_wake").front().stamp_ns, 123 * kSecond);
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+    EXPECT_EQ(host_.outputs("wall_wake").size(), 1u);
+    EXPECT_EQ(host_.periodNs(), 0);
+}
+
+TEST_F(EdgeSimTest, CurrentWallDemandReplacesEarlierOrLaterDemandAndCancellationRemovesIt) {
+    ASSERT_TRUE(waitUntil([&] { return ros::Time::now().toNSec() > 0; }));
+    ASSERT_EQ(host_.create("{\"sim_time\": true}"), XGC2_OK);
+    ASSERT_EQ(host_.start(), XGC2_OK);
+    simulator_.pause();
+    host_.setNow(123 * kSecond);
+    auto arm = [&](int64_t deadline) {
+        host_.push("wall_deadline", xgc2_ugv_wall_deadline{deadline}, host_.now());
+        EXPECT_EQ(host_.step(XGC2_STEP_INPUT), XGC2_OK);
+    };
+    arm(TestHost::monotonicNs() + 200 * 1000000LL);
+    const int64_t earlier = TestHost::monotonicNs() + 20 * 1000000LL;
+    arm(earlier);
+    ASSERT_TRUE(waitUntil([&] { return host_.outputs("wall_wake").size() == 1; }));
+    EXPECT_GE(host_.outputsAs<xgc2_ugv_wall_wake>("wall_wake").back().monotonic_now_ns, earlier);
+    arm(TestHost::monotonicNs() + 20 * 1000000LL);
+    const int64_t later = TestHost::monotonicNs() + 100 * 1000000LL;
+    arm(later);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_EQ(host_.outputs("wall_wake").size(), 1u);
+    ASSERT_TRUE(waitUntil([&] { return host_.outputs("wall_wake").size() == 2; }));
+    EXPECT_GE(host_.outputsAs<xgc2_ugv_wall_wake>("wall_wake").back().monotonic_now_ns, later);
+    arm(TestHost::monotonicNs() + 20 * 1000000LL);
+    arm(-1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(220));
+    EXPECT_EQ(host_.outputs("wall_wake").size(), 2u);
+}
+
+TEST_F(EdgeSimTest, InputAndWallWakeCanOverlapAndTeardownJoinsTheTimerCallback) {
+    ASSERT_TRUE(waitUntil([&] { return ros::Time::now().toNSec() > 0; }));
+    ASSERT_EQ(host_.create("{\"sim_time\": true}"), XGC2_OK);
+    ASSERT_EQ(host_.start(), XGC2_OK);
+    simulator_.pause();
+    host_.setNow(123 * kSecond);
+    auto publisher = nh_.advertise<rigid_state_estimator_msgs::RigidStateEstimate>("alg/state_estimator/state", 5);
+    ASSERT_TRUE(connected(publisher));
+    rigid_state_estimator_msgs::RigidStateEstimate pose;
+    pose.header.stamp = ros::Time(123);
+    pose.orientation.w = 1.0;
+    for (int i = 0; i < 20; ++i) {
+        host_.push("wall_deadline", xgc2_ugv_wall_deadline{TestHost::monotonicNs()}, host_.now());
+        ASSERT_EQ(host_.step(XGC2_STEP_INPUT), XGC2_OK);
+        publisher.publish(pose);
+    }
+    ASSERT_TRUE(waitUntil([&] { return !host_.outputs("state").empty() && !host_.outputs("wall_wake").empty(); }));
+    host_.push("wall_deadline", xgc2_ugv_wall_deadline{TestHost::monotonicNs() + 1000000LL}, host_.now());
+    ASSERT_EQ(host_.step(XGC2_STEP_INPUT), XGC2_OK);
+    host_.destroy();
+    const auto count = host_.outputs("wall_wake").size();
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    EXPECT_EQ(host_.outputs("wall_wake").size(), count);
+    EXPECT_EQ(host_.openSlots(), 0u);
+}
 
 TEST_F(EdgeSimTest, TheClockOfTheSimulatorIsPublishedToTheHost) {
     ASSERT_TRUE(waitUntil([&] { return ros::Time::now().toNSec() > 0; }));

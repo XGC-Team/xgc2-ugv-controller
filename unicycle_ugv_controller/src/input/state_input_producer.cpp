@@ -10,9 +10,9 @@ namespace unicycle_ugv_controller {
 
 StateInputProducer::StateInputProducer(ros::NodeHandle& nh, UgvState& state,
                                        StateSource state_source, const std::string& state_topic,
-                                       const std::string& platform_pose_topic, EventSink event_sink,
-                                       uint32_t queue_size)
-    : state_(state), state_source_(state_source), event_sink_(std::move(event_sink)) {
+                                       const std::string& platform_pose_topic,
+                                       uint32_t queue_size, std::function<double()> clock)
+    : state_(state), state_source_(state_source), clock_(std::move(clock)) {
     if (state_source_ == StateSource::STATE_ESTIMATOR) {
         state_sub_ =
             nh.subscribe(state_topic, queue_size, &StateInputProducer::stateCallback, this);
@@ -30,7 +30,7 @@ void StateInputProducer::stateCallback(
     }
     const UnicycleProjection planar = projectRigidToUnicycle(*msg);
     state_.pose_stamp_trusted = !msg->header.stamp.isZero();
-    state_.stamp = toCoreTime(msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp);
+    state_.stamp = toCoreTime(msg->header.stamp.isZero() ? ros::Time(clock_()) : msg->header.stamp);
     state_.x = planar.x;
     state_.y = planar.y;
     state_.yaw = planar.yaw;
@@ -42,7 +42,6 @@ void StateInputProducer::stateCallback(
     state_.estimator_flags = msg->flags;
     state_.received = true;
     state_.velocity_valid = std::isfinite(state_.vx) && std::isfinite(state_.vy);
-    post(event_type::INPUT_STATE_UPDATED, "state_estimate", toRosTime(state_.stamp));
 }
 
 void StateInputProducer::poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
@@ -63,26 +62,10 @@ void StateInputProducer::poseCallback(const geometry_msgs::PoseStamped::ConstPtr
     state_.y = msg->pose.position.y;
     state_.yaw = yaw;
     state_.pose_stamp_trusted = !msg->header.stamp.isZero();
-    state_.stamp = toCoreTime(msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp);
+    state_.stamp = toCoreTime(msg->header.stamp.isZero() ? ros::Time(clock_()) : msg->header.stamp);
     state_.estimator_state = 0U;
     state_.estimator_flags = 0U;
     state_.received = true;
-    post(event_type::INPUT_STATE_UPDATED, "platform_pose", toRosTime(state_.stamp));
-}
-
-void StateInputProducer::post(::state_machine::EventId id, const char* source,
-                              const ros::Time& stamp) {
-    if (!event_sink_) {
-        ROS_ERROR("[UgvStateInputProducer] Event sink is not configured");
-        return;
-    }
-    ::state_machine::Event event(id, ::state_machine::EventTimestamp{stamp.toSec()});
-    event.source = source;
-    event.category = ::state_machine::EventCategory::kInput;
-    const auto status = event_sink_(std::move(event));
-    if (!status.ok()) {
-        ROS_WARN("[UgvStateInputProducer] Failed to post state event: %s", status.message.c_str());
-    }
 }
 
 }  // namespace unicycle_ugv_controller

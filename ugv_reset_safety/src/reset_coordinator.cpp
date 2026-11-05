@@ -33,7 +33,7 @@ bool ResetCoordinator::scopeReady() const {
     }
     for (const auto& name : config_.expected_namespaces) {
         auto found = entries_.find(name);
-        if (found == entries_.end() || !found->second.scope_seen) {
+        if (found == entries_.end() || !found->second.body) {
             return false;
         }
     }
@@ -65,9 +65,10 @@ bool ResetCoordinator::validSpec(const rc::VehicleSpec& spec) {
 }
 
 void ResetCoordinator::onSession(const std::string& vehicle, const rc::Session& s, double now) {
-    Entry& e = entries_[vehicle];
+    auto inserted = entries_.try_emplace(vehicle);
+    Entry& e = inserted.first->second;
     // Source publication freshness is checked before health, phase, pose, receipt time or cache.
-    if (e.have && (s.publication_seq <= e.session.publication_seq ||
+    if (!inserted.second && (s.publication_seq <= e.session.publication_seq ||
                    s.request_generation < e.session.request_generation ||
                    (s.request_generation == e.session.request_generation &&
                     s.session != e.session.session))) {
@@ -85,23 +86,19 @@ void ResetCoordinator::onSession(const std::string& vehicle, const rc::Session& 
                                !std::isfinite(s.target.yaw))) {
         why = "the target is not finite";
     }
-    e.bad = !why.empty();
-    e.bad_reason = why;
-    if (e.have &&
+    e.bad_reason = why.empty() ? std::nullopt : std::optional<std::string>{std::move(why)};
+    if (!inserted.second &&
         (s.session != e.session.session || s.request_generation != e.session.request_generation)) {
-        e.has_last = false;  // a new session, or none: the earlier answer does not carry over
-        e.first_reject = -1.0;
+        e.last.reset();  // a new session, or none: the earlier answer does not carry over
     }
     const bool body_valid = validSpec(s.spec) && std::isfinite(s.pose.x) &&
                             std::isfinite(s.pose.y) && std::isfinite(s.pose.yaw) &&
                             std::isfinite(s.pose_stamp);
     if (body_valid && s.healthy) {
-        e.scope_seen = true;
-        e.body_pose = s.pose;
-        e.body_spec = s.spec;
+        e.body = Entry::Body{s.pose, s.spec};
     }
-    if (!e.bad) {
-        if (!e.have) {
+    if (!e.bad_reason) {
+        if (inserted.second) {
             e.reference = s.pose;
             e.reference_stamp = s.pose_stamp;
         } else if (s.pose_stamp - e.reference_stamp >= 0.2) {
@@ -112,10 +109,7 @@ void ResetCoordinator::onSession(const std::string& vehicle, const rc::Session& 
         }
     }
     e.session = s;
-    e.have = true;
     e.received = now;
-    e.lost = false;
-    e.participant = participant;
 }
 
 rc::Grant ResetCoordinator::grantOf(const PlannerDecision& d, double now) const {
@@ -143,12 +137,7 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
     std::vector<PlannerVehicle> vehicles;
     for (auto& entry : entries_) {
         Entry& e = entry.second;
-        if (!e.have) {
-            continue;
-        }
-        e.lost = now - e.received > config_.lost_after;
-        e.participant = participantPhase(e.session.phase) && !e.lost;
-        if (e.bad && !e.scope_seen) {
+        if (e.bad_reason && !e.body) {
             continue;
         }
         PlannerVehicle v;
@@ -156,10 +145,11 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
         v.session = e.session.session;
         v.request_generation = e.session.request_generation;
         v.acknowledged_grant_id = e.session.acknowledged_grant_id;
-        v.available = !e.lost && !e.bad && e.session.healthy;
+        v.available = !lost(e, now) && !e.bad_reason && e.session.healthy;
         v.stop_certified = e.session.stop_certified && e.session.healthy && v.available;
-        v.spec = e.body_spec;
-        v.pose = e.body_pose;
+        const auto body = e.body.value_or(Entry::Body{});
+        v.spec = body.spec;
+        v.pose = body.pose;
         v.target = e.session.target;
         v.phase = e.session.phase;
         v.ell_hat = e.session.ell_hat;
@@ -167,11 +157,11 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
         const bool outside = !config_.expected_namespaces.empty() &&
                              !std::binary_search(config_.expected_namespaces.begin(),
                                                  config_.expected_namespaces.end(), entry.first);
-        if (outside || e.bad) {
+        if (outside || e.bad_reason) {
             v.phase = rc::Phase::Idle;
         }
         v.uncontrolled_moving =
-            !participantPhase(v.phase) && !e.lost && e.speed > config_.moving_speed;
+            !participantPhase(v.phase) && !lost(e, now) && e.speed > config_.moving_speed;
         vehicles.push_back(std::move(v));
     }
     const bool scene = !scene_authored_ || scene_available_;
@@ -186,9 +176,7 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
         g.publication_seq = e.next_publication_seq++;
         g.stamp = now;
         g.ttl = config_.ttl;
-        e.last = g;
-        e.has_last = true;
-        e.last_sent = now;
+        e.last = Entry::Publication{g, now};
         sent[id] = true;
         out.push_back({id, std::move(g)});
     };
@@ -198,23 +186,20 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
             d.request_generation != found->second.session.request_generation) {
             continue;
         }
-        if (d.state == rc::GrantState::Reject && found->second.first_reject < 0.0) {
-            found->second.first_reject = now;
-        }
         send(d.id, grantOf(d, now));
     }
     // No scene/scope observation can synthesize a Go, clear an outstanding reservation, or
     // substitute for the correlated Brake. Once no route remains, report the local hold.
     if (!admit) {
         for (const PlannerBodyReport& r : planner_.report()) {
-            Entry& e = entries_[r.id];
-            if (!e.participant || r.has_route || sent.count(r.id) || !e.session.stop_certified ||
+            Entry& e = entries_.find(r.id)->second;
+            if (!participant(e, now) || r.has_route || sent.count(r.id) || !e.session.stop_certified ||
                 e.session.request_generation == 0) {
                 continue;
             }
             const rc::Reason reason =
                 scene ? rc::Reason::WaitingForPeer : rc::Reason::SceneUnavailable;
-            if (e.has_last && e.last.state == rc::GrantState::Hold && e.last.reason == reason) {
+            if (e.last.has_value() && e.last->grant.state == rc::GrantState::Hold && e.last->grant.reason == reason) {
                 continue;
             }
             rc::Grant g;
@@ -230,18 +215,18 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
     }
     for (auto& entry : entries_) {
         Entry& e = entry.second;
-        if (!e.have || e.lost || sent.count(entry.first) || e.session.request_generation == 0) {
+        if (lost(e, now) || sent.count(entry.first) || e.session.request_generation == 0) {
             continue;
         }
         const bool outside = !config_.expected_namespaces.empty() &&
                              !std::binary_search(config_.expected_namespaces.begin(),
                                                  config_.expected_namespaces.end(), entry.first);
-        if (e.bad || outside) {
+        if (e.bad_reason || outside) {
             const std::string detail =
-                e.bad ? e.bad_reason : "namespace is outside the declared Reset scope";
-            if (e.has_last && e.last.state == rc::GrantState::Reject && e.last.detail == detail) {
-                if (now - e.last_sent >= config_.refresh_period) {
-                    send(entry.first, e.last);
+                e.bad_reason ? *e.bad_reason : "namespace is outside the declared Reset scope";
+            if (e.last.has_value() && e.last->grant.state == rc::GrantState::Reject && e.last->grant.detail == detail) {
+                if (now - e.last->sent >= config_.refresh_period) {
+                    send(entry.first, e.last->grant);
                 }
                 continue;
             }
@@ -255,25 +240,49 @@ std::vector<OutgoingGrant> ResetCoordinator::step(double now) {
             send(entry.first, g);
             continue;
         }
-        if (!e.has_last || now - e.last_sent < config_.refresh_period) {
+        if (!e.last.has_value() || now - e.last->sent < config_.refresh_period) {
             continue;
         }
         // Terminal Hold receipts are sent until the vehicle echoes them. They do not depend on
         // an Idle/Done heartbeat being classified as an active Reset participant.
-        const bool pending = e.last.state == rc::GrantState::Brake ||
-                             (e.last.state == rc::GrantState::Hold &&
-                              e.session.acknowledged_grant_id != e.last.grant_id);
-        if (!e.participant && !pending) {
+        const bool pending = e.last->grant.state == rc::GrantState::Brake ||
+                             (e.last->grant.state == rc::GrantState::Hold &&
+                              e.session.acknowledged_grant_id != e.last->grant.grant_id);
+        if (!participant(e, now) && !pending) {
             continue;
         }
-        send(entry.first, e.last);
+        send(entry.first, e.last->grant);
     }
     return out;
 }
 
+bool ResetCoordinator::lost(const Entry& e, double now) const { return now - e.received > config_.lost_after; }
+bool ResetCoordinator::participant(const Entry& e, double now) const {
+    return participantPhase(e.session.phase) && !lost(e, now);
+}
+double ResetCoordinator::nextDeadline(double now) const {
+    const double never = std::numeric_limits<double>::infinity();
+    double next = planner_.nextDeadline((!scene_authored_ || scene_available_) && scopeReady());
+    for (const auto& item : entries_) {
+        const Entry& e = item.second;
+        const double expiry = e.received + config_.lost_after;
+        if (now <= expiry) next = std::min(next, std::nextafter(expiry, never));
+        if (lost(e, now) || e.session.request_generation == 0 || !e.last) continue;
+        const bool outside = !config_.expected_namespaces.empty() &&
+                             !std::binary_search(config_.expected_namespaces.begin(),
+                                                 config_.expected_namespaces.end(), item.first);
+        const bool pending = e.last->grant.state == rc::GrantState::Brake ||
+                             (e.last->grant.state == rc::GrantState::Hold &&
+                              e.session.acknowledged_grant_id != e.last->grant.grant_id);
+        if (e.bad_reason || outside || participant(e, now) || pending)
+            next = std::min(next, std::nextafter(e.last->sent + config_.refresh_period, never));
+    }
+    return next;
+}
+
 bool ResetCoordinator::busy() const {
     for (const auto& entry : entries_) {
-        if (entry.second.have && participantPhase(entry.second.session.phase)) {
+        if (participantPhase(entry.second.session.phase)) {
             return true;
         }
     }
@@ -294,18 +303,15 @@ FleetSummary ResetCoordinator::fleet(double now) const {
     }
     for (const auto& entry : entries_) {
         const Entry& e = entry.second;
-        if (!e.have) {
-            continue;
-        }
         FleetMember m;
         m.vehicle = entry.first;
         m.session = e.session.session;
         m.phase = e.session.phase;
         m.lost = now - e.received > config_.lost_after;
-        if (e.has_last) {
-            m.grant_state = e.last.state;
-            m.reason = e.last.reason;
-            m.blockers = e.last.blockers;
+        if (e.last.has_value()) {
+            m.grant_state = e.last->grant.state;
+            m.reason = e.last->grant.reason;
+            m.blockers = e.last->grant.blockers;
         }
         auto found = reports.find(entry.first);
         if (found != reports.end() && found->second.has_route) {

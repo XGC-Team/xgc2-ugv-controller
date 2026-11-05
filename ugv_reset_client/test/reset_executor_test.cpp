@@ -380,7 +380,7 @@ TEST(ResetExecutor, EveryFailsafeEndsTheSessionWithItsOwnTypedResult) {
 TEST(ResetExecutor, TheDeadlineRunsOnTheWallClockAndOnTheRosClock) {
     const Course c;
     for (int clock = 0; clock < 2; ++clock) {
-        rc::ResetExecutor ex(scoutConfig());
+        reset_test::Executor ex(scoutConfig());
         rc::Measurement m;
         m.ros_now = 10.0;
         m.wall_now = 100.0;

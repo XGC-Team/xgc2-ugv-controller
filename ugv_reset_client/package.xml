@@ -8,6 +8,8 @@
   <buildtool_depend>catkin</buildtool_depend>
   <!-- The ResetSession/ResetGrant/ResetResult messages are shared in ugv_reset_msgs. -->
   <depend>roscpp</depend>
+  <depend>rosgraph_msgs</depend>
   <depend>ugv_reset_msgs</depend>
   <test_depend>gtest</test_depend>
+  <test_depend>rostest</test_depend>
 </package>

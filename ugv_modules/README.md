@@ -44,9 +44,12 @@ and have mode 0700; `--control-socket` overrides it. The control plane is docume
 
 The manifests carry the values of `config/unicycle_reference_trajectory.yaml` and
 `config/unicycle_ugv_controller.yaml` of the two nodes, minus the topic names (the edge keeps the nodes'
-topics) and minus `main_frequency` and `control_rate_hz`: the period of an instance is its loop rate
-(`period_ms` = 10 for the generator, 2 for the controller, 10 for the edge). A test compares the manifest
-with both YAML files, so a key that is added to a node configuration and not here fails it.
+topics) and `control_rate_hz`. The generator's obsolete `main_frequency` pump is removed. The
+manifest's 10/2/10 ms values remain startup budgets; each module disables its periodic pump at start
+and declares its current work deadline through ABI 2.1 `wake_at_ns`. Inputs and actual NMPC completions
+wake their serial owner. The supplied controller keeps its original 500 Hz Flatness numerical grid,
+100 Hz NMPC request rate, 30 Hz command rate and configured idle/status rates. A test compares the
+manifest with both node YAML files.
 
 ## Modules
 
@@ -55,7 +58,7 @@ ids `xgc2.ugv.*.v1`, size and alignment asserted. Times are nanoseconds in the h
 lengths metres, angles radians, the world frame ENU. A list that does not fit its payload is refused
 where it enters, never truncated. A module exports `xgc2_module_entry` and nothing else.
 
-**`ugv_unicycle_reference`** (period 10 ms)
+**`ugv_unicycle_reference`** (input and existing publication/expiry deadlines)
 
 | port | dir | kind | payload |
 |---|---|---|---|
@@ -69,8 +72,8 @@ where it enters, never truncated. A module exports `xgc2_module_entry` and nothi
 Requests are served in the order of their commit stamps. A live `configure` restarts the generator, as a
 start of the node does.
 
-**`ugv_unicycle_controller`** (period 2 ms; the NMPC solve runs on a thread of the module, which wakes
-the instance when it has a result)
+**`ugv_unicycle_controller`** (input, completion and existing work deadlines; the actual NMPC solve
+keeps its worker and wakes the instance when its typed result is ready)
 
 | port | dir | kind | payload |
 |---|---|---|---|
@@ -84,12 +87,13 @@ the instance when it has a result)
 | `status` | out | state | control state name and id (at `status_publish_rate_hz`) |
 | `reset_session` | out | state | the vehicle's side of the Reset protocol: session counter, phase, pose, frozen target, declared footprint, limits and rotation-centre offset, health (5 Hz and on change) |
 | `reset_result` | out | event, 4 | the one typed result of a session (outcome, reason, final error, duration, detail) |
+| `wall_wake` | in | state | mechanical wake with the observed monotonic nanoseconds |
+| `wall_deadline` | out | state | the owner's current absolute monotonic deadline; negative cancels |
 
 The state of a pose source carries no velocities; the controller's own pose filter makes them. A state of
 the other source than the configured one is refused with a warning, not silently ignored.
 
-**`ugv_ros_edge`** (period 10 ms). The one module
-that links ROS. ROS callbacks run on one thread of the module and are the only writers of its output
+**`ugv_ros_edge`** (input driven). The one module that links ROS. ROS callbacks run on one thread of the module and are the only writers of its output
 ports (all are `ASYNC_WRITER`); the step reads the input ports and publishes. Stamps are taken from the
 receipt time of the message (`ros::MessageEvent`) and converted between ROS time and the host clock; a
 time that is zero stays zero. With `sim_time` they are the same clock and nothing is converted, and the
@@ -97,12 +101,20 @@ module refuses to start when `sim_time` and `/use_sim_time` disagree. The edge t
 nodes, a `namespace` (the vehicle's, as the launch files' `ns`) and the configuration keys listed in
 `src/ugv_ros_edge.cpp`; `reset_session_topic`, `reset_grant_topic` and `reset_result_topic` replace the launch file's remap.
 
+The edge's appended `wall_deadline` input and `wall_wake` asynchronous output carry the controller's
+independent wall obligations while the external host clock is paused. A new demand replaces or cancels
+the previous one. One ROS `SteadyTimer` one-shot runs on the existing edge callback queue; it adds no
+per-instance user thread and uses roscpp's shared SteadyTimerManager thread. The controller owns every
+business deadline. The edge cancels its timer and joins its existing spinner before destroying the queue.
+These two payload fields use monotonic time; their ordinary host commit stamps keep the host clock.
+
 ## Configuration
 
 JSON objects (TOML tables in the manifests). A key that is absent keeps the default of the node; a key a
 module does not know, or a value of the wrong type, is an error that `create` and a live `configure`
-refuse, and a refused `configure` changes nothing. `control_rate_hz` is refused by the controller module:
-set `period_ms`.
+refuse, and a refused `configure` changes nothing. `control_rate_hz` remains a standalone node
+parameter; the supplied native profile retains its 500 Hz numerical cadence. Publication and NMPC
+request rates use their existing configuration fields.
 
 ## What differs from the nodes
 
@@ -117,11 +129,10 @@ set `period_ms`.
 The generator and controller require the host's `affinity = "sticky"` contract, set explicitly in both
 manifests. The host builds each core and runs all lifecycle calls (`create`, `configure`, `start`,
 `stop`, `destroy`) and steps of its instance on the same home worker, including live configuration and
-replacement. The state machines refuse updates from another thread: the generator drops to `SelfCheck`
-with the invalid-input flag and the controller stays where it was. Each module checks its `ThreadGuard`
-at the start of `step`; a moved instance fails with a message naming the required affinity.
-`test/core_thread_ownership_test.cpp` verifies the cores' refusal. The edge has no state machine and no
-such requirement, but also uses sticky affinity in the shipped manifests.
+replacement. Each native module keeps its existing `ThreadGuard`; a moved instance fails with a
+message naming the required affinity. The ROS-free cores have one serial owner and impose no
+construction-thread check. `test/core_thread_ownership_test.cpp` exercises serial ownership transfer
+without concurrent calls. The edge also uses sticky affinity in the supplied manifests.
 
 roscpp can be started once in a process. The first edge instance starts it (node name and master from its
 configuration), later ones share it, and it ends with the process. The library is linked `-z nodelete`, so
@@ -132,11 +143,11 @@ unloading or replacing it leaves ROS running. Without a reachable master `start`
 | | |
 |---|---|
 | `reference_module_test`, `controller_module_test` | the modules as shared libraries, loaded the way the host loads them, in an in-test host (`test/test_host.h`): ports, strict configuration, health, the Reset session, grants and results, NMPC and flatness tracking against a kinematic unicycle, whole outputs, refused writes, one calling thread and loud failure when a step moves to another thread |
-| `core_thread_ownership_test` | the cores refuse updates from a thread that did not build them and resume on their original thread |
+| `core_thread_ownership_test` | serial calls can use a different construction thread without a core runtime gate |
 | `chain_parity_test` | the module chain against the two nodes' chain without ROS, on the replay scenario of the generator: every output of the generator, every twist of the controller and the vehicle's path equal bit for bit |
 | `ros_edge_test`, `ros_edge_sim_test`, `ros_edge_no_master_test` | the edge against the master that rostest starts: wall-clock and simulation-time masters, the Reset messages, stamps, refused requests, reconnects |
 | `payload_conversion_test`, `ugv_modules_manifests`, `ugv_modules_linkage` | the payload layout in C and C++, the conversions, the manifests against the node configurations (and the host's `--check`), what the libraries export and link |
-| `ugv_integration_tests` | the real `xgc2-module-host`: the Reset coordinator test with the module entity as the Scout, the chain against a kinematic Scout over ROS and the control socket, the simulation-time manifest at twice real time |
+| `ugv_integration_tests` | the real `xgc2-module-host`: the Reset coordinator test with the module entity as the Scout, the chain against a kinematic Scout over ROS and the control socket, the simulation-time manifest at twice real time and Reset wall deadlines/30 Hz zeros while that clock is paused |
 
 The tests that need the host binary find it in `$XGC2_MODULE_HOST` or on the `PATH`; without one they are
 not registered, and the configure step says so. `tools/bionic_compile_check.sh` compiles the ROS-free

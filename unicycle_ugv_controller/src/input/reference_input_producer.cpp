@@ -11,8 +11,8 @@ ReferenceInputProducer::ReferenceInputProducer(ros::NodeHandle& nh, ReferenceCac
                                                const std::string& active_analytic_topic,
                                                const std::string& active_polynomial_topic,
                                                const std::string& active_sampled_topic,
-                                               EventSink event_sink, uint32_t queue_size)
-    : cache_(cache), event_sink_(std::move(event_sink)) {
+                                               uint32_t queue_size)
+    : cache_(cache) {
     active_analytic_sub_ = nh.subscribe(active_analytic_topic, queue_size,
                                         &ReferenceInputProducer::analyticCallback, this);
     active_polynomial_sub_ = nh.subscribe(active_polynomial_topic, queue_size,
@@ -27,7 +27,6 @@ void ReferenceInputProducer::analyticCallback(
         ROS_WARN_THROTTLE(1.0, "[UgvReferenceInputProducer] Rejected active analytic reference");
         return;
     }
-    post(event_type::INPUT_REFERENCE_UPDATED, "active_analytic");
 }
 
 void ReferenceInputProducer::polynomialCallback(
@@ -36,7 +35,6 @@ void ReferenceInputProducer::polynomialCallback(
         ROS_WARN_THROTTLE(1.0, "[UgvReferenceInputProducer] Rejected active polynomial reference");
         return;
     }
-    post(event_type::INPUT_REFERENCE_UPDATED, "active_polynomial");
 }
 
 void ReferenceInputProducer::sampledCallback(
@@ -44,22 +42,6 @@ void ReferenceInputProducer::sampledCallback(
     if (!msg || !cache_.updateSampled(toCoreReference(*msg))) {
         ROS_WARN_THROTTLE(1.0, "[UgvReferenceInputProducer] Rejected active sampled reference");
         return;
-    }
-    post(event_type::INPUT_REFERENCE_UPDATED, "active_sampled");
-}
-
-void ReferenceInputProducer::post(::state_machine::EventId id, const char* source) {
-    if (!event_sink_) {
-        ROS_ERROR("[UgvReferenceInputProducer] Event sink is not configured");
-        return;
-    }
-    ::state_machine::Event event(id, ::state_machine::EventTimestamp{ros::Time::now().toSec()});
-    event.source = source;
-    event.category = ::state_machine::EventCategory::kInput;
-    const auto status = event_sink_(std::move(event));
-    if (!status.ok()) {
-        ROS_WARN("[UgvReferenceInputProducer] Failed to post reference event: %s",
-                 status.message.c_str());
     }
 }
 

@@ -61,6 +61,13 @@ The manifests set `affinity = "sticky"`: the host builds each core and runs all 
 steps of its instance on the same home worker. The generator and controller require this contract;
 their `ThreadGuard` fails the instance with an affinity message if a step moves to another thread.
 
+The C++17 cores use value-owned SelfCheck, Ready, Custom1 and Reset alternatives. Commands return
+typed admission outcomes on the owner; light state processing stays synchronous. Reset's active Run
+and Custom1's algorithm data end with their owning state. ROS owners wake on inputs, actual solver
+completions and existing deadlines; Flatness sampling and Mecanum's missing-reference zero output
+retain their original 500 Hz wall cadence. The native edge transports the controller's monotonic wall
+deadline with one ROS SteadyTimer on its existing callback queue, including during paused simulation.
+
 ## NMPC tracking
 
 The runtime model keeps yaw rate as a state and commands angular acceleration:

@@ -31,7 +31,7 @@ add_library(mecanum_ugv_controller_core
   src/common_types.cpp
   src/core_log.cpp
   src/mecanum_ugv_controller.cpp
-  src/state_machine/states.cpp)
+)
 set_property(TARGET mecanum_ugv_controller_core PROPERTY INCLUDE_DIRECTORIES "")
 target_include_directories(mecanum_ugv_controller_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include

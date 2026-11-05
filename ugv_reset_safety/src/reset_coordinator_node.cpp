@@ -1,7 +1,7 @@
 // The Reset coordinator node: the ROS edge of ResetCoordinator.
 //
-// Event driven: it sleeps in the callback queue (idle CPU about zero) and wakes on a Session, a
-// Scene message or, while a vehicle is in a session or moving, every 100 ms. Its expected scope is
+// Event driven: the serial owner sleeps until input or the next original heartbeat,
+// discovery, grant, scene-expiry or planning deadline. Its expected scope is
 // declared once from the frozen Session: it observes the vehicles by their `<ns>/reset/session`
 // topics on the master and answers each on
 // `<ns>/reset/grant`. It never subscribes /command and never publishes cmd_vel.
@@ -17,7 +17,7 @@
 // A startup error is the node's own non-zero exit, so a Session-managed instance that is
 // misconfigured fails its Run instead of idling.
 
-#include <ros/callback_queue.h>
+#include <ugv_reset_client/owner_loop.h>
 #include <ros/master.h>
 #include <ros/ros.h>
 #include <ugv_reset_msgs/ResetFleet.h>
@@ -117,7 +117,7 @@ msgs::ResetGrant toMessage(const rc::Grant& g, const std::string& frame) {
 class CoordinatorNode {
    public:
     CoordinatorNode() : private_("~") {
-        nh_.setCallbackQueue(&queue_);
+        loop_.attach(nh_, false);
         private_.param("world_frame", world_frame_, std::string("world"));
         const char* scene_text = std::getenv("XGC_RESET_SCENE_NAMESPACE");
         scene_namespace_ = scene_text != nullptr ? scene_text : "";
@@ -178,39 +178,45 @@ class CoordinatorNode {
     }
 
     void run() {
-        double next_discovery = 0.0;
-        double next_fleet = 0.0;
-        double last_step = 0.0;
-        while (ros::ok()) {
-            const bool busy = core_->busy();
-            queue_.callAvailable(ros::WallDuration(busy ? 0.05 : 0.5));
+        double next_discovery = 0.0, next_fleet = 0.0, last_step = 0.0;
+        // An input retains the original 20 ms event floor. A mechanical deadline
+        // without pending input has no additional floor.
+        auto due = [&] {
+            const double deadline = core_->nextDeadline(wallSeconds());
+            return event_ ? last_step + 0.02
+                          : deadline;
+        };
+        loop_.run([&] {
             const double now = wallSeconds();
             if (now >= next_discovery) {
                 next_discovery = now + 1.0;
                 discover();
             }
             updateSceneAvailability(now);
-            // A message wakes the step at once; otherwise every 100 ms while there is work, and
-            // every 500 ms for the heartbeat of the lost-vehicle clock when there is none.
-            const double period = core_->busy() ? 0.1 : 0.5;
-            if (event_ || now - last_step >= period) {
-                if (!event_ || now - last_step >= 0.02) {
-                    last_step = now;
-                    event_ = false;
-                    for (const OutgoingGrant& g : core_->step(now)) {
-                        auto found = grant_pubs_.find(g.vehicle);
-                        if (found != grant_pubs_.end()) {
-                            found->second.publish(toMessage(g.grant, world_frame_));
-                        }
-                        logGrant(g);
-                    }
+            if (now >= due()) {
+                last_step = now;
+                event_ = false;
+                for (const OutgoingGrant& g : core_->step(now)) {
+                    auto found = grant_pubs_.find(g.vehicle);
+                    if (found != grant_pubs_.end())
+                        found->second.publish(toMessage(g.grant, world_frame_));
+                    logGrant(g);
                 }
             }
             if (now >= next_fleet) {
                 next_fleet = now + (core_->busy() ? 0.2 : 1.0);
                 publishFleet(now);
             }
-        }
+        }, [&] {
+            rc::NextWake next;
+            next.atWall(next_discovery);
+            next.atWall(next_fleet);
+            next.atWall(due());
+            if (scene_live_)
+                next.atWall(std::nextafter(scene_state_wall_ + 1.0,
+                                           std::numeric_limits<double>::infinity()));
+            return next;
+        });
     }
 
    private:
@@ -407,8 +413,8 @@ class CoordinatorNode {
         event_ = true;
     }
 
+    rc::OwnerLoop loop_;
     ros::NodeHandle nh_, private_;
-    ros::CallbackQueue queue_;
     std::unique_ptr<ResetCoordinator> core_;
     std::map<std::string, Vehicle> vehicles_;
     std::map<std::string, ros::Publisher> grant_pubs_;

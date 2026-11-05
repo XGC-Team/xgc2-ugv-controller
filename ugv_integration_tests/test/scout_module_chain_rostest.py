@@ -173,15 +173,15 @@ class ScoutModuleChainTest(unittest.TestCase):
         health = self.host.client.get("/v1/health")
         instances = {i["name"]: i for i in health["instances"]}
         self.assertEqual(set(instances), {"reference", "controller", "edge"})
-        for name, period_ms in (("reference", 10), ("controller", 2), ("edge", 10)):
+        for name in ("reference", "controller", "edge"):
             instance = instances[name]
             self.assertEqual(instance["state"], "running", name)
             self.assertEqual(instance["step_errors"], 0, name)
             self.assertEqual(instance["misuse"], 0, name)
-            self.assertEqual(instance["period_ns"], period_ms * 1000000, name)
-            self.assertGreater(instance["steps"], 0.8 * 2.0 * 1000.0 / period_ms, name)
+            self.assertEqual(instance["period_ns"], 0, name)
+            self.assertGreater(instance["steps"], 0, name)
             self.assertNotEqual(instance["health"], "failed", name)
-        # The controller's solver wakes it; the generator and the edge are driven by their periods.
+        # Inputs/completions and original deadlines drive work; no startup pump remains.
         channels = {c["name"]: c for c in health["channels"]}
         self.assertEqual(channels["state"]["drops"], 0)
         self.assertGreater(channels["state"]["commits"], 100)  # the plant's 100 Hz estimate

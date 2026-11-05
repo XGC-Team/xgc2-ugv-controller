@@ -135,6 +135,8 @@ class ResetPlanner {
                                         bool admit = true);
 
     std::vector<PlannerBodyReport> report() const;
+    // Earliest remaining original extension/replan obligation, on the coordinator clock.
+    double nextDeadline(bool admit = true) const;
     const PlannerStats& stats() const;
     const PlannerConfig& config() const;
     // All logical decisions, including Coordinator-generated ones, share this checked owner.

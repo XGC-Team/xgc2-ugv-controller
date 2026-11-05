@@ -30,6 +30,11 @@
 #include <limits>
 #include <string>
 #include <vector>
+#include <variant>
+#include <memory>
+#include <optional>
+#include <type_traits>
+#include <ugv_reset_client/schedule.h>
 
 namespace ugv_reset_client {
 
@@ -72,10 +77,75 @@ struct StepOutput {
 };
 
 class ResetExecutor {
+    struct None {};
+    struct AwaitBrake {};
+    struct AwaitZero {};
+    struct AwaitStopped { double zero_ros; };
+    struct DeferredGo { Grant grant; double deadline; };
+    struct AwaitGo {
+        double zero_ros;
+        bool certified;
+        std::optional<DeferredGo> deferred;
+    };
+    struct Executing {
+        RouteTracker tracker;
+        Command command;
+        bool final;
+        uint32_t grant_id;
+        double s_limit, heartbeat_deadline;
+        double last_step_ros{-1}, settle{0}, stall_since;
+        Pose stall_pose;
+        Executing(const Grant& g, const VehicleSpec& spec, double deadline, const Measurement& m)
+            : final(g.final_move), grant_id(g.grant_id), s_limit(g.s_limit),
+              heartbeat_deadline(deadline), stall_since(m.ros_now), stall_pose(m.pose) {
+            tracker.start(Route(g.start, g.via, g.goal, spec.model == Model::Unicycle ? g.ell_plan : 0), spec);
+        }
+    };
+    struct Complete {};
+    using Permission = std::variant<None, AwaitBrake, AwaitZero, AwaitStopped, AwaitGo, Executing, Complete>;
+    struct SessionHeader { uint32_t session; Pose target; };
+    struct Requesting {};
+    struct Waiting {};
+    struct Moving {};
+    struct Settling {};
+    struct Done { bool reported{false}; };
+    using Progress = std::variant<Requesting, Waiting, Moving, Settling, Done>;
+
    public:
+    // The CONTROL Reset alternative owns this value. The executor only borrows it on the owner.
+    // Retirement moves its non-motion authority transaction into the persistent context.
+    struct Run {
+        ~Run();
+        Run(const Run&) = delete;
+        Run& operator=(const Run&) = delete;
+        std::string last_hold_logged;
+        double enteredDomain() const { return enter_ros; }
+
+       private:
+        friend class ResetExecutor;
+        Run(SessionHeader h, bool valid, double bound, const Measurement& m)
+            : header(std::move(h)), target_valid(valid), allowance(bound), enter_ros(m.ros_now),
+              enter_wall(m.wall_now), last_message_wall(m.wall_now) {}
+        ResetExecutor* owner{nullptr};
+        SessionHeader header;
+        Permission permission;
+        Progress progress;
+        bool target_valid;
+        double allowance, enter_ros, enter_wall, last_message_wall;
+        bool heard{false};
+        Reason hold_reason{Reason::None};
+        std::string hold_detail;
+        std::vector<std::string> hold_blockers;
+    };
+    using RunPtr = std::unique_ptr<Run>;
+
     explicit ResetExecutor(const ExecutorConfig& config = ExecutorConfig()) : cfg_(config) {
         ell_.setBound(cfg_.spec.ell_bound);
     }
+    ~ResetExecutor() { if (auto* r = run()) r->owner = nullptr; }
+    ResetExecutor(const ResetExecutor&) = delete;
+    ResetExecutor& operator=(const ResetExecutor&) = delete;
+
     void setSpec(const VehicleSpec& spec) {
         const auto& old = cfg_.spec;
         const bool changed =
@@ -87,362 +157,277 @@ class ResetExecutor {
             old.acc_w != spec.acc_w || old.ell_bound != spec.ell_bound;
         cfg_.spec = spec;
         ell_.setBound(spec.ell_bound);
-        if (changed && stage_ != Stage::None && stage_ != Stage::Complete)
-            requestAuthority(!active());
+        if (changed && !is<None>() && !is<Complete>()) requestAuthority(!active());
     }
-    void setTimeout(double seconds) {
-        cfg_.timeout = seconds;
-    }
-    const ExecutorConfig& config() const {
-        return cfg_;
-    }
+    void setTimeout(double seconds) { cfg_.timeout = seconds; }
+    const ExecutorConfig& config() const { return cfg_; }
 
     void observe(const Measurement& m) {
         if (have_ros_clock_ && m.ros_now < last_ros_now_ - 1e-9) {
             clock_invalid_ = true;
-            stop_certified_ = false;
+            if (auto* go = std::get_if<AwaitGo>(&permission())) go->certified = false;
         }
         have_ros_clock_ = true;
         last_ros_now_ = m.ros_now;
         if (!std::isfinite(m.pose_stamp) || m.pose_stamp <= last_pose_stamp_ ||
-            !std::isfinite(m.pose.x) || !std::isfinite(m.pose.y) || !std::isfinite(m.pose.yaw))
-            return;
+            !std::isfinite(m.pose.x) || !std::isfinite(m.pose.y) || !std::isfinite(m.pose.yaw)) return;
         last_pose_stamp_ = m.pose_stamp;
-        // Learning remains always-on; the stop certificate uses a separate collection boundary.
-        if (cfg_.spec.model == Model::Unicycle)
-            ell_.add(m.pose);
-        if (stage_ == Stage::AwaitZero || stage_ == Stage::AwaitBrake)
-            return;
-        if (zero_latched_ && (clock_invalid_ || !m.pose_stamp_trusted ||
-                              m.pose_stamp <= zero_ros_ || m.pose_stamp > m.ros_now + 1e-9))
-            return;
+        if (cfg_.spec.model == Model::Unicycle) ell_.add(m.pose);
+        if (is<AwaitZero>() || is<AwaitBrake>()) return;
+        const auto zero = zeroSince();
+        if (zero && (clock_invalid_ || !m.pose_stamp_trusted || m.pose_stamp <= *zero ||
+                     m.pose_stamp > m.ros_now + 1e-9)) return;
         velocity_.add(m.pose_stamp, m.pose);
         velocity_pose_stamp_ = m.pose_stamp;
     }
 
-    bool active() const {
-        return phase_ != Phase::Idle && phase_ != Phase::Done;
-    }
+    bool active() const { return run() && !std::holds_alternative<Done>(run()->progress); }
     Phase phase() const {
-        return phase_;
+        const auto* r = run();
+        if (!r) return Phase::Idle;
+        return std::visit([](const auto& progress) {
+            using T = std::decay_t<decltype(progress)>;
+            if constexpr (std::is_same_v<T, Requesting>) return Phase::Requesting;
+            else if constexpr (std::is_same_v<T, Waiting>) return Phase::Waiting;
+            else if constexpr (std::is_same_v<T, Moving>) return Phase::Moving;
+            else if constexpr (std::is_same_v<T, Settling>) return Phase::Settling;
+            else return Phase::Done;
+        }, r->progress);
     }
-    uint32_t sessionId() const {
-        return session_;
-    }
-    uint32_t requestGeneration() const {
-        return generation_;
-    }
-    const Pose& target() const {
-        return target_;
-    }
-    bool protocolFault() const {
-        return protocol_fault_;
-    }
-    bool permissionPending() const {
-        return stage_ != Stage::None && stage_ != Stage::Executing && stage_ != Stage::Complete;
-    }
-    bool requiresZeroCommand() const {
-        return protocol_fault_ || clock_invalid_ || permissionPending();
-    }
-    bool needsZeroPublication() const {
-        return stage_ == Stage::AwaitZero;
-    }
+    uint32_t sessionId() const { return header().session; }
+    uint32_t requestGeneration() const { return generation_; }
+    const Pose& target() const { return header().target; }
+    bool protocolFault() const { return protocol_fault_; }
+    bool permissionPending() const { return !is<None>() && !is<Executing>() && !is<Complete>(); }
+    bool requiresZeroCommand() const { return protocol_fault_ || clock_invalid_ || permissionPending(); }
+    bool needsZeroPublication() const { return is<AwaitZero>(); }
 
-    // Two fixed outcome credits: the current result and one preceding uncommitted result.
-    // Admission never waits for permission retirement, but it cannot overwrite an accepted S.
-    bool reserveBegin() {
-        if (begin_reserved_ || protocol_fault_ ||
-            generation_ >= std::numeric_limits<uint32_t>::max() - 2 ||
-            pendingResults() + (active() ? 1u : 0u) >= 2u)
-            return false;
-        begin_reserved_ = true;
-        return true;
-    }
-    void cancelBeginReservation() {
-        begin_reserved_ = false;
-    }
-    bool begin(uint32_t session, const Pose& target, bool target_valid, const Measurement& m) {
-        if (!begin_reserved_ && !reserveBegin())
-            return false;
-        if (active())
-            end(Outcome::Stopped, Reason::None, "replaced by a new Reset", m);
-        begin_reserved_ = false;
-        session_ = session;
-        target_ = target;
-        target_valid_ = target_valid;
-        phase_ = Phase::Requesting;
-        terminal_request_ = false;
+    // Admission and value construction happen on the single owner. No reserved flag, event post,
+    // result-credit duplicate, or post-update inference. Install is part of the same command turn,
+    // after the previous CONTROL alternative's existing exit behavior has completed.
+    RunPtr prepare(uint32_t session, const Pose& target, bool valid, const Measurement& m) const {
+        if (protocol_fault_ || generation_ >= std::numeric_limits<uint32_t>::max() - 2 ||
+            pendingResults() + (active() ? 1u : 0u) >= 2u) return {};
         const double spread = ell_.spread();
-        allowance_ =
-            cfg_.spec.model == Model::Unicycle ? (spread >= 0 ? spread : cfg_.spec.ell_bound) : 0;
-        enter_ros_ = m.ros_now;
-        enter_wall_ = m.wall_now;
-        last_message_wall_ = m.wall_now;
-        heard_ = false;
-        end_reported_ = false;
-        hold_reason_ = Reason::None;
-        hold_detail_.clear();
-        hold_blockers_.clear();
+        const double allowance = cfg_.spec.model == Model::Unicycle
+                                     ? (spread >= 0 ? spread : cfg_.spec.ell_bound) : 0;
+        return RunPtr(new Run({session, target}, valid, allowance, m));
+    }
+    void install(Run& value, const Measurement& m) {
+        if (active()) end(Outcome::Stopped, Reason::None, "replaced by a new Reset", m);
+        finish();
+        value.owner = this;
+        authority_.emplace<Run*>(&value);
         requestAuthority(false);
-        return true;
     }
     void abort(Outcome outcome, const std::string& detail, const Measurement& m) {
-        if (active())
-            end(outcome, Reason::None, detail, m);
+        if (active()) end(outcome, Reason::None, detail, m);
     }
     void finish() {
-        tracker_.clear();
-        command_ = {};
-        have_route_ = false;
-        terminal_request_ = true;
-        if (stage_ == Stage::Executing)
-            requestAuthority(true);
-        phase_ = Phase::Idle;
+        if (auto* value = run()) {
+            if (is<Executing>()) requestAuthority(true);
+            Retirement retired{value->header, std::move(value->permission)};
+            value->owner = nullptr;
+            authority_.emplace<Retirement>(std::move(retired));
+        }
     }
 
-    // Called only AFTER the real output publisher returned with all commanded axes zero.
-    // Native output is the same owner; the module receipt must carry the exact G/B pair.
     void onZeroPublished(double ros_now, uint32_t generation = 0, uint32_t brake = 0) {
-        if (stage_ != Stage::AwaitZero || zero_latched_ || clock_invalid_ || protocol_fault_ ||
-            !std::isfinite(ros_now) || !command_.zero() ||
-            (generation != 0 && generation != generation_) || (brake != 0 && brake != brake_id_))
-            return;
-        zero_ros_ = ros_now;
-        zero_latched_ = true;
+        if (!is<AwaitZero>() || clock_invalid_ || protocol_fault_ || !std::isfinite(ros_now) ||
+            !command().zero() || (generation != 0 && generation != generation_) ||
+            (brake != 0 && brake != brake_id_)) return;
         velocity_.reset();
         velocity_pose_stamp_ = -1;
-        stage_ = Stage::AwaitStopped;
+        permission().emplace<AwaitStopped>(AwaitStopped{ros_now});
     }
 
     void onGrant(const Grant& g, const Measurement& m) {
-        if (protocol_fault_ || stage_ == Stage::None || g.session != session_ ||
+        if (protocol_fault_ || is<None>() || g.session != sessionId() ||
             g.request_generation != generation_ || generation_ == 0 || g.grant_id == 0 ||
             !std::isfinite(g.ttl) || g.ttl <= 0 ||
-            (have_publication_ && g.publication_seq <= last_publication_))
-            return;
-        if (g.grant_id < last_decision_id_)
-            return;
+            (have_publication_ && g.publication_seq <= last_publication_)) return;
+        if (g.grant_id < last_decision_id_) return;
         if (g.grant_id == last_decision_id_ &&
-            (!have_decision_ || !sameDecision(last_decision_, g)))
-            return;
+            (!have_decision_ || !sameDecision(last_decision_, g))) return;
         if (g.state == GrantState::Go) {
-            if (!validGo(g))
-                return;
-            if (stage_ == Stage::Executing) {
-                if (!have_route_ || !sameRoute(tracker_.route(), g) || g.final_move != final_ ||
-                    g.s_limit + 1e-9 < s_limit_)
-                    return;
-            } else if (stage_ != Stage::AwaitGo || terminal_request_ || !stop_certified_ ||
-                       g.grant_id <= brake_id_ ||
-                       (pending_go_ && g.grant_id != deferred_go_.grant_id))
-                return;
+            if (!validGo(g)) return;
+            if (const auto* motion = executing()) {
+                if (!motion->tracker.active() || !sameRoute(motion->tracker.route(), g) ||
+                    g.final_move != motion->final || g.s_limit + 1e-9 < motion->s_limit) return;
+            } else {
+                const auto* go = std::get_if<AwaitGo>(&permission());
+                if (!go || !active() || !go->certified || g.grant_id <= brake_id_ ||
+                    (go->deferred && g.grant_id != go->deferred->grant.grant_id)) return;
+            }
         } else if (g.state == GrantState::Hold) {
-            if (stage_ != Stage::Executing &&
-                !(stage_ == Stage::AwaitGo && stop_certified_ && g.grant_id > brake_id_) &&
-                !(stage_ == Stage::Complete && terminal_request_ && g.grant_id == acknowledged_id_))
-                return;
-        } else if (g.state != GrantState::Brake && g.state != GrantState::Reject)
-            return;
-        // All publication, generation, decision and geometry checks precede heartbeat mutation.
+            if (!is<Executing>() &&
+                !(is<AwaitGo>() && stopCertified() && g.grant_id > brake_id_) &&
+                !(is<Complete>() && !active() && g.grant_id == acknowledged_id_)) return;
+        } else if (g.state != GrantState::Brake && g.state != GrantState::Reject) return;
         have_publication_ = true;
         last_publication_ = g.publication_seq;
         have_decision_ = true;
         last_decision_id_ = g.grant_id;
         last_decision_ = g;
-        last_message_wall_ = m.wall_now;
-        heard_ = true;
-        hold_reason_ = g.reason;
-        hold_detail_ = g.detail;
-        hold_blockers_ = g.blockers;
+        if (auto* value = run()) {
+            value->last_message_wall = m.wall_now;
+            value->heard = true;
+            value->hold_reason = g.reason;
+            value->hold_detail = g.detail;
+            value->hold_blockers = g.blockers;
+        }
         switch (g.state) {
             case GrantState::Brake:
-                if (stage_ == Stage::AwaitBrake) {
+                if (is<AwaitBrake>()) {
                     brake_id_ = g.grant_id;
                     acknowledged_id_ = brake_id_;
-                    stage_ = Stage::AwaitZero;
-                    command_ = {};
-                    tracker_.clear();
-                    have_route_ = false;
-                } else if (g.grant_id != brake_id_) {
-                    // An unsolicited revocation always opens a fresh local authority transaction.
-                    requestAuthority(terminal_request_);
-                }
+                    permission().emplace<AwaitZero>();
+                } else if (g.grant_id != brake_id_) requestAuthority(!active());
                 break;
             case GrantState::Go:
-                heartbeat_deadline_ = m.wall_now + g.ttl;
-                if (stage_ == Stage::Executing) {
-                    grant_id_ = g.grant_id;
+                if (auto* motion = executing()) {
+                    motion->heartbeat_deadline = m.wall_now + g.ttl;
+                    motion->grant_id = g.grant_id;
                     acknowledged_id_ = g.grant_id;
-                    s_limit_ = g.s_limit;
+                    motion->s_limit = g.s_limit;
                 } else {
-                    deferred_go_ = g;
-                    pending_go_ = true;
+                    std::get<AwaitGo>(permission()).deferred = DeferredGo{g, m.wall_now + g.ttl};
                 }
                 break;
             case GrantState::Hold:
-                if (terminal_request_ && stage_ == Stage::AwaitGo) {
+                if (!active() && is<AwaitGo>()) {
                     acknowledged_id_ = g.grant_id;
-                    stop_certified_ = false;
-                    stage_ = Stage::Complete;
-                    zero_latched_ = false;
+                    permission().emplace<Complete>();
                 }
                 break;
             case GrantState::Reject:
-                if (active())
-                    end(g.reason == Reason::BadSession || g.reason == Reason::SceneChanged ||
-                                g.reason == Reason::SceneUnavailable ||
-                                g.reason == Reason::NonParticipantMoving || g.reason == Reason::None
-                            ? Outcome::RejectedByCoordinator
-                            : Outcome::Infeasible,
-                        g.reason, g.detail, m);
+                if (active()) end(g.reason == Reason::BadSession || g.reason == Reason::SceneChanged ||
+                                      g.reason == Reason::SceneUnavailable ||
+                                      g.reason == Reason::NonParticipantMoving || g.reason == Reason::None
+                                      ? Outcome::RejectedByCoordinator : Outcome::Infeasible,
+                                  g.reason, g.detail, m);
                 break;
         }
     }
 
-    // Non-motion transaction progress also runs in Ready/SelfCheck after the Result/finish.
     void poll(const Measurement& m) {
         if (protocol_fault_) {
-            command_ = {};
+            if (auto* motion = executing()) motion->command = {};
             return;
         }
-        if ((stage_ == Stage::AwaitStopped || stage_ == Stage::AwaitGo) && zero_latched_) {
-            stop_certified_ = causalStopped(m);
-            if (stop_certified_ && stage_ == Stage::AwaitStopped)
-                stage_ = Stage::AwaitGo;
+        if (auto* stopped = std::get_if<AwaitStopped>(&permission())) {
+            if (causalStopped(m, stopped->zero_ros)) {
+                permission().emplace<AwaitGo>(AwaitGo{stopped->zero_ros, true, std::nullopt});
+            }
+        } else if (auto* go = std::get_if<AwaitGo>(&permission())) {
+            go->certified = causalStopped(m, go->zero_ros);
         }
-        if (pending_go_ && stage_ == Stage::AwaitGo && stop_certified_ && !terminal_request_ &&
-            !clock_invalid_ && causalStopped(m) && m.wall_now <= heartbeat_deadline_) {
-            const Grant g = deferred_go_;
-            pending_go_ = false;
-            const Route route(g.start, g.via, g.goal,
-                              cfg_.spec.model == Model::Unicycle ? g.ell_plan : 0);
-            tracker_.start(route, cfg_.spec);
-            have_route_ = tracker_.active();
-            final_ = g.final_move;
-            grant_id_ = g.grant_id;
-            acknowledged_id_ = g.grant_id;
-            s_limit_ = g.s_limit;
-            stop_certified_ = false;
-            zero_latched_ = false;
-            stage_ = Stage::Executing;
-            last_step_ros_ = -1;
-            stall_since_ = m.ros_now;
-            stall_pose_ = m.pose;
-            settle_ = 0;
-            phase_ = Phase::Waiting;
+        if (auto* go = std::get_if<AwaitGo>(&permission())) {
+            if (go->deferred && go->certified && active() && !clock_invalid_ &&
+                causalStopped(m, go->zero_ros) && m.wall_now <= go->deferred->deadline) {
+                const DeferredGo accepted = *go->deferred;
+                acknowledged_id_ = accepted.grant.grant_id;
+                permission().emplace<Executing>(accepted.grant, cfg_.spec, accepted.deadline, m);
+                run()->progress.emplace<Waiting>();
+            }
         }
     }
 
     StepOutput step(const Measurement& m) {
         poll(m);
         StepOutput out;
-        out.phase = phase_;
-        if (phase_ == Phase::Done && !end_reported_)
-            return finished(m);
-        if (!active())
-            return out;
-        if (protocol_fault_) {
-            end(Outcome::RejectedByCoordinator, Reason::BadSession,
-                "Reset authority counter exhausted", m);
-            return finished(m);
+        out.phase = phase();
+        if (auto* value = run()) {
+            if (auto* done = std::get_if<Done>(&value->progress); done && !done->reported) return finished();
         }
-        if (cfg_.timeout > 0 &&
-            (m.ros_now - enter_ros_ >= cfg_.timeout || m.wall_now - enter_wall_ >= cfg_.timeout)) {
+        if (!active()) return out;
+        Run& value = *run();
+        if (protocol_fault_) {
+            end(Outcome::RejectedByCoordinator, Reason::BadSession, "Reset authority counter exhausted", m);
+            return finished();
+        }
+        if (cfg_.timeout > 0 && (m.ros_now - value.enter_ros >= cfg_.timeout ||
+                                 m.wall_now - value.enter_wall >= cfg_.timeout)) {
             end(Outcome::Timeout, Reason::None, "the vehicle's own deadline", m);
-            return finished(m);
+            return finished();
         }
         if (!m.healthy) {
-            command_ = {};
-            return held(m);
+            if (auto* motion = executing()) motion->command = {};
+            return held();
         }
-        if (!target_valid_) {
-            if (m.wall_now - enter_wall_ >= cfg_.no_target_hold) {
+        if (!value.target_valid) {
+            if (m.wall_now - value.enter_wall >= cfg_.no_target_hold) {
                 end(Outcome::RejectedNoTarget, Reason::None,
                     "no target: reset_pose cache and reset_initial_* missing", m);
-                return finished(m);
+                return finished();
             }
-            return held(m);
+            return held();
         }
-        if (m.wall_now - last_message_wall_ >= cfg_.no_coordinator) {
-            end(heard_ ? Outcome::AbortedCoordinatorLost : Outcome::RejectedNoCoordinator,
-                Reason::None,
-                heard_ ? "the coordinator stopped answering" : "no coordinator answered", m);
-            return finished(m);
+        if (m.wall_now - value.last_message_wall >= cfg_.no_coordinator) {
+            end(value.heard ? Outcome::AbortedCoordinatorLost : Outcome::RejectedNoCoordinator,
+                Reason::None, value.heard ? "the coordinator stopped answering" : "no coordinator answered", m);
+            return finished();
         }
         if (clock_invalid_) {
-            if (stage_ == Stage::Executing)
-                requestAuthority(false);
-            command_ = {};
-            return held(m);
+            if (is<Executing>()) requestAuthority(false);
+            return held();
         }
-        if (stage_ != Stage::Executing || !have_route_) {
-            command_ = {};
-            return held(m);
+        auto* motion = executing();
+        if (!motion || !motion->tracker.active()) {
+            if (motion) motion->command = {};
+            return held();
         }
-        lapsed_ = m.wall_now > heartbeat_deadline_;
-        if (lapsed_) {
+        if (m.wall_now > motion->heartbeat_deadline) {
             requestAuthority(false);
-            return held(m);
+            return held();
         }
-        const bool due =
-            last_step_ros_ < 0 || m.ros_now - last_step_ros_ >= cfg_.control_period - 1e-9;
+        const bool due = motion->last_step_ros < 0 ||
+                         m.ros_now - motion->last_step_ros >= cfg_.control_period - 1e-9;
         if (due) {
-            const double dt = last_step_ros_ < 0 ? cfg_.control_period
-                                                 : std::clamp(m.ros_now - last_step_ros_, 1e-3, .1);
-            last_step_ros_ = m.ros_now;
-            command_ = tracker_.step(m.pose, ell_.ell(), velocity_.valid() ? velocity_.speed() : 0,
-                                     dt, s_limit_);
-            if (!checkTube(m) || !checkProgress(m))
-                return finished(m);
-            if (checkArrival(m, dt))
-                return finished(m);
-            const bool complete_prefix =
-                RouteTracker::wholeRouteGranted(tracker_.route(), s_limit_);
-            // A finished parking leg is done the moment the vehicle stands at the route end.
-            // The tracker may still emit its terminal creep toward the granted heading, which a
-            // real chassis can leave unanswered: the command stays nonzero forever, the
-            // handover below never sees command_.zero(), and the stall watchdog would end the
-            // session. For a non-final route the heading precision is not part of completion,
-            // so a measured-stopped vehicle at the route end stops commanding here.
-            // external_command_zero must not gate this: it mirrors the outstanding command, so
-            // it is false precisely while the creep persists; stopped(m) re-checks it once the
-            // cleared command has actually published.
-            if (complete_prefix && !final_ && tracker_.atEnd() && m.healthy &&
-                velocity_.valid() &&
-                velocity_.speed() <= cfg_.stop_speed &&
-                std::abs(velocity_.yawRate()) <= cfg_.stop_yaw_rate) {
-                command_ = {};
-            }
-            const double perr = std::hypot(m.pose.x - target_.x, m.pose.y - target_.y);
-            const double yerr = std::abs(wrapAngle(target_.yaw - m.pose.yaw));
-            if (complete_prefix && stopped(m) && command_.zero() &&
-                ((!final_ && tracker_.atEnd()) ||
-                 (final_ && tracker_.inFinalStage() &&
+            const double dt = motion->last_step_ros < 0 ? cfg_.control_period
+                : std::clamp(m.ros_now - motion->last_step_ros, 1e-3, .1);
+            motion->last_step_ros = m.ros_now;
+            motion->command = motion->tracker.step(m.pose, ell_.ell(), velocity_.valid() ? velocity_.speed() : 0,
+                                                   dt, motion->s_limit);
+            if (!checkTube(m) || !checkProgress(m)) return finished();
+            if (checkArrival(m, dt)) return finished();
+            const bool complete_prefix = RouteTracker::wholeRouteGranted(motion->tracker.route(), motion->s_limit);
+            if (complete_prefix && !motion->final && motion->tracker.atEnd() && m.healthy &&
+                velocity_.valid() && velocity_.speed() <= cfg_.stop_speed &&
+                std::abs(velocity_.yawRate()) <= cfg_.stop_yaw_rate) motion->command = {};
+            const double perr = std::hypot(m.pose.x - header().target.x, m.pose.y - header().target.y);
+            const double yerr = std::abs(wrapAngle(header().target.yaw - m.pose.yaw));
+            if (complete_prefix && stopped(m) && motion->command.zero() &&
+                ((!motion->final && motion->tracker.atEnd()) ||
+                 (motion->final && motion->tracker.inFinalStage() &&
                   (perr > cfg_.position_tolerance || yerr > cfg_.yaw_tolerance)))) {
                 requestAuthority(false);
-                return held(m);
+                return held();
             }
         }
-        out.command = command_;
-        out.phase = reportPhase(m);
-        phase_ = out.phase;
+        out.command = motion->command;
+        if (motion->final && motion->tracker.atEnd()) value.progress.emplace<Settling>();
+        else if (moving()) value.progress.emplace<Moving>();
+        else value.progress.emplace<Waiting>();
+        out.phase = phase();
         return out;
     }
 
     Session makeSession(const Measurement& m) const {
         Session s;
         s.stamp = m.ros_now;
-        s.session = session_;
+        s.session = sessionId();
         s.request_generation = generation_;
         s.acknowledged_grant_id = acknowledged_id_;
-        s.stop_certified = stop_certified_;
+        s.stop_certified = stopCertified();
         s.publication_seq = next_publication_;
         s.pose_stamp = m.pose_stamp;
         s.pose = m.pose;
-        s.target = target_;
-        s.phase = phase_;
-        s.progress = tracker_.active() ? tracker_.progress() : 0;
-        s.cross_track = tracker_.active() ? tracker_.crossTrack() : 0;
+        s.target = header().target;
+        s.phase = phase();
+        const auto* motion = executing();
+        s.progress = motion && motion->tracker.active() ? motion->tracker.progress() : 0;
+        s.cross_track = motion && motion->tracker.active() ? motion->tracker.crossTrack() : 0;
         s.spec = cfg_.spec;
         s.ell_hat = cfg_.spec.model == Model::Unicycle ? ell_.ell() : 0;
         s.ell_spread = cfg_.spec.model == Model::Unicycle ? ell_.spread() : 0;
@@ -450,120 +435,119 @@ class ResetExecutor {
         return s;
     }
     bool sessionDue(const Measurement& m) const {
-        if (protocol_fault_)
-            return false;  // no publication/authority counter reuse
-        return !published_ || phase_ != published_phase_ || session_ != published_session_ ||
+        if (protocol_fault_) return false;
+        return !published_ || phase() != published_phase_ || sessionId() != published_session_ ||
                generation_ != published_generation_ || acknowledged_id_ != published_ack_ ||
-               stop_certified_ != published_cert_ ||
-               m.wall_now - published_wall_ >= kSessionPeriod - 1e-9;
+               stopCertified() != published_cert_ || m.wall_now - published_wall_ >= kSessionPeriod - 1e-9;
     }
     void markSessionPublished(const Measurement& m) {
         published_ = true;
-        published_phase_ = phase_;
-        published_session_ = session_;
+        published_phase_ = phase();
+        published_session_ = sessionId();
         published_generation_ = generation_;
         published_ack_ = acknowledged_id_;
-        published_cert_ = stop_certified_;
+        published_cert_ = stopCertified();
         published_wall_ = m.wall_now;
-        if (next_publication_ == std::numeric_limits<uint32_t>::max())
-            protocol_fault_ = true;
-        else
-            ++next_publication_;
+        if (next_publication_ == std::numeric_limits<uint32_t>::max()) protocol_fault_ = true;
+        else ++next_publication_;
     }
-    bool resultPending() const {
-        return result_pending_ || previous_pending_;
-    }
+    bool resultPending() const { return result_pending_ || previous_pending_; }
     bool peekResult(Result* out) const {
-        if (!out || !resultPending())
-            return false;
+        if (!out || !resultPending()) return false;
         *out = previous_pending_ ? previous_result_ : result_;
         return true;
     }
-    void commitResult() {
-        if (previous_pending_)
-            previous_pending_ = false;
-        else
-            result_pending_ = false;
-    }
-    bool takeResult(Result* out) {
-        if (!peekResult(out))
-            return false;
-        commitResult();
-        return true;
-    }
-    const Result& result() const {
-        return result_;
-    }
-    Reason holdReason() const {
-        return hold_reason_;
-    }
+    void commitResult() { if (previous_pending_) previous_pending_ = false; else result_pending_ = false; }
+    bool takeResult(Result* out) { if (!peekResult(out)) return false; commitResult(); return true; }
+    const Result& result() const { return result_; }
+    Reason holdReason() const { return run() ? run()->hold_reason : Reason::None; }
     const std::string& holdDetail() const {
-        return hold_detail_;
+        static const std::string empty;
+        return run() ? run()->hold_detail : empty;
     }
     const std::vector<std::string>& holdBlockers() const {
-        return hold_blockers_;
+        static const std::vector<std::string> empty;
+        return run() ? run()->hold_blockers : empty;
     }
-    const EllEstimator& ell() const {
-        return ell_;
-    }
-    const VelocityEstimator& velocity() const {
-        return velocity_;
-    }
-    const RouteTracker& tracker() const {
-        return tracker_;
-    }
-    double sLimit() const {
-        return s_limit_;
-    }
-    Command command() const {
-        return command_;
+    const EllEstimator& ell() const { return ell_; }
+    const VelocityEstimator& velocity() const { return velocity_; }
+    const RouteTracker* tracker() const { const auto* e = executing(); return e ? &e->tracker : nullptr; }
+    double sLimit() const { const auto* e = executing(); return e ? e->s_limit : 0; }
+    Command command() const { const auto* e = executing(); return e ? e->command : Command{}; }
+    NextWake nextWake(const Measurement& m) const {
+        NextWake next;
+        if (!protocol_fault_) next.atWall(sessionDue(m) ? m.wall_now : std::nextafter(published_wall_ + kSessionPeriod - 1e-9, std::numeric_limits<double>::infinity()));
+        if (!active()) return next;
+        const Run& value = *run();
+        if (cfg_.timeout > 0) {
+            next.atDomain(std::nextafter(value.enter_ros + cfg_.timeout, std::numeric_limits<double>::infinity()));
+            next.atWall(std::nextafter(value.enter_wall + cfg_.timeout, std::numeric_limits<double>::infinity()));
+        }
+        if (m.healthy) {
+            if (!value.target_valid) next.atWall(std::nextafter(value.enter_wall + cfg_.no_target_hold, std::numeric_limits<double>::infinity()));
+            else next.atWall(std::nextafter(value.last_message_wall + cfg_.no_coordinator, std::numeric_limits<double>::infinity()));
+        }
+        if (const auto* e = executing(); e && m.healthy && value.target_valid &&
+            !clock_invalid_ && e->tracker.active()) {
+            next.atWall(std::nextafter(e->heartbeat_deadline, std::numeric_limits<double>::infinity()));
+            next.atDomain(e->last_step_ros < 0 ? m.ros_now :
+                std::nextafter(e->last_step_ros + cfg_.control_period - 1e-9,
+                               std::numeric_limits<double>::infinity()));
+        }
+        return next;
     }
 
    private:
-    enum class Stage { None, AwaitBrake, AwaitZero, AwaitStopped, AwaitGo, Executing, Complete };
-    size_t pendingResults() const {
-        return (result_pending_ ? 1u : 0u) + (previous_pending_ ? 1u : 0u);
+    struct Retirement { SessionHeader header; Permission permission; };
+    Run* run() {
+        auto* ptr = std::get_if<Run*>(&authority_);
+        return ptr ? *ptr : nullptr;
     }
+    const Run* run() const {
+        const auto* ptr = std::get_if<Run*>(&authority_);
+        return ptr ? *ptr : nullptr;
+    }
+    Permission& permission() { return run() ? run()->permission : std::get<Retirement>(authority_).permission; }
+    const Permission& permission() const { return run() ? run()->permission : std::get<Retirement>(authority_).permission; }
+    const SessionHeader& header() const { return run() ? run()->header : std::get<Retirement>(authority_).header; }
+    template<class T> bool is() const { return std::holds_alternative<T>(permission()); }
+    Executing* executing() { return std::get_if<Executing>(&permission()); }
+    const Executing* executing() const { return std::get_if<Executing>(&permission()); }
+    std::optional<double> zeroSince() const {
+        if (const auto* stopped = std::get_if<AwaitStopped>(&permission())) return stopped->zero_ros;
+        if (const auto* go = std::get_if<AwaitGo>(&permission())) return go->zero_ros;
+        return std::nullopt;
+    }
+    bool stopCertified() const {
+        const auto* go = std::get_if<AwaitGo>(&permission());
+        return go && go->certified;
+    }
+    size_t pendingResults() const { return (result_pending_ ? 1u : 0u) + (previous_pending_ ? 1u : 0u); }
     bool stopped(const Measurement& m) const {
-        return m.healthy && m.external_command_zero && command_.zero() && velocity_.valid() &&
-               velocity_.speed() <= cfg_.stop_speed &&
-               std::abs(velocity_.yawRate()) <= cfg_.stop_yaw_rate;
+        return m.healthy && m.external_command_zero && command().zero() && velocity_.valid() &&
+               velocity_.speed() <= cfg_.stop_speed && std::abs(velocity_.yawRate()) <= cfg_.stop_yaw_rate;
     }
-    bool causalStopped(const Measurement& m) const {
-        return !clock_invalid_ && m.pose_stamp_trusted && m.pose_stamp > zero_ros_ &&
+    bool causalStopped(const Measurement& m, double zero_ros) const {
+        return !clock_invalid_ && m.pose_stamp_trusted && m.pose_stamp > zero_ros &&
                m.pose_stamp <= m.ros_now && m.pose_stamp == velocity_pose_stamp_ && stopped(m);
     }
     void requestAuthority(bool terminal) {
-        command_ = {};
-        tracker_.clear();
-        have_route_ = false;
-        pending_go_ = false;
-        terminal_request_ = terminal;
-        stop_certified_ = false;
-        zero_latched_ = false;
+        permission().emplace<AwaitBrake>();
         brake_id_ = 0;
         acknowledged_id_ = 0;
-        heartbeat_deadline_ = 0;
-        stage_ = Stage::AwaitBrake;
-        if (generation_ == std::numeric_limits<uint32_t>::max())
-            protocol_fault_ = true;
-        else
-            ++generation_;
-        if (!terminal)
-            phase_ = Phase::Requesting;
-        last_step_ros_ = -1;
-        settle_ = 0;
+        if (generation_ == std::numeric_limits<uint32_t>::max()) protocol_fault_ = true;
+        else ++generation_;
+        if (!terminal) run()->progress.emplace<Requesting>();
     }
-    StepOutput held(const Measurement&) {
+    StepOutput held() {
         StepOutput out;
-        out.phase = permissionPending()
-                        ? Phase::Requesting
-                        : (phase_ == Phase::Requesting ? Phase::Requesting : Phase::Waiting);
-        phase_ = out.phase;
+        if (permissionPending() || phase() == Phase::Requesting) run()->progress.emplace<Requesting>();
+        else run()->progress.emplace<Waiting>();
+        out.phase = phase();
         return out;
     }
-    StepOutput finished(const Measurement&) {
-        end_reported_ = true;
+    StepOutput finished() {
+        std::get<Done>(run()->progress).reported = true;
         StepOutput out;
         out.ended = true;
         out.phase = Phase::Done;
@@ -575,7 +559,7 @@ class ResetExecutor {
     }
     bool sameRoute(const Route& r, const Grant& g) const {
         if (!samePose(r.start(), g.start) || !samePose(r.goal(), g.goal) ||
-            std::abs(r.ell() - g.ell_plan) > 1e-9 || final_ != g.final_move ||
+            std::abs(r.ell() - g.ell_plan) > 1e-9 || executing()->final != g.final_move ||
             r.vertices().size() != g.via.size() + 2)
             return false;
         for (size_t i = 0; i < g.via.size(); ++i)
@@ -602,127 +586,90 @@ class ResetExecutor {
         };
         if (!finite(g.start) || !finite(g.goal) || !std::isfinite(g.ell_plan) ||
             !std::isfinite(g.s_limit) || g.s_limit < 0 || g.via.size() > kMaxVia ||
-            (g.final_move && !samePose(g.goal, target_)))
+            (g.final_move && !samePose(g.goal, header().target)))
             return false;
         for (const Point& p : g.via)
             if (!std::isfinite(p.x) || !std::isfinite(p.y))
                 return false;
         return true;
     }
-    bool moving(const Measurement&) const {
-        return std::abs(command_.vx) > .005 || std::abs(command_.vy) > .005 ||
-               std::abs(command_.wz) > .005 ||
+    bool moving() const {
+        const auto cmd = command();
+        return std::abs(cmd.vx) > .005 || std::abs(cmd.vy) > .005 || std::abs(cmd.wz) > .005 ||
                (velocity_.valid() && (velocity_.speed() > cfg_.stop_speed * 1.5 ||
                                       std::abs(velocity_.yawRate()) > cfg_.stop_yaw_rate * 1.5));
     }
-    Phase reportPhase(const Measurement& m) const {
-        if (!have_route_)
-            return Phase::Requesting;
-        if (final_ && tracker_.atEnd())
-            return Phase::Settling;
-        return moving(m) ? Phase::Moving : Phase::Waiting;
-    }
     bool checkTube(const Measurement& m) {
-        if (std::abs(tracker_.crossTrack()) <= cfg_.tube_cross_track + 2.0 * allowance_) {
-            return true;
-        }
+        if (std::abs(executing()->tracker.crossTrack()) <= cfg_.tube_cross_track + 2.0 * run()->allowance) return true;
         char text[96];
-        std::snprintf(text, sizeof(text), "left the route tube: cross-track %.2f m",
-                      tracker_.crossTrack());
+        std::snprintf(text, sizeof(text), "left the route tube: cross-track %.2f m", executing()->tracker.crossTrack());
         end(Outcome::AbortedDeviation, Reason::None, text, m);
         return false;
     }
-
-    // A vehicle that may move and does not, for `stall` seconds.
     bool checkProgress(const Measurement& m) {
-        const bool may_move = !lapsed_ && s_limit_ - tracker_.progress() > 0.1;
-        const double moved = std::hypot(m.pose.x - stall_pose_.x, m.pose.y - stall_pose_.y) +
-                             0.3 * std::abs(wrapAngle(m.pose.yaw - stall_pose_.yaw));
-        if (!may_move || moved > 0.03 || !tracker_.active()) {
-            stall_since_ = m.ros_now;
-            stall_pose_ = m.pose;
+        auto& motion = *executing();
+        const bool may_move = motion.s_limit - motion.tracker.progress() > 0.1;
+        const double moved = std::hypot(m.pose.x - motion.stall_pose.x, m.pose.y - motion.stall_pose.y) +
+                             0.3 * std::abs(wrapAngle(m.pose.yaw - motion.stall_pose.yaw));
+        if (!may_move || moved > 0.03 || !motion.tracker.active()) {
+            motion.stall_since = m.ros_now;
+            motion.stall_pose = m.pose;
             return true;
         }
-        if (m.ros_now - stall_since_ < cfg_.stall) {
-            return true;
-        }
+        if (m.ros_now - motion.stall_since < cfg_.stall) return true;
         end(Outcome::AbortedStalled, Reason::None, "allowed to move but did not for 10 s", m);
         return false;
     }
-
     bool checkArrival(const Measurement& m, double dt) {
-        if (!final_ || !tracker_.active()) {
-            return false;
-        }
-        const double perr = std::hypot(m.pose.x - target_.x, m.pose.y - target_.y);
-        const double yerr = std::abs(wrapAngle(target_.yaw - m.pose.yaw));
+        auto& motion = *executing();
+        if (!motion.final || !motion.tracker.active()) return false;
+        const double perr = std::hypot(m.pose.x - header().target.x, m.pose.y - header().target.y);
+        const double yerr = std::abs(wrapAngle(header().target.yaw - m.pose.yaw));
         const bool stopped = velocity_.valid() && velocity_.speed() <= cfg_.stop_speed &&
                              std::abs(velocity_.yawRate()) <= cfg_.stop_yaw_rate;
-        if (perr <= cfg_.position_tolerance && yerr <= cfg_.yaw_tolerance && stopped) {
-            settle_ += dt;
-        } else {
-            settle_ = 0.0;
-        }
-        if (settle_ >= cfg_.settle_hold) {
+        if (perr <= cfg_.position_tolerance && yerr <= cfg_.yaw_tolerance && stopped) motion.settle += dt;
+        else motion.settle = 0.0;
+        if (motion.settle >= cfg_.settle_hold) {
             end(Outcome::Arrived, Reason::None, "", m);
             return true;
         }
         return false;
     }
-
     void end(Outcome outcome, Reason reason, const std::string& detail, const Measurement& m) {
-        if (!active())
-            return;
-        if (result_pending_) {
-            previous_result_ = result_;
-            previous_pending_ = true;
-        }
-        result_.session = session_;
+        if (!active()) return;
+        if (result_pending_) { previous_result_ = result_; previous_pending_ = true; }
+        result_.session = sessionId();
         result_.outcome = outcome;
         result_.reason = reason;
         result_.detail = detail;
-        result_.final_planar_error = std::hypot(m.pose.x - target_.x, m.pose.y - target_.y);
-        result_.final_yaw_error = std::abs(wrapAngle(target_.yaw - m.pose.yaw));
-        result_.duration = m.ros_now - enter_ros_;
+        result_.final_planar_error = std::hypot(m.pose.x - header().target.x, m.pose.y - header().target.y);
+        result_.final_yaw_error = std::abs(wrapAngle(header().target.yaw - m.pose.yaw));
+        result_.duration = m.ros_now - run()->enter_ros;
         result_pending_ = true;
-        end_reported_ = false;
-        phase_ = Phase::Done;
+        run()->progress.emplace<Done>();
         requestAuthority(true);
     }
+
     ExecutorConfig cfg_;
     VelocityEstimator velocity_;
     EllEstimator ell_;
-    RouteTracker tracker_;
-    Command command_;
-    uint32_t session_{0}, generation_{0}, grant_id_{0}, brake_id_{0}, acknowledged_id_{0};
-    Pose target_;
-    bool target_valid_{false};
-    Phase phase_{Phase::Idle};
-    Stage stage_{Stage::None};
-    bool terminal_request_{false}, stop_certified_{false}, zero_latched_{false},
-        protocol_fault_{false};
+    // Exactly one authoritative permission value: active Run or retained non-motion retirement.
+    std::variant<Retirement, Run*> authority_{Retirement{{0, {}}, None{}}};
+    uint32_t generation_{0}, brake_id_{0}, acknowledged_id_{0};
+    bool protocol_fault_{false};
     double velocity_pose_stamp_{-1};
-    double zero_ros_{0}, allowance_{0}, enter_ros_{0}, enter_wall_{0}, last_message_wall_{0};
-    bool heard_{false}, have_route_{false}, final_{true}, lapsed_{false};
-    double s_limit_{0}, heartbeat_deadline_{0}, last_step_ros_{-1}, settle_{0}, stall_since_{0};
-    Pose stall_pose_;
     uint32_t last_decision_id_{0}, last_publication_{0};
     bool have_decision_{false}, have_publication_{false};
-    Grant last_decision_, deferred_go_;
-    bool pending_go_{false};
+    Grant last_decision_;
     double last_pose_stamp_{-std::numeric_limits<double>::infinity()}, last_ros_now_{0};
     bool have_ros_clock_{false}, clock_invalid_{false};
     Result result_, previous_result_;
-    bool result_pending_{false}, previous_pending_{false}, begin_reserved_{false},
-        end_reported_{false};
-    Reason hold_reason_{Reason::None};
-    std::string hold_detail_;
-    std::vector<std::string> hold_blockers_;
+    bool result_pending_{false}, previous_pending_{false};
     bool published_{false}, published_cert_{false};
     Phase published_phase_{Phase::Idle};
-    uint32_t published_session_{0}, published_generation_{0}, published_ack_{0},
-        next_publication_{0};
+    uint32_t published_session_{0}, published_generation_{0}, published_ack_{0}, next_publication_{0};
     double published_wall_{0};
 };
+inline ResetExecutor::Run::~Run() { if (owner) owner->finish(); }
 
 }  // namespace ugv_reset_client

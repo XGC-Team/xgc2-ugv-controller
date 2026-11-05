@@ -112,11 +112,12 @@ class Instance {
         thread_.bind();  // which rebuilt the state machine on this thread
     }
 
-    void start() {}
-    void stop() {}
+    void start() { host_.setPeriodNs(0); host_.wake(); armed_deadline_ns_ = -1; }
+    void stop() { host_.wakeAtNs(-1); }
 
     void step(const xgc2_step_ctx& ctx) {
         thread_.check("step");
+        if (ctx.reasons & XGC2_STEP_DEADLINE) armed_deadline_ns_ = -1;
         const double now = secondsOf<urt::Time>(ctx.now_ns);
         collect();
         for (const Pending& request : pending_) {
@@ -130,6 +131,10 @@ class Instance {
         for (const auto& event : update.events) {
             publish(event, now, ctx.now_ns);
         }
+        const int64_t deadline = deadlineNs(driver_.runtime().nextDeadline());
+        if (deadline >= 0 && deadline <= ctx.now_ns) {
+            host_.wakeAtNs(-1); armed_deadline_ns_ = -1; host_.wake();
+        } else if (deadline != armed_deadline_ns_) { host_.wakeAtNs(deadline); armed_deadline_ns_ = deadline; }
     }
 
    private:
@@ -180,14 +185,12 @@ class Instance {
 
     // Warnings repeat at the rate of the inputs: once a second for each kind of request.
     void warn(Request result, uint32_t kind, const char* what, double now) {
-        if (result == Request::kPosted || !throttle_[kind].due(now)) {
+        if (result == Request::kAccepted || !throttle_[kind].due(now)) {
             return;
         }
         if (result == Request::kRejected) {
             host_.log(kLogWarn, std::string("Rejected ") + what);
-        } else {
-            host_.log(kLogWarn, std::string("Failed to post the event of ") + what + ": " +
-                                    driver_.postError());
+
         }
     }
 
@@ -231,32 +234,29 @@ class Instance {
                 break;
             }
             default: {
-                const auto status = driver_.reset(now);
-                if (!status.ok() && throttle_[kind].due(now)) {
-                    host_.log(kLogWarn, "Failed to post the event of reset: " + status.message);
-                }
+                driver_.reset(now);
                 break;
             }
         }
     }
 
     // What the node's output consumer published for an output event.
-    void publish(const ::state_machine::Event& event, double now, int64_t stamp_ns) {
+    void publish(const urt::ReferencePublication& event, double now, int64_t stamp_ns) {
         const urt::ReferenceTrajectoryRuntime& runtime = driver_.runtime();
-        if (event.id == urt::output_event_type::PUBLISH_STATUS) {
+        if (event.kind == urt::ReferenceOutput::Status) {
             auto slot = host_.write<xgc2_ugv_reference_status>(kStatus);
             if (slot) {
                 rp::toPayload(*slot,
                               runtime.makeStatus(event.timestamp > 0.0 ? event.timestamp : now));
                 slot.commit(stamp_ns);
             }
-        } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_ANALYTIC) {
+        } else if (event.kind == urt::ReferenceOutput::Analytic) {
             publishActive<xgc2_ugv_analytic_reference>(
                 kActiveAnalytic, runtime.activeAnalyticMessage(), now, stamp_ns);
-        } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_POLYNOMIAL) {
+        } else if (event.kind == urt::ReferenceOutput::Polynomial) {
             publishActive<xgc2_ugv_polynomial_reference>(
                 kActivePolynomial, runtime.activePolynomialMessage(), now, stamp_ns);
-        } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_SAMPLED) {
+        } else if (event.kind == urt::ReferenceOutput::Sampled) {
             publishActive<xgc2_ugv_sampled_reference>(
                 kActiveSampled, runtime.activeSampledMessage(), now, stamp_ns);
         }
@@ -282,6 +282,7 @@ class Instance {
     urt::ReferenceTrajectoryDriver driver_;
     LogThrottle throttle_[kPortCount + 1];
     std::vector<Pending> pending_;
+    int64_t armed_deadline_ns_{-1};
 };
 
 const xgc2_module_desc kDescriptor = {XGC2_MODULE_ABI_MAJOR,

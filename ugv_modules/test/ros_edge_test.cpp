@@ -137,7 +137,7 @@ TEST_F(EdgeTest, DescribesItsPortsForTheHost) {
     const xgc2_module_desc* d = library().desc();
     EXPECT_EQ(d->abi_major, XGC2_MODULE_ABI_MAJOR);
     EXPECT_STREQ(d->name, "ugv_ros_edge");
-    ASSERT_EQ(d->port_count, 19u);
+    ASSERT_EQ(d->port_count, 21u);
     const char* inputs[] = {"cmd_vel",           "controller_status", "reset_session",
                             "reset_result",      "reference_status",  "active_analytic",
                             "active_polynomial", "active_sampled"};
@@ -178,6 +178,13 @@ TEST_F(EdgeTest, DescribesItsPortsForTheHost) {
                               : static_cast<uint32_t>(XGC2_PORT_STATE))
             << p.name;
     }
+    EXPECT_STREQ(d->ports[19].name, "wall_deadline");
+    EXPECT_EQ(d->ports[19].direction, static_cast<uint32_t>(XGC2_PORT_IN));
+    EXPECT_STREQ(d->ports[19].schema_id, XGC2_UGV_SCHEMA_WALL_DEADLINE);
+    EXPECT_STREQ(d->ports[20].name, "wall_wake");
+    EXPECT_EQ(d->ports[20].direction, static_cast<uint32_t>(XGC2_PORT_OUT));
+    EXPECT_EQ(d->ports[20].flags, static_cast<uint32_t>(XGC2_PORT_ASYNC_WRITER));
+    EXPECT_STREQ(d->ports[20].schema_id, XGC2_UGV_SCHEMA_WALL_WAKE);
     EXPECT_STREQ(d->ports[17].schema_id, "xgc2.clock.v1");
     EXPECT_EQ(d->ports[17].size, 8u);
     EXPECT_STREQ(d->ports[8].schema_id, "xgc2.ugv.planar_state.v2");

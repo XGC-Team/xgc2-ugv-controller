@@ -419,17 +419,16 @@ void run(Glue& glue, const Config& config, FILE* out) {
         }
         glue.update(now);
         for (const auto& e : glue.events()) {
-            std::fprintf(out, "%" PRIu64 " ev %u ts %016" PRIx64 " seq %" PRIu64 " cat %d src %s",
-                         k, static_cast<unsigned>(e.id), bits(e.timestamp), e.sequence,
-                         static_cast<int>(e.category), e.source.c_str());
+            std::fprintf(out, "%" PRIu64 " ev %u ts %016" PRIx64,
+                         k, static_cast<unsigned>(e.kind), bits(e.timestamp));
             // The output consumer's message for the event.
-            if (e.id == kPublishStatus) {
+            if (static_cast<unsigned>(e.kind) == kPublishStatus) {
                 w.status(glue.runtime().makeStatus(e.timestamp > 0.0 ? e.timestamp : now));
-            } else if (e.id == kPublishActiveAnalytic) {
+            } else if (static_cast<unsigned>(e.kind) == kPublishActiveAnalytic) {
                 w.analytic(glue.runtime().activeAnalyticMessage());
-            } else if (e.id == kPublishActivePolynomial) {
+            } else if (static_cast<unsigned>(e.kind) == kPublishActivePolynomial) {
                 w.polynomial(glue.runtime().activePolynomialMessage());
-            } else if (e.id == kPublishActiveSampled) {
+            } else if (static_cast<unsigned>(e.kind) == kPublishActiveSampled) {
                 w.sampled(glue.runtime().activeSampledMessage());
             }
             std::fputc('\n', out);

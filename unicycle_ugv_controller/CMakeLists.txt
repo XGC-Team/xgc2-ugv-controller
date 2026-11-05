@@ -219,11 +219,7 @@ add_library(unicycle_ugv_controller_core
   src/nmpc/nmpc_execution.cpp
   src/reference_cache.cpp
   src/unicycle_ugv_controller.cpp
-  src/state_machine/health_monitor_state.cpp
-  src/state_machine/self_check_state.cpp
-  src/state_machine/ready_state.cpp
-  src/state_machine/reset_state.cpp
-  src/state_machine/custom1_state.cpp)
+)
 set_property(TARGET unicycle_ugv_controller_core PROPERTY INCLUDE_DIRECTORIES "")
 target_include_directories(unicycle_ugv_controller_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include

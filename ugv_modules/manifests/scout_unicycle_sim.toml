@@ -48,8 +48,8 @@ path = "../../../lib/ugv_modules/libugv_unicycle_controller.so"
 [[instance]]
 name = "reference"
 module = "reference"
-period_ms = 10                          # main_frequency: 100 Hz
-affinity = "sticky"                     # the state machine of the core belongs to the thread that built it
+period_ms = 10                          # startup budget; runtime arms actual deadlines
+affinity = "sticky"                     # one serial owner for each native instance
 
 [instance.config]
 status_rate = 10.0
@@ -91,8 +91,8 @@ active_sampled = "active_sampled"
 [[instance]]
 name = "controller"
 module = "controller"
-period_ms = 2                           # control_rate_hz: 500 Hz
-affinity = "sticky"                     # the state machine of the core belongs to the thread that built it
+period_ms = 2                           # startup budget; core retains 500 Hz integration only when due
+affinity = "sticky"                     # one serial owner for each native instance
 
 [instance.config]
 state_source = "state_estimator"
@@ -184,6 +184,9 @@ status = "controller_status"
 reset_session = "reset_session"
 reset_result = "reset_result"
 
+wall_deadline = "controller_wall_deadline"
+wall_wake = "controller_wall_wake"
+
 [[instance]]
 name = "edge"
 module = "edge"
@@ -216,3 +219,6 @@ sampled_request = "sampled_request"
 waypoint_request = "waypoint_request"
 reference_reset = "reference_reset"
 clock = "clock"
+
+wall_deadline = "controller_wall_deadline"
+wall_wake = "controller_wall_wake"

@@ -2,29 +2,27 @@
 
 #include <geometry_msgs/Twist.h>
 #include <ros/ros.h>
+#include <functional>
 
-#include <state_machine/runtime/async_task_executor.hpp>
-#include <state_machine/runtime/event_dispatcher.hpp>
 #include <string>
 
 #include "unicycle_ugv_controller/unicycle_ugv_controller.h"
 
 namespace unicycle_ugv_controller {
 
-class CmdVelOutputConsumer final : public ::state_machine::runtime::EventConsumer {
+class CmdVelOutputConsumer {
    public:
     CmdVelOutputConsumer(ros::NodeHandle& nh,
-                         ::state_machine::runtime::AsyncTaskExecutor<ros::NodeHandle>& executor,
                          UnicycleUgvController& controller, const std::string& cmd_vel_topic,
-                         uint32_t queue_size);
+                         uint32_t queue_size, std::function<double()> clock);
 
-    std::string name() const override {
-        return "CmdVelOutputConsumer";
-    }
-    bool handle(const ::state_machine::Event& event) override;
+    void handle(const PublishCommand&);
+    void handle(const PublishZero&);
 
    private:
+    void publish(const geometry_msgs::Twist& twist);
     UnicycleUgvController& controller_;
+    std::function<double()> clock_;
     ros::Publisher cmd_vel_pub_;
 };
 

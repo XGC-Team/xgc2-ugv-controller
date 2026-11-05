@@ -216,7 +216,7 @@ TEST(ControllerModule, DescribesItsPortsForTheHost) {
     const xgc2_module_desc* d = library.desc();
     EXPECT_EQ(d->abi_major, XGC2_MODULE_ABI_MAJOR);
     EXPECT_STREQ(d->name, "ugv_unicycle_controller");
-    ASSERT_EQ(d->port_count, 13u);
+    ASSERT_EQ(d->port_count, 15u);
     struct Expect {
         const char* name;
         xgc2_port_direction direction;
@@ -253,6 +253,10 @@ TEST(ControllerModule, DescribesItsPortsForTheHost) {
          sizeof(xgc2_ugv_reset_session), 0, 0},
         {"reset_result", XGC2_PORT_OUT, XGC2_PORT_EVENT, "xgc2.ugv.reset_result.v1",
          sizeof(xgc2_ugv_reset_result), 4, 0},
+        {"wall_wake", XGC2_PORT_IN, XGC2_PORT_STATE, XGC2_UGV_SCHEMA_WALL_WAKE,
+         sizeof(xgc2_ugv_wall_wake), 0, 0},
+        {"wall_deadline", XGC2_PORT_OUT, XGC2_PORT_STATE, XGC2_UGV_SCHEMA_WALL_DEADLINE,
+         sizeof(xgc2_ugv_wall_deadline), 0, 0},
     };
     for (uint32_t i = 0; i < d->port_count; ++i) {
         const xgc2_port_desc& p = d->ports[i];
@@ -264,8 +268,8 @@ TEST(ControllerModule, DescribesItsPortsForTheHost) {
         EXPECT_EQ(p.align, 8u) << p.name;
         EXPECT_EQ(p.queue_depth, expected[i].depth) << p.name;
         EXPECT_EQ(p.flags, expected[i].flags) << p.name;
-        // The inputs come first: the index of an input is its index in the port table.
-        EXPECT_EQ(p.direction == XGC2_PORT_IN, i < 9u) << p.name;
+        // Existing indices stay fixed; the declared wall wake is appended after the original ports.
+        EXPECT_EQ(p.direction == XGC2_PORT_IN, (i < 9u || i == 13u)) << p.name;
     }
 }
 

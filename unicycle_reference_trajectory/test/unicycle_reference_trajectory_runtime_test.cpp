@@ -85,13 +85,13 @@ class Clock {
    public:
     explicit Clock(urt::ReferenceTrajectoryDriver& driver) : driver_(driver) {}
 
-    std::vector<uint32_t> run(double seconds) {
-        std::vector<uint32_t> ids;
+    std::vector<urt::ReferenceOutput> run(double seconds) {
+        std::vector<urt::ReferenceOutput> ids;
         const int steps = static_cast<int>(std::lround(seconds / kDt));
         for (int k = 0; k < steps; ++k) {
             now_ += kDt;
             for (const auto& event : driver_.update(now_).events) {
-                ids.push_back(event.id);
+                ids.push_back(event.kind);
             }
         }
         return ids;
@@ -105,7 +105,7 @@ class Clock {
     double now_{kT0};
 };
 
-int count(const std::vector<uint32_t>& ids, uint32_t id) {
+int count(const std::vector<urt::ReferenceOutput>& ids, urt::ReferenceOutput id) {
     return static_cast<int>(std::count(ids.begin(), ids.end(), id));
 }
 
@@ -115,8 +115,8 @@ TEST(ReferenceRuntime, StartsInSelfCheckAndBecomesReady) {
     Clock clock(driver);
     const auto ids = clock.run(0.5);
     EXPECT_EQ(driver.runtime().currentState(), ref::ReferenceStatus::STATE_READY);
-    EXPECT_GE(count(ids, urt::output_event_type::PUBLISH_STATUS), 4);
-    EXPECT_EQ(count(ids, urt::output_event_type::PUBLISH_ACTIVE_ANALYTIC), 0);
+    EXPECT_GE(count(ids, urt::ReferenceOutput::Status), 4);
+    EXPECT_EQ(count(ids, urt::ReferenceOutput::Analytic), 0);
     const auto status = driver.runtime().makeStatus(clock.now());
     EXPECT_EQ(status.state, ref::ReferenceStatus::STATE_READY);
     EXPECT_EQ(status.active_type, ref::ReferenceStatus::TYPE_NONE);
@@ -128,7 +128,7 @@ TEST(ReferenceRuntime, AnalyticRequestActivatesWithAdjustedStartTime) {
     Clock clock(driver);
     clock.run(0.1);
     const double now = clock.now();
-    ASSERT_EQ(driver.acceptAnalytic(circle(7U), now), Request::kPosted);
+    ASSERT_EQ(driver.acceptAnalytic(circle(7U), now), Request::kAccepted);
     const auto ids = clock.run(1.0);
     const auto& rt = driver.runtime();
     EXPECT_EQ(rt.currentState(), ref::ReferenceStatus::STATE_ACTIVE);
@@ -138,7 +138,7 @@ TEST(ReferenceRuntime, AnalyticRequestActivatesWithAdjustedStartTime) {
     // No start time requested: the earliest start is now plus the lead time.
     EXPECT_NEAR(rt.activeAnalyticMessage().start_time.toSec(), now + rt.config().min_lead_time,
                 1e-6);
-    EXPECT_GE(count(ids, urt::output_event_type::PUBLISH_ACTIVE_ANALYTIC), 9);
+    EXPECT_GE(count(ids, urt::ReferenceOutput::Analytic), 9);
     ASSERT_NE(rt.evaluator(), nullptr);
     trajectory::PlanarReference2 sample;
     ASSERT_TRUE(rt.evaluator()->evaluate(1.0, sample));
@@ -153,12 +153,12 @@ TEST(ReferenceRuntime, FutureStartTimeIsKeptAndNearStartTimeIsPushedByTheLeadTim
     Clock clock(driver);
     clock.run(0.1);
     const double now = clock.now();
-    ASSERT_EQ(driver.acceptAnalytic(circle(1U, now + 5.0), now), Request::kPosted);
+    ASSERT_EQ(driver.acceptAnalytic(circle(1U, now + 5.0), now), Request::kAccepted);
     clock.run(0.1);
     EXPECT_NEAR(driver.runtime().activeAnalyticMessage().start_time.toSec(), now + 5.0, 1e-6);
 
     const double later = clock.now();
-    ASSERT_EQ(driver.acceptAnalytic(circle(2U, later + 0.01), later), Request::kPosted);
+    ASSERT_EQ(driver.acceptAnalytic(circle(2U, later + 0.01), later), Request::kAccepted);
     clock.run(0.1);
     EXPECT_NEAR(driver.runtime().activeAnalyticMessage().start_time.toSec(),
                 later + driver.runtime().config().min_lead_time, 1e-6);
@@ -171,14 +171,14 @@ TEST(ReferenceRuntime, UnknownAnalyticTypeAndNonFiniteParametersUseTheDefaults) 
     auto odd = circle(3U);
     odd.analytic_type = 77U;
     odd.params = {1.0, 1.0, 1.0};
-    EXPECT_EQ(driver.acceptAnalytic(odd, clock.now()), Request::kPosted);
+    EXPECT_EQ(driver.acceptAnalytic(odd, clock.now()), Request::kAccepted);
     clock.run(0.1);
     ASSERT_NE(driver.runtime().evaluator(), nullptr);
     EXPECT_EQ(driver.runtime().activeType(), trajectory::TrajectoryModelType::kAnalytic);
 
     auto nonfinite = circle(4U);
     nonfinite.params = {std::nan(""), 0.8, std::numeric_limits<double>::infinity()};
-    EXPECT_EQ(driver.acceptAnalytic(nonfinite, clock.now()), Request::kPosted);
+    EXPECT_EQ(driver.acceptAnalytic(nonfinite, clock.now()), Request::kAccepted);
 }
 
 TEST(ReferenceRuntime, SampledRequestsAreValidated) {
@@ -189,11 +189,11 @@ TEST(ReferenceRuntime, SampledRequestsAreValidated) {
     EXPECT_EQ(driver.acceptSampled(arc(2U, 60, false), clock.now()), Request::kRejected);
     EXPECT_NE(driver.runtime().flags() & trajectory::kFlagInvalidInput, 0U);
     EXPECT_EQ(driver.runtime().currentState(), ref::ReferenceStatus::STATE_READY);
-    ASSERT_EQ(driver.acceptSampled(arc(3U, 100), clock.now()), Request::kPosted);
+    ASSERT_EQ(driver.acceptSampled(arc(3U, 100), clock.now()), Request::kAccepted);
     const auto ids = clock.run(0.5);
     EXPECT_EQ(driver.runtime().currentState(), ref::ReferenceStatus::STATE_ACTIVE);
     EXPECT_EQ(driver.runtime().activeType(), trajectory::TrajectoryModelType::kSampled);
-    EXPECT_GE(count(ids, urt::output_event_type::PUBLISH_ACTIVE_SAMPLED), 4);
+    EXPECT_GE(count(ids, urt::ReferenceOutput::Sampled), 4);
     EXPECT_EQ(driver.runtime().activeSampledMessage().points.size(), 100U);
     EXPECT_EQ(driver.runtime().flags(), ref::SampledReference::FLAG_EXPLICIT_PLANAR_KINEMATICS);
 }
@@ -204,12 +204,12 @@ TEST(ReferenceRuntime, WaypointRequestIsPlannedIntoAPolynomial) {
     clock.run(0.1);
     EXPECT_EQ(driver.acceptWaypoint(line(1), clock.now()), Request::kRejected);
     EXPECT_EQ(driver.acceptWaypoint(line(3, {2.0}), clock.now()), Request::kRejected);
-    ASSERT_EQ(driver.acceptWaypoint(line(3, {2.0, 2.0}), clock.now()), Request::kPosted);
+    ASSERT_EQ(driver.acceptWaypoint(line(3, {2.0, 2.0}), clock.now()), Request::kAccepted);
     const auto ids = clock.run(0.5);
     const auto& rt = driver.runtime();
     EXPECT_EQ(rt.currentState(), ref::ReferenceStatus::STATE_ACTIVE);
     EXPECT_EQ(rt.activeType(), trajectory::TrajectoryModelType::kPolynomial);
-    EXPECT_GE(count(ids, urt::output_event_type::PUBLISH_ACTIVE_POLYNOMIAL), 4);
+    EXPECT_GE(count(ids, urt::ReferenceOutput::Polynomial), 4);
     const auto& polynomial = rt.activePolynomialMessage();
     EXPECT_EQ(polynomial.order, 7U);
     EXPECT_EQ(polynomial.segment_durations.size(), 2U);
@@ -227,7 +227,7 @@ TEST(ReferenceRuntime, ActiveReferenceExpiresBackToReady) {
     urt::ReferenceTrajectoryDriver driver;
     Clock clock(driver);
     clock.run(0.1);
-    ASSERT_EQ(driver.acceptAnalytic(circle(1U, 0.0, 1.0), clock.now()), Request::kPosted);
+    ASSERT_EQ(driver.acceptAnalytic(circle(1U, 0.0, 1.0), clock.now()), Request::kAccepted);
     clock.run(1.0);
     EXPECT_EQ(driver.runtime().currentState(), ref::ReferenceStatus::STATE_ACTIVE);
     // start + duration + trajectory_timeout = 0.2 + 1.0 + 0.5 s after the request
@@ -239,10 +239,10 @@ TEST(ReferenceRuntime, ResetRestartsTheRuntime) {
     urt::ReferenceTrajectoryDriver driver;
     Clock clock(driver);
     clock.run(0.1);
-    ASSERT_EQ(driver.acceptAnalytic(circle(1U), clock.now()), Request::kPosted);
+    ASSERT_EQ(driver.acceptAnalytic(circle(1U), clock.now()), Request::kAccepted);
     clock.run(0.5);
     ASSERT_EQ(driver.runtime().currentState(), ref::ReferenceStatus::STATE_ACTIVE);
-    EXPECT_TRUE(driver.reset(clock.now()).ok());
+    driver.reset(clock.now());
     EXPECT_EQ(driver.runtime().currentState(), ref::ReferenceStatus::STATE_SELF_CHECK);
     EXPECT_EQ(driver.runtime().evaluator(), nullptr);
     clock.run(0.1);
@@ -280,7 +280,7 @@ TEST(ReferenceDriver, DefaultAnalyticIsRequestedOnceWhenReadyAndAgainAfterReset)
     EXPECT_EQ(driver.runtime().activeRevision(), 4U);
 
     // Requested once: a replacement stays in force.
-    ASSERT_EQ(driver.acceptAnalytic(circle(2U), clock.now()), Request::kPosted);
+    ASSERT_EQ(driver.acceptAnalytic(circle(2U), clock.now()), Request::kAccepted);
     clock.run(0.5);
     EXPECT_EQ(driver.runtime().activeTrajectoryId(), 2U);
 
@@ -305,7 +305,7 @@ TEST(ReferenceDriver, UpdateReportsTheDefaultRequestOnlyWhenItIsIssued) {
     for (int k = 0; k < 100; ++k) {
         const auto result = driver.update(kT0 + kDt * (k + 1));
         if (result.default_analytic) {
-            EXPECT_EQ(*result.default_analytic, Request::kPosted);
+            EXPECT_EQ(*result.default_analytic, Request::kAccepted);
             ++issued;
         }
     }
@@ -381,6 +381,23 @@ TEST(ConfigLoader, MissingKeysKeepTheDefaultsAndPresentKeysOverrideThem) {
     EXPECT_EQ(defaults.trajectory_id, 1U);
     EXPECT_DOUBLE_EQ(defaults.radius, 5.5);
     EXPECT_DOUBLE_EQ(defaults.start_delay, 0.5);
+}
+
+TEST(ReferenceReceipt, StartNowUsesReceiptWhileExplicitFutureStartAndFirstRequestSurvive) {
+    urt::ReferenceTrajectoryDriver driver;
+    driver.update(10.0);
+    ASSERT_EQ(driver.acceptAnalytic(circle(1), 20.0), Request::kAccepted);
+    driver.update(20.0);
+    EXPECT_DOUBLE_EQ(driver.runtime().activeAnalyticMessage().start_time.toSec(), 20.2);
+    ASSERT_EQ(driver.acceptAnalytic(circle(2, 30.0), 20.1), Request::kAccepted);
+    driver.update(20.1);
+    EXPECT_DOUBLE_EQ(driver.runtime().activeAnalyticMessage().start_time.toSec(), 30.0);
+    urt::ReferenceTrajectoryDriver first;
+    ASSERT_EQ(first.acceptAnalytic(circle(3), 20.0), Request::kAccepted);
+    first.update(20.0); first.update(20.0); first.update(20.01);
+    EXPECT_EQ(first.runtime().currentState(), ref::ReferenceStatus::STATE_ACTIVE);
+    EXPECT_EQ(first.runtime().activeTrajectoryId(), 3U);
+    EXPECT_DOUBLE_EQ(first.runtime().activeAnalyticMessage().start_time.toSec(), 20.2);
 }
 
 }  // namespace

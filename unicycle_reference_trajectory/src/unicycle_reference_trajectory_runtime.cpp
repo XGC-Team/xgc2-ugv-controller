@@ -1,27 +1,14 @@
 #include "unicycle_reference_trajectory/unicycle_reference_trajectory_runtime.h"
-
 #include <algorithm>
 #include <cmath>
-#include <stdexcept>
-#include <string>
+#include <limits>
+#include <type_traits>
 #include <utility>
-
-#include "unicycle_reference_trajectory/state_machine/active_state.h"
-#include "unicycle_reference_trajectory/state_machine/planning_state.h"
-#include "unicycle_reference_trajectory/state_machine/ready_state.h"
-#include "unicycle_reference_trajectory/state_machine/self_check_state.h"
 
 namespace unicycle_reference_trajectory {
 namespace {
-
-namespace sm = ::state_machine;
-
-void requireOk(const sm::Status& status, const char* operation) {
-    if (!status.ok()) {
-        throw std::runtime_error(std::string(operation) + ": " + status.message);
-    }
-}
-
+namespace adt = ::state_machine::adt;
+constexpr double never = std::numeric_limits<double>::infinity();
 double finiteOr(double value, double fallback) {
     return std::isfinite(value) ? value : fallback;
 }
@@ -63,9 +50,7 @@ void appendCoefficients(const std::vector<double>& input, std::vector<double>& o
 
 }  // namespace
 
-ReferenceTrajectoryRuntime::ReferenceTrajectoryRuntime() {
-    reset();
-}
+ReferenceTrajectoryRuntime::ReferenceTrajectoryRuntime() = default;
 
 void ReferenceTrajectoryRuntime::setConfig(const ReferenceTrajectoryConfig& config) {
     config_ = config;
@@ -88,140 +73,85 @@ void ReferenceTrajectoryRuntime::setConfig(const ReferenceTrajectoryConfig& conf
 }
 
 void ReferenceTrajectoryRuntime::reset() {
-    state_ = reference::ReferenceStatus::STATE_SELF_CHECK;
+    machine_.apply(adt::Enter{SelfCheck{}}, 0.0);
     current_time_sec_ = 0.0;
     flags_ = 0U;
-    pending_kind_ = PendingKind::kNone;
-    active_type_ = trajectory::TrajectoryModelType::kNone;
-    active_trajectory_id_ = 0U;
-    active_revision_ = 0U;
-    active_start_sec_ = 0.0;
-    active_duration_ = 0.0;
-    active_evaluator_.reset();
-    active_analytic_ = reference::AnalyticReference{};
-    active_sampled_ = reference::SampledReference{};
-    active_polynomial_ = reference::ActivePolynomialReference{};
-    setupMachine();
-}
-
-sm::Status ReferenceTrajectoryRuntime::postEvent(sm::Event event) {
-    event.category = sm::EventCategory::kInput;
-    return machine_->postEvent(std::move(event));
+    request_.emplace<std::monostate>();
+    retained_.emplace<std::monostate>();
+    outputs_.clear();
 }
 
 void ReferenceTrajectoryRuntime::update(double now_sec) {
     current_time_sec_ = now_sec;
-    const auto transition_result = machine_->update({64, 64, false});
-    const auto tick_result =
-        transition_result.status.ok() ? machine_->update({64, 64, true}) : transition_result;
-    if (!tick_result.status.ok()) {
-        flags_ |= trajectory::kFlagInvalidInput;
-        state_ = reference::ReferenceStatus::STATE_SELF_CHECK;
+    outputs_.clear();
+    machine_.apply(machine_.dispatch(Advance{}, *this), now_sec);
+    // Planning is a synchronous, bounded trajectory calculation on this owner.
+    // Its result is consumed here; there is no queued PLAN event or second tick.
+    if (std::holds_alternative<Planning>(machine_.state())) {
+        machine_.apply(machine_.dispatch(Advance{}, *this), now_sec);
     }
 }
 
-bool ReferenceTrajectoryRuntime::acceptAnalytic(const reference::AnalyticReference& msg) {
+bool ReferenceTrajectoryRuntime::acceptAnalytic(const reference::AnalyticReference& msg, double receipt_time) {
+    current_time_sec_ = receipt_time;
     uint32_t flags = 0U;
-    if (!buildAnalyticEvaluator(msg, flags)) {
-        flags_ |= flags;
-        return false;
-    }
-    pending_analytic_ = msg;
-    pending_analytic_.start_time =
-        Time(adjustedStartTime(msg.start_time.toSec(), current_time_sec_, config_.min_lead_time));
-    pending_kind_ = PendingKind::kAnalytic;
+    auto evaluator = buildAnalyticEvaluator(msg, flags);
+    if (!evaluator) { flags_ |= flags; return false; }
+    Analytic value{msg, std::move(evaluator), flags};
+    value.message.start_time = Time(adjustedStartTime(msg.start_time.toSec(), current_time_sec_,
+                                                    config_.min_lead_time));
+    request_.emplace<Analytic>(std::move(value));
     return true;
 }
 
-bool ReferenceTrajectoryRuntime::acceptSampled(const reference::SampledReference& msg) {
-    trajectory::SampledEvaluator2 evaluator;
+bool ReferenceTrajectoryRuntime::acceptSampled(const reference::SampledReference& msg, double receipt_time) {
+    current_time_sec_ = receipt_time;
     uint32_t flags = 0U;
-    if (!buildSampledEvaluator(msg, evaluator, flags)) {
-        flags_ |= flags;
-        return false;
-    }
-    pending_sampled_ = msg;
-    pending_sampled_.start_time =
-        Time(adjustedStartTime(msg.start_time.toSec(), current_time_sec_, config_.min_lead_time));
-    pending_kind_ = PendingKind::kSampled;
+    auto evaluator = std::make_unique<trajectory::SampledEvaluator2>();
+    if (!buildSampledEvaluator(msg, *evaluator, flags)) { flags_ |= flags; return false; }
+    Sampled value{msg, std::move(evaluator), flags};
+    value.message.start_time = Time(adjustedStartTime(msg.start_time.toSec(), current_time_sec_,
+                                                    config_.min_lead_time));
+    request_.emplace<Sampled>(std::move(value));
     return true;
 }
 
-bool ReferenceTrajectoryRuntime::acceptWaypoint(const reference::WaypointReferenceRequest& msg) {
+bool ReferenceTrajectoryRuntime::acceptWaypoint(const reference::WaypointReferenceRequest& msg, double receipt_time) {
+    current_time_sec_ = receipt_time;
     trajectory::WaypointProblem2 problem;
     uint32_t flags = 0U;
-    if (!buildWaypointProblem(msg, problem, flags)) {
-        flags_ |= flags;
-        return false;
-    }
-    pending_waypoint_ = msg;
-    pending_kind_ = PendingKind::kWaypoint;
+    if (!buildWaypointProblem(msg, problem, flags)) { flags_ |= flags; return false; }
+    request_.emplace<Waypoint>(Waypoint{msg, std::move(problem), flags});
     return true;
 }
 
-bool ReferenceTrajectoryRuntime::activatePending() {
-    if (pending_kind_ == PendingKind::kNone) {
-        return active_evaluator_ != nullptr;
+bool ReferenceTrajectoryRuntime::activateRequest() {
+    if (auto* value = std::get_if<Analytic>(&request_)) {
+        flags_ = value->flags;
+        retained_.emplace<Analytic>(std::move(*value));
+        request_.emplace<std::monostate>();
+    } else if (auto* value = std::get_if<Sampled>(&request_)) {
+        flags_ = value->flags;
+        retained_.emplace<Sampled>(std::move(*value));
+        request_.emplace<std::monostate>();
     }
-    if (pending_kind_ == PendingKind::kAnalytic) {
-        uint32_t flags = 0U;
-        auto evaluator = buildAnalyticEvaluator(pending_analytic_, flags);
-        if (!evaluator) {
-            flags_ |= flags;
-            pending_kind_ = PendingKind::kNone;
-            return false;
-        }
-        setActiveAnalytic(pending_analytic_, std::move(evaluator), flags);
-        pending_kind_ = PendingKind::kNone;
-        return true;
-    }
-    if (pending_kind_ == PendingKind::kSampled) {
-        auto evaluator = std::make_unique<trajectory::SampledEvaluator2>();
-        uint32_t flags = 0U;
-        if (!buildSampledEvaluator(pending_sampled_, *evaluator, flags)) {
-            flags_ |= flags;
-            pending_kind_ = PendingKind::kNone;
-            return false;
-        }
-        setActiveSampled(pending_sampled_, std::move(evaluator), flags);
-        pending_kind_ = PendingKind::kNone;
-        return true;
-    }
-    return false;
+    return evaluator() != nullptr;
 }
 
-bool ReferenceTrajectoryRuntime::planPendingWaypoint() {
-    if (pending_kind_ != PendingKind::kWaypoint) {
-        flags_ |= trajectory::kFlagInvalidInput;
-        return false;
-    }
-    trajectory::WaypointProblem2 problem;
-    uint32_t flags = 0U;
-    if (!buildWaypointProblem(pending_waypoint_, problem, flags)) {
-        flags_ |= flags;
-        pending_kind_ = PendingKind::kNone;
-        return false;
-    }
-
+bool ReferenceTrajectoryRuntime::planWaypoint(Waypoint& request) {
     auto evaluator = std::make_unique<trajectory::PiecewisePolynomialEvaluator2>();
     trajectory::SepticWaypointInterpolator2 solver;
-    if (!solver.solve(problem, *evaluator, &flags)) {
-        flags_ |= flags;
-        pending_kind_ = PendingKind::kNone;
-        return false;
-    }
-
+    uint32_t flags = request.flags;
+    if (!solver.solve(request.problem, *evaluator, &flags)) { flags_ |= flags; return false; }
     reference::ActivePolynomialReference msg;
-    msg.header = pending_waypoint_.header;
+    msg.header = request.message.header;
     msg.header.stamp = Time(current_time_sec_);
-    msg.trajectory_id = pending_waypoint_.trajectory_id;
-    msg.revision = pending_waypoint_.revision;
-    if (msg.revision == 0U) {
-        msg.revision = active_revision_ + 1U;
-    }
-    msg.flags = flags | pending_waypoint_.flags;
-    msg.start_time = Time(adjustedStartTime(pending_waypoint_.header.stamp.toSec(),
-                                            current_time_sec_, config_.min_lead_time));
+    msg.trajectory_id = request.message.trajectory_id;
+    msg.revision = request.message.revision;
+    if (msg.revision == 0U) { msg.revision = activeRevision() + 1U; }
+    msg.flags = flags | request.message.flags;
+    msg.start_time = Time(adjustedStartTime(request.message.header.stamp.toSec(),
+                                          current_time_sec_, config_.min_lead_time));
     msg.duration = evaluator->duration();
     msg.order = evaluator->order();
     for (const auto& segment : evaluator->segments()) {
@@ -230,132 +160,159 @@ bool ReferenceTrajectoryRuntime::planPendingWaypoint() {
         appendCoefficients(segment.y, msg.coeff_y);
         appendCoefficients(segment.yaw, msg.coeff_yaw);
     }
-    setActivePolynomial(std::move(msg), std::move(evaluator), flags);
-    pending_kind_ = PendingKind::kNone;
+    flags_ = flags;
+    retained_.emplace<Polynomial>(Polynomial{std::move(msg), std::move(evaluator), flags});
     return true;
 }
 
-bool ReferenceTrajectoryRuntime::activeExpired(double now_sec) const {
-    if (!active_evaluator_) {
-        return true;
+void ReferenceTrajectoryRuntime::publish(PeriodicGate& gate, double rate, ReferenceOutput kind) {
+    if (gate.due(current_time_sec_, 1.0 / rate)) {
+        outputs_.push_back({kind, current_time_sec_});
     }
-    if (active_duration_ <= 0.0) {
-        return false;
-    }
-    return now_sec > active_start_sec_ + active_duration_ + config_.trajectory_timeout;
+}
+void ReferenceTrajectoryRuntime::publishActive(Active& state) {
+    publish(state.status, config_.status_rate_hz, ReferenceOutput::Status);
+    const auto kind = std::visit([](const auto& value) {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, Analytic>) return ReferenceOutput::Analytic;
+        else if constexpr (std::is_same_v<T, Sampled>) return ReferenceOutput::Sampled;
+        else return ReferenceOutput::Polynomial;
+    }, retained_);
+    publish(state.publication, config_.active_publish_rate_hz, kind);
 }
 
-void ReferenceTrajectoryRuntime::enterState(uint8_t state) {
-    state_ = state;
+ReferenceTrajectoryRuntime::Spec::Change ReferenceTrajectoryRuntime::Spec::handle(
+    SelfCheck&, Advance, ReferenceTrajectoryRuntime& rt) {
+    Ready ready;
+    rt.publish(ready.status, rt.config_.status_rate_hz, ReferenceOutput::Status);
+    return adt::Enter{std::move(ready)};
+}
+ReferenceTrajectoryRuntime::Spec::Change ReferenceTrajectoryRuntime::Spec::handle(
+    Ready& state, Advance, ReferenceTrajectoryRuntime& rt) {
+    if (auto* request = std::get_if<Waypoint>(&rt.request_)) {
+        Planning planning{std::move(*request)};
+        rt.request_.emplace<std::monostate>();
+        return adt::Enter{std::move(planning)};
+    }
+    if (!std::holds_alternative<std::monostate>(rt.request_)) {
+        rt.activateRequest();
+        Active active;
+        // Original entry establishes phase; its transient publication was not returned.
+        active.status.due(rt.current_time_sec_, 1.0 / rt.config_.status_rate_hz);
+        active.publication.due(rt.current_time_sec_, 1.0 / rt.config_.active_publish_rate_hz);
+        return adt::Enter{std::move(active)};
+    }
+    rt.publish(state.status, rt.config_.status_rate_hz, ReferenceOutput::Status);
+    return adt::Stay{};
+}
+ReferenceTrajectoryRuntime::Spec::Change ReferenceTrajectoryRuntime::Spec::handle(
+    Planning& state, Advance, ReferenceTrajectoryRuntime& rt) {
+    if (!rt.planWaypoint(state.request)) return adt::Enter{SelfCheck{}};
+    Active active;
+    rt.publishActive(active);
+    return adt::Enter{std::move(active)};
+}
+ReferenceTrajectoryRuntime::Spec::Change ReferenceTrajectoryRuntime::Spec::handle(
+    Active& state, Advance, ReferenceTrajectoryRuntime& rt) {
+    if (auto* request = std::get_if<Waypoint>(&rt.request_)) {
+        Planning planning{std::move(*request)};
+        rt.request_.emplace<std::monostate>();
+        return adt::Enter{std::move(planning)};
+    }
+    if (!rt.activateRequest()) return adt::Enter{SelfCheck{}};
+    if (rt.activeExpired(rt.current_time_sec_)) {
+        Ready ready;
+        rt.publish(ready.status, rt.config_.status_rate_hz, ReferenceOutput::Status);
+        return adt::Enter{std::move(ready)};
+    }
+    rt.publishActive(state);
+    return adt::Stay{};
 }
 
+uint8_t ReferenceTrajectoryRuntime::currentState() const {
+    return std::visit([](const auto& state) -> uint8_t {
+        using T = std::decay_t<decltype(state)>;
+        if constexpr (std::is_same_v<T, SelfCheck>) return reference::ReferenceStatus::STATE_SELF_CHECK;
+        else if constexpr (std::is_same_v<T, Ready>) return reference::ReferenceStatus::STATE_READY;
+        else if constexpr (std::is_same_v<T, Planning>) return reference::ReferenceStatus::STATE_PLANNING;
+        else return reference::ReferenceStatus::STATE_ACTIVE;
+    }, machine_.state());
+}
+trajectory::TrajectoryModelType ReferenceTrajectoryRuntime::activeType() const {
+    return std::visit([](const auto& value) {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, Analytic>) return trajectory::TrajectoryModelType::kAnalytic;
+        else if constexpr (std::is_same_v<T, Sampled>) return trajectory::TrajectoryModelType::kSampled;
+        else if constexpr (std::is_same_v<T, Polynomial>) return trajectory::TrajectoryModelType::kPolynomial;
+        else return trajectory::TrajectoryModelType::kNone;
+    }, retained_);
+}
+uint32_t ReferenceTrajectoryRuntime::activeTrajectoryId() const {
+    return std::visit([](const auto& value) -> uint32_t {
+        if constexpr (std::is_same_v<std::decay_t<decltype(value)>, std::monostate>) return 0U;
+        else return value.message.trajectory_id;
+    }, retained_);
+}
+uint32_t ReferenceTrajectoryRuntime::activeRevision() const {
+    return std::visit([](const auto& value) -> uint32_t {
+        if constexpr (std::is_same_v<std::decay_t<decltype(value)>, std::monostate>) return 0U;
+        else return value.message.revision;
+    }, retained_);
+}
+const trajectory::TrajectoryEvaluator2* ReferenceTrajectoryRuntime::evaluator() const {
+    return std::visit([](const auto& value) -> const trajectory::TrajectoryEvaluator2* {
+        if constexpr (std::is_same_v<std::decay_t<decltype(value)>, std::monostate>) return nullptr;
+        else return value.evaluator.get();
+    }, retained_);
+}
+const reference::AnalyticReference& ReferenceTrajectoryRuntime::activeAnalyticMessage() const {
+    return std::get<Analytic>(retained_).message;
+}
+const reference::SampledReference& ReferenceTrajectoryRuntime::activeSampledMessage() const {
+    return std::get<Sampled>(retained_).message;
+}
+const reference::ActivePolynomialReference& ReferenceTrajectoryRuntime::activePolynomialMessage() const {
+    return std::get<Polynomial>(retained_).message;
+}
+double ReferenceTrajectoryRuntime::activeEnd() const {
+    return std::visit([this](const auto& value) -> double {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, std::monostate>) return -never;
+        else {
+            double duration;
+            if constexpr (std::is_same_v<T, Sampled>) duration = value.evaluator->duration();
+            else duration = value.message.duration;
+            return duration <= 0.0 ? never : value.message.start_time.toSec() + duration + config_.trajectory_timeout;
+        }
+    }, retained_);
+}
+bool ReferenceTrajectoryRuntime::activeExpired(double now) const { return now > activeEnd(); }
+double ReferenceTrajectoryRuntime::nextDeadline() const {
+    if (!std::holds_alternative<std::monostate>(request_)) return current_time_sec_;
+    return std::visit([this](const auto& state) -> double {
+        using T = std::decay_t<decltype(state)>;
+        if constexpr (std::is_same_v<T, Ready>) return state.status.next(current_time_sec_, 1.0 / config_.status_rate_hz);
+        else if constexpr (std::is_same_v<T, Active>) return std::min({
+            state.status.next(current_time_sec_, 1.0 / config_.status_rate_hz),
+            state.publication.next(current_time_sec_, 1.0 / config_.active_publish_rate_hz),
+            std::nextafter(activeEnd(), never)});
+        else return current_time_sec_;
+    }, machine_.state());
+}
 reference::ReferenceStatus ReferenceTrajectoryRuntime::makeStatus(double stamp_sec) const {
     reference::ReferenceStatus status;
     status.header.stamp = Time(stamp_sec);
-    status.state = state_;
+    status.state = currentState();
     status.flags = flags_;
-    status.active_trajectory_id = active_trajectory_id_;
-    status.active_revision = active_revision_;
-    status.active_type = reference::ReferenceStatus::TYPE_NONE;
-    if (active_type_ == trajectory::TrajectoryModelType::kAnalytic) {
-        status.active_type = reference::ReferenceStatus::TYPE_ANALYTIC;
-    } else if (active_type_ == trajectory::TrajectoryModelType::kPolynomial) {
-        status.active_type = reference::ReferenceStatus::TYPE_POLYNOMIAL;
-    } else if (active_type_ == trajectory::TrajectoryModelType::kSampled) {
-        status.active_type = reference::ReferenceStatus::TYPE_SAMPLED;
+    status.active_trajectory_id = activeTrajectoryId();
+    status.active_revision = activeRevision();
+    switch (activeType()) {
+        case trajectory::TrajectoryModelType::kAnalytic: status.active_type = reference::ReferenceStatus::TYPE_ANALYTIC; break;
+        case trajectory::TrajectoryModelType::kPolynomial: status.active_type = reference::ReferenceStatus::TYPE_POLYNOMIAL; break;
+        case trajectory::TrajectoryModelType::kSampled: status.active_type = reference::ReferenceStatus::TYPE_SAMPLED; break;
+        default: status.active_type = reference::ReferenceStatus::TYPE_NONE; break;
     }
     return status;
-}
-
-void ReferenceTrajectoryRuntime::setupMachine() {
-    auto builder = sm::StateMachine::builder("ReferenceTrajectoryStateMachine");
-    builder.region(region_type::REFERENCE)
-        .name("reference")
-        .order(0)
-        .initial(state_type::SelfCheck)
-        .state(state_type::SelfCheck)
-        .name("SelfCheck")
-        .impl(std::make_unique<SelfCheckState>(*this))
-        .state(state_type::Ready)
-        .name("Ready")
-        .impl(std::make_unique<ReadyState>(*this))
-        .state(state_type::Planning)
-        .name("Planning")
-        .impl(std::make_unique<PlanningState>(*this))
-        .state(state_type::Active)
-        .name("Active")
-        .impl(std::make_unique<ActiveState>(*this))
-        .endRegion();
-
-    builder.transition()
-        .from(state_type::SelfCheck)
-        .to(state_type::Ready)
-        .on(event_type::CONFIG_READY)
-        .priority(transition_priority::AUTOMATIC);
-    builder.transition()
-        .from(state_type::Ready)
-        .to(state_type::Active)
-        .on(event_type::ANALYTIC_RECEIVED)
-        .priority(transition_priority::REQUEST);
-    builder.transition()
-        .from(state_type::Ready)
-        .to(state_type::Active)
-        .on(event_type::SAMPLED_RECEIVED)
-        .priority(transition_priority::REQUEST);
-    builder.transition()
-        .from(state_type::Ready)
-        .to(state_type::Planning)
-        .on(event_type::WAYPOINT_RECEIVED)
-        .priority(transition_priority::REQUEST);
-    builder.transition()
-        .from(state_type::Active)
-        .to(state_type::Active)
-        .on(event_type::ANALYTIC_RECEIVED)
-        .priority(transition_priority::REQUEST);
-    builder.transition()
-        .from(state_type::Active)
-        .to(state_type::Active)
-        .on(event_type::SAMPLED_RECEIVED)
-        .priority(transition_priority::REQUEST);
-    builder.transition()
-        .from(state_type::Active)
-        .to(state_type::Planning)
-        .on(event_type::WAYPOINT_RECEIVED)
-        .priority(transition_priority::REQUEST);
-    builder.transition()
-        .from(state_type::Planning)
-        .to(state_type::Active)
-        .on(event_type::PLAN_SUCCEEDED)
-        .priority(transition_priority::AUTOMATIC);
-    builder.transition()
-        .from(state_type::Planning)
-        .to(state_type::SelfCheck)
-        .on(event_type::PLAN_FAILED)
-        .priority(transition_priority::AUTOMATIC);
-    builder.transition()
-        .from(state_type::Active)
-        .to(state_type::SelfCheck)
-        .on(event_type::PLAN_FAILED)
-        .priority(transition_priority::AUTOMATIC);
-    builder.transition()
-        .from(state_type::Active)
-        .to(state_type::Ready)
-        .on(event_type::TRAJECTORY_EXPIRED)
-        .priority(transition_priority::AUTOMATIC);
-    builder.transition()
-        .from(state_type::Ready)
-        .to(state_type::SelfCheck)
-        .on(event_type::RESET_REQUESTED)
-        .priority(transition_priority::REQUEST);
-    builder.transition()
-        .from(state_type::Active)
-        .to(state_type::SelfCheck)
-        .on(event_type::RESET_REQUESTED)
-        .priority(transition_priority::REQUEST);
-    auto machine_result = builder.build();
-    requireOk(machine_result.status, "build reference trajectory state machine");
-    machine_ = std::move(machine_result.value);
-    requireOk(machine_->start(), "start reference trajectory state machine");
 }
 
 std::unique_ptr<trajectory::TrajectoryEvaluator2>
@@ -500,43 +457,5 @@ bool ReferenceTrajectoryRuntime::buildWaypointProblem(
     return true;
 }
 
-void ReferenceTrajectoryRuntime::setActiveAnalytic(
-    const reference::AnalyticReference& msg,
-    std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator, uint32_t flags) {
-    active_type_ = trajectory::TrajectoryModelType::kAnalytic;
-    active_trajectory_id_ = msg.trajectory_id;
-    active_revision_ = msg.revision;
-    active_start_sec_ = msg.start_time.toSec();
-    active_duration_ = msg.duration;
-    active_evaluator_ = std::move(evaluator);
-    active_analytic_ = msg;
-    flags_ = flags;
-}
-
-void ReferenceTrajectoryRuntime::setActiveSampled(
-    const reference::SampledReference& msg,
-    std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator, uint32_t flags) {
-    active_type_ = trajectory::TrajectoryModelType::kSampled;
-    active_trajectory_id_ = msg.trajectory_id;
-    active_revision_ = msg.revision;
-    active_start_sec_ = msg.start_time.toSec();
-    active_duration_ = evaluator ? evaluator->duration() : 0.0;
-    active_evaluator_ = std::move(evaluator);
-    active_sampled_ = msg;
-    flags_ = flags;
-}
-
-void ReferenceTrajectoryRuntime::setActivePolynomial(
-    reference::ActivePolynomialReference msg,
-    std::unique_ptr<trajectory::TrajectoryEvaluator2> evaluator, uint32_t flags) {
-    active_type_ = trajectory::TrajectoryModelType::kPolynomial;
-    active_trajectory_id_ = msg.trajectory_id;
-    active_revision_ = msg.revision;
-    active_start_sec_ = msg.start_time.toSec();
-    active_duration_ = msg.duration;
-    active_evaluator_ = std::move(evaluator);
-    active_polynomial_ = std::move(msg);
-    flags_ = flags;
-}
 
 }  // namespace unicycle_reference_trajectory

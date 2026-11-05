@@ -98,6 +98,8 @@ class TestHost {
         api_.now_ns = &TestHost::nowNs;
         api_.wake = &TestHost::wakeHost;
         api_.set_period_ns = &TestHost::setPeriod;
+        api_.wake_at_ns = &TestHost::setDeadline;
+        api_.phase_t0_ns = &TestHost::phaseT0;
         api_.log = &TestHost::logMessage;
         api_.report = &TestHost::reportHealth;
         uint32_t input_index = 0;
@@ -331,6 +333,8 @@ class TestHost {
         std::unique_lock<std::mutex> lock(wake_mutex_);
         return wake_cv_.wait_for(lock, timeout, [&] { return wakes_.load() > seen; });
     }
+    int64_t deadlineNs() const { return deadline_ns_.load(); }
+    uint64_t deadlineArms() const { return deadline_arms_.load(); }
     int64_t periodNs() const {
         return period_ns_.load();
     }
@@ -482,6 +486,8 @@ class TestHost {
         }
         h.wake_cv_.notify_all();
     }
+    static int64_t phaseT0(void*) { return 0; }
+    static void setDeadline(void* ctx, int64_t at) { self(ctx).deadline_ns_.store(at); ++self(ctx).deadline_arms_; }
     static void setPeriod(void* ctx, int64_t period_ns) {
         self(ctx).period_ns_.store(period_ns);
     }
@@ -504,6 +510,8 @@ class TestHost {
     std::atomic<int64_t> now_ns_{0};
     std::atomic<bool> live_{false};
     std::atomic<int64_t> period_ns_{0};
+    std::atomic<int64_t> deadline_ns_{-1};
+    std::atomic<uint64_t> deadline_arms_{0};
     std::atomic<uint64_t> wakes_{0};
     uint64_t step_index_{0};
     bool in_step_{false};

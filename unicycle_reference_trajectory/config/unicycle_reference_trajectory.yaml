@@ -20,7 +20,6 @@ default_analytic:
   revision: 1
   start_delay: 0.5
   trajectory_id: 1
-main_frequency: 100.0
 max_acceleration: 0.0
 max_velocity: 0.0
 max_yaw_rate: 0.0

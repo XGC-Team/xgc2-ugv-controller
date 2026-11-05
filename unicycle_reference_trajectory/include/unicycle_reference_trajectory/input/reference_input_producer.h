@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ros/ros.h>
+#include <functional>
 #include <std_msgs/Empty.h>
 #include <unicycle_reference_trajectory_msgs/AnalyticReference.h>
 #include <unicycle_reference_trajectory_msgs/SampledReference.h>
@@ -19,7 +20,7 @@ class ReferenceInputProducer {
     ReferenceInputProducer(ros::NodeHandle& nh, ReferenceTrajectoryDriver& driver,
                            const std::string& analytic_topic, const std::string& waypoint_topic,
                            const std::string& sampled_topic, const std::string& reset_topic,
-                           uint32_t queue_size);
+                           uint32_t queue_size, std::function<double()> clock);
 
    private:
     void analyticCallback(
@@ -31,6 +32,7 @@ class ReferenceInputProducer {
     void report(ReferenceTrajectoryDriver::Request result, const char* what, const char* source);
 
     ReferenceTrajectoryDriver& driver_;
+    std::function<double()> clock_;
     ros::Subscriber analytic_sub_;
     ros::Subscriber waypoint_sub_;
     ros::Subscriber sampled_sub_;

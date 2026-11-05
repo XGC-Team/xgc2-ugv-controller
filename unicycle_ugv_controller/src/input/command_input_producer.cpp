@@ -7,9 +7,9 @@
 #include "unicycle_ugv_controller/common/types.h"
 
 namespace unicycle_ugv_controller {
-CommandInputProducer::CommandInputProducer(ros::NodeHandle& nh, EventSink event_sink,
+CommandInputProducer::CommandInputProducer(ros::NodeHandle& nh, CommandSink command_sink,
                                            uint32_t queue_size)
-    : event_sink_(std::move(event_sink)) {
+    : command_sink_(std::move(command_sink)) {
     namespaced_command_sub_ =
         nh.subscribe("command", queue_size, &CommandInputProducer::namespacedCommandCallback, this);
     command_sub_ =
@@ -30,42 +30,16 @@ void CommandInputProducer::handleCommand(const std_msgs::String::ConstPtr& msg,
         ROS_WARN("[UgvCommandInputProducer] Ignoring empty command on %s", source);
         return;
     }
-    switch (parseOperatorCommand(msg->data)) {
-        case OperatorCommand::kCustom1:
-
-            post(event_type::CUSTOM1_REQUESTED, source);
-            break;
-        case OperatorCommand::kStop:
-
-            post(event_type::STOP_REQUESTED, source);
-            break;
-        case OperatorCommand::kReset:
-
-            post(event_type::RESET_REQUESTED, source);
-            break;
-        case OperatorCommand::kUnknown:
-            ROS_WARN("[UgvCommandInputProducer] Unknown command: %s on %s", msg->data.c_str(),
-                     source);
-            break;
-    }
-}
-
-void CommandInputProducer::post(::state_machine::EventId id, const char* source) {
-    if (!event_sink_) {
-        ROS_ERROR("[UgvCommandInputProducer] Event sink is not configured");
+    const auto command = parseOperatorCommand(msg->data);
+    if (command == OperatorCommand::kUnknown) {
+        ROS_WARN("[UgvCommandInputProducer] Unknown command: %s on %s", msg->data.c_str(), source);
         return;
     }
-    ::state_machine::Event event(id, ::state_machine::EventTimestamp{ros::Time::now().toSec()});
-    event.source = source;
-    event.category = ::state_machine::EventCategory::kInput;
-    const auto status = event_sink_(std::move(event));
-    if (status.ok()) {
-        ROS_INFO("[UgvCommandInputProducer] Command event queued: %u on %s",
-                 static_cast<unsigned>(id), source);
-    }
-    if (!status.ok()) {
-        ROS_WARN("[UgvCommandInputProducer] Failed to post command event: %s",
-                 status.message.c_str());
+    const auto outcome = command_sink_(command, source);
+    if (outcome.ok()) {
+        ROS_INFO("[UgvCommandInputProducer] Command applied: %u on %s", static_cast<unsigned>(command), source);
+    } else {
+        ROS_WARN("[UgvCommandInputProducer] Command unmatched/refused on %s: %s", source, outcome.message.c_str());
     }
 }
 

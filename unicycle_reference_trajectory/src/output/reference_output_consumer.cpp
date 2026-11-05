@@ -15,14 +15,6 @@
 namespace unicycle_reference_trajectory {
 namespace {
 
-template <typename Message>
-std::unique_ptr<::state_machine::runtime::Task<ros::NodeHandle>> makePublishTask(
-    std::string name, const ros::Publisher& pub, Message msg) {
-    return std::make_unique<::state_machine::runtime::LambdaTask<ros::NodeHandle>>(
-        std::move(name),
-        [pub, msg = std::move(msg)](ros::NodeHandle&) mutable { pub.publish(msg); });
-}
-
 double periodFromRadiusAndSpeed(double radius, double line_speed) {
     if (!std::isfinite(radius) || !std::isfinite(line_speed) || radius <= 0.0 ||
         line_speed <= 1.0e-6) {
@@ -60,13 +52,12 @@ double visualizationDuration(const trajectory::TrajectoryEvaluator2& evaluator,
 }  // namespace
 
 ReferenceOutputConsumer::ReferenceOutputConsumer(
-    ros::NodeHandle& nh, ::state_machine::runtime::AsyncTaskExecutor<ros::NodeHandle>& executor,
+    ros::NodeHandle& nh,
     ReferenceTrajectoryRuntime& runtime, const std::string& status_topic,
     const std::string& active_analytic_topic, const std::string& active_polynomial_topic,
     const std::string& active_sampled_topic, const std::string& reference_path_topic,
     double reference_path_sample_dt, double reference_path_preview_duration, uint32_t queue_size)
-    : executor_(executor),
-      runtime_(runtime),
+    : runtime_(runtime),
       reference_path_sample_dt_(reference_path_sample_dt > 0.0 ? reference_path_sample_dt : 0.5),
       reference_path_preview_duration_(
           reference_path_preview_duration > 0.0 ? reference_path_preview_duration : 20.0) {
@@ -82,33 +73,17 @@ ReferenceOutputConsumer::ReferenceOutputConsumer(
     reference_path_pub_ = nh.advertise<nav_msgs::Path>(reference_path_topic, queue_size, true);
 }
 
-bool ReferenceOutputConsumer::handle(const ::state_machine::Event& event) {
-    if (event.id == output_event_type::PUBLISH_STATUS) {
-        executor_.pushTask(makePublishTask(
-            "PublishReferenceStatus", status_pub_,
-            toRos(runtime_.makeStatus(event.timestamp > 0.0 ? event.timestamp
-                                                            : ros::Time::now().toSec()))));
-        return true;
+void ReferenceOutputConsumer::handle(const ReferencePublication& publication) {
+    switch (publication.kind) {
+        case ReferenceOutput::Status:
+            status_pub_.publish(toRos(runtime_.makeStatus(publication.timestamp > 0.0
+                ? publication.timestamp : ros::Time::now().toSec())));
+            return;
+        case ReferenceOutput::Analytic: active_analytic_pub_.publish(toRos(runtime_.activeAnalyticMessage())); break;
+        case ReferenceOutput::Polynomial: active_polynomial_pub_.publish(toRos(runtime_.activePolynomialMessage())); break;
+        case ReferenceOutput::Sampled: active_sampled_pub_.publish(toRos(runtime_.activeSampledMessage())); break;
     }
-    if (event.id == output_event_type::PUBLISH_ACTIVE_ANALYTIC) {
-        executor_.pushTask(makePublishTask("PublishActiveAnalytic", active_analytic_pub_,
-                                           toRos(runtime_.activeAnalyticMessage())));
-        publishReferencePath(event.timestamp);
-        return true;
-    }
-    if (event.id == output_event_type::PUBLISH_ACTIVE_POLYNOMIAL) {
-        executor_.pushTask(makePublishTask("PublishActivePolynomial", active_polynomial_pub_,
-                                           toRos(runtime_.activePolynomialMessage())));
-        publishReferencePath(event.timestamp);
-        return true;
-    }
-    if (event.id == output_event_type::PUBLISH_ACTIVE_SAMPLED) {
-        executor_.pushTask(makePublishTask("PublishActiveSampled", active_sampled_pub_,
-                                           toRos(runtime_.activeSampledMessage())));
-        publishReferencePath(event.timestamp);
-        return true;
-    }
-    return false;
+    publishReferencePath(publication.timestamp);
 }
 
 nav_msgs::Path ReferenceOutputConsumer::makeReferencePath(double stamp_sec) const {
@@ -145,8 +120,7 @@ nav_msgs::Path ReferenceOutputConsumer::makeReferencePath(double stamp_sec) cons
 }
 
 void ReferenceOutputConsumer::publishReferencePath(double stamp_sec) {
-    executor_.pushTask(
-        makePublishTask("PublishReferencePath", reference_path_pub_, makeReferencePath(stamp_sec)));
+    reference_path_pub_.publish(makeReferencePath(stamp_sec));
 }
 
 }  // namespace unicycle_reference_trajectory

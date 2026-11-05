@@ -5,6 +5,7 @@
 #include <ros/ros.h>
 #include <std_msgs/String.h>
 #include <ugv_reset_client/reset_ros.h>
+#include <ugv_reset_client/owner_loop.h>
 
 #include <algorithm>
 #include <cctype>
@@ -54,10 +55,12 @@ class MecanumUgvRosNode {
     explicit MecanumUgvRosNode(ros::NodeHandle& nh)
         : nh_(nh),
           private_nh_("~"),
-          controller_(state_),
-          reset_edge_(nh_, [this](const ugv_reset_client::Grant& grant) {
-              controller_.onResetGrant(grant);
-          }) {
+          controller_(state_) {
+        loop_.attach(nh_);
+        reset_edge_ = std::make_unique<ugv_reset_client::ResetRosEdge>(nh_, [this](const auto& grant) {
+            controller_.observeInputs(loop_.now(), loop_.wallNow());
+            controller_.onResetGrant(grant);
+        });
         loadParams();
         controller_.setConfig(config_);
         seedResetTarget();
@@ -78,49 +81,37 @@ class MecanumUgvRosNode {
     }
 
     void run() {
-        ros::WallRate rate(finitePositiveOr(config_.control_rate_hz, 500.0));
-        while (ros::ok()) {
-            ros::spinOnce();
-            const double now = ros::Time::now().toSec();
-            controller_.update(now);
+        controller_.setWallControlPhase(static_cast<int64_t>(ros::SteadyTime::now().toNSec()), loop_.externalClock());
+        loop_.run([this] {
+            if (!std::exchange(command_turn_, false)) controller_.update(loop_.now(), loop_.wallNow());
             if (!controller_.lastResetAdmissionMiss().empty() &&
                 controller_.lastResetAdmissionMiss() != last_logged_reset_miss_) {
                 last_logged_reset_miss_ = controller_.lastResetAdmissionMiss();
                 ROS_ERROR("[MecanumUgvRosNode] %s", last_logged_reset_miss_.c_str());
             }
-            for (const auto& event : controller_.stateMachine().currentOutputEvents()) {
-                if (event.id == output_event_type::PUBLISH_CMD_VEL) {
-                    const auto command = controller_.resetExecutor().requiresZeroCommand()
-                                             ? geometry_msgs::Twist{}
-                                             : makeTwist(controller_.command());
-                    publishTwist(command);
-                } else if (event.id == output_event_type::PUBLISH_ZERO_CMD_VEL) {
-                    publishTwist(geometry_msgs::Twist{});
-                }
+            for (const auto& output : controller_.outputs()) {
+                if (std::holds_alternative<PublishCommand>(output))
+                    publishTwist(controller_.resetExecutor().requiresZeroCommand() ? geometry_msgs::Twist{} : makeTwist(controller_.command()));
+                else publishTwist(geometry_msgs::Twist{});
             }
-            if (controller_.resetExecutor().needsZeroPublication()) {
-                publishTwist(geometry_msgs::Twist{});
-            }
+            if (controller_.resetExecutor().needsZeroPublication()) publishTwist(geometry_msgs::Twist{});
             ugv_reset_client::Session session;
             if (controller_.takeResetSession(&session)) {
-                reset_edge_.publish(session);
+                reset_edge_->publish(session);
                 controller_.resetSessionPublished();
             }
             ugv_reset_client::Result result;
             if (controller_.peekResetResult(&result)) {
-                reset_edge_.publish(result);
+                reset_edge_->publish(result);
                 controller_.resetResultPublished();
             }
-            if (status_gate_.due(now, 1.0 / config_.status_publish_rate_hz)) {
+            if (controller_.statusDue()) {
                 std_msgs::String status;
-                status.data = controller_.stateMachine().currentStateName(region_type::CONTROL);
-                if (status.data.empty()) {
-                    status.data = "Unknown";
-                }
+                status.data = controller_.modeName();
                 control_state_pub_.publish(status);
+                controller_.statusPublished();
             }
-            rate.sleep();
-        }
+        }, [this] { return controller_.nextWake(); });
     }
 
    private:
@@ -128,7 +119,7 @@ class MecanumUgvRosNode {
         cmd_vel_pub_.publish(command);
         if (command.linear.x == 0.0 && command.linear.y == 0.0 && command.linear.z == 0.0 &&
             command.angular.x == 0.0 && command.angular.y == 0.0 && command.angular.z == 0.0) {
-            controller_.notifyResetZeroPublished(ros::Time::now().toSec());
+            controller_.notifyResetZeroPublished(loop_.now());
         }
     }
     void loadParams() {
@@ -227,33 +218,26 @@ class MecanumUgvRosNode {
             return;
         }
         const std::string command = normalize(msg->data);
-        ::state_machine::EventId id = 0;
+        OperatorCommand id = OperatorCommand::kUnknown;
         if (command == "reset") {
-            id = event_type::RESET_REQUESTED;
+            id = OperatorCommand::kReset;
 
         } else if (command == "track" || command == "tracking" || command == "custom" ||
                    command == "custom1" || command == "start") {
-            id = event_type::CUSTOM1_REQUESTED;
+            id = OperatorCommand::kCustom1;
 
         } else if (command == "hold" || command == "stop") {
-            id = event_type::STOP_REQUESTED;
+            id = OperatorCommand::kStop;
 
         } else {
             ROS_WARN("[MecanumUgvRosNode] Unknown command: %s on %s", msg->data.c_str(), source);
             return;
         }
-        ::state_machine::Event event(id, ::state_machine::EventTimestamp{ros::Time::now().toSec()});
-        event.source = source;
-        event.category = ::state_machine::EventCategory::kInput;
-        const auto status = controller_.postEvent(std::move(event));
-        if (status.ok()) {
-            ROS_INFO("[MecanumUgvRosNode] Command queued: %s on %s", msg->data.c_str(), source);
-        }
-        if (!status.ok()) {
-            ROS_WARN("[MecanumUgvRosNode] Failed to post command event: %s source=%s CONTROL=%s",
-                     status.message.c_str(), source,
-                     controller_.stateMachine().currentStateName(region_type::CONTROL).c_str());
-        }
+        command_turn_ = true;
+        const auto outcome = controller_.command(id, loop_.now(), loop_.wallNow(), source);
+        if (outcome.ok()) ROS_INFO("[MecanumUgvRosNode] Command applied: %s on %s", msg->data.c_str(), source);
+        else ROS_WARN("[MecanumUgvRosNode] Command unmatched/refused: %s source=%s CONTROL=%s",
+                      outcome.message.c_str(), source, controller_.modeName());
     }
 
     void poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
@@ -273,13 +257,8 @@ class MecanumUgvRosNode {
         state_.yaw = yaw;
         state_.pose_stamp_trusted = !msg->header.stamp.isZero();
         state_.stamp =
-            toCoreTime(msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp);
+            toCoreTime(msg->header.stamp.isZero() ? ros::Time(loop_.now()) : msg->header.stamp);
         state_.received = true;
-        ::state_machine::Event event(event_type::INPUT_STATE_UPDATED,
-                                     ::state_machine::EventTimestamp{state_.stamp.toSec()});
-        event.source = "platform_pose";
-        event.category = ::state_machine::EventCategory::kInput;
-        (void)controller_.postEvent(std::move(event));
     }
 
     void resetPoseCallback(const geometry_msgs::Pose2D::ConstPtr& msg) {
@@ -300,16 +279,11 @@ class MecanumUgvRosNode {
             return;
         }
         WorldVelocityReference reference;
-        reference.stamp = toCoreTime(ros::Time::now());
+        reference.stamp = toCoreTime(ros::Time(loop_.now()));
         reference.vx = msg->twist.linear.x;
         reference.vy = msg->twist.linear.y;
         reference.valid = true;
         controller_.setWorldReference(reference);
-        ::state_machine::Event event(event_type::INPUT_REFERENCE_UPDATED,
-                                     ::state_machine::EventTimestamp{reference.stamp.toSec()});
-        event.source = "reference_twist";
-        event.category = ::state_machine::EventCategory::kInput;
-        (void)controller_.postEvent(std::move(event));
     }
 
     geometry_msgs::Twist makeTwist(const ControlCommand& command) {
@@ -323,11 +297,13 @@ class MecanumUgvRosNode {
         return msg;
     }
 
+    ugv_reset_client::OwnerLoop loop_;
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
     UgvState state_;
     MecanumUgvController controller_;
-    ugv_reset_client::ResetRosEdge reset_edge_;
+    std::unique_ptr<ugv_reset_client::ResetRosEdge> reset_edge_;
+    bool command_turn_{false};
     ControllerConfig config_{};
     uint32_t queue_size_{10U};
     std::string pose_topic_{"pose"};
@@ -343,7 +319,6 @@ class MecanumUgvRosNode {
     std::string last_logged_reset_miss_;
     ros::Subscriber reset_pose_sub_;
     ros::Subscriber reference_twist_sub_;
-    PeriodicGate status_gate_{};
 };
 
 }  // namespace mecanum_ugv_controller

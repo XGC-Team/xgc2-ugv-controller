@@ -1,13 +1,7 @@
-// The reference core reproduces the trace of the original runtime.
-//
-// reference_replay.sha256 is the SHA-256 of the trace the scenario of
-// replay/reference_replay_scenario.h produced from the ROS-typed runtime that
-// existed before the core was split out (xgc2-ugv-controller 1.3.0-26, the
-// same scenario with the original ReferenceInputProducer/node glue). This
-// test runs the scenario through ReferenceTrajectoryDriver and requires the
-// same bytes: every output event, status and active message, state, flag and
-// evaluator sample, with doubles to 1e-6 (the last bits of the libm functions
-// differ between CPUs, so a bit-exact trace would depend on the machine).
+// The original runtime supplies the numerical/publication oracle for the same explicit-future
+// request fixture. Only retired event source/category/sequence metadata is normalized. The
+// original start-now hash remains reference_replay.sha256; receipt-time correction is tested
+// separately, so the candidate never supplies its own expected numerical values.
 
 #include <gtest/gtest.h>
 
@@ -45,7 +39,7 @@ TEST(ReferenceReplay, Sha256ImplementationMatchesKnownDigests) {
               "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3");
 }
 
-TEST(ReferenceReplay, CoreReproducesTheOriginalRuntime) {
+TEST(ReferenceReplay, AbsoluteTimeCoreReproducesTheOriginalRuntime) {
     std::ifstream file(REPLAY_SHA256_FILE);
     std::string expected;
     file >> expected;

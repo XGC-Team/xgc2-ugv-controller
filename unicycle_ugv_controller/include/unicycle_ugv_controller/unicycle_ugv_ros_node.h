@@ -3,11 +3,11 @@
 #include <ros/ros.h>
 #include <std_msgs/String.h>
 #include <ugv_reset_client/reset_ros.h>
+#include <ugv_reset_client/owner_loop.h>
+#include "unicycle_ugv_controller/output/cmd_vel_output_consumer.h"
+#include "unicycle_ugv_controller/output/nmpc_output_consumer.h"
 
 #include <memory>
-#include <state_machine/runtime/async_task_executor.hpp>
-#include <state_machine/runtime/event_dispatcher.hpp>
-#include <state_machine/state_machine.hpp>
 #include <string>
 #include <vector>
 
@@ -31,18 +31,19 @@ class UnicycleUgvRosNode {
     void loadParams();
     void seedResetTarget();
     void updateOnce();
-    void dispatchOutputEvents(const std::vector<::state_machine::Event>& events);
-    void publishStatusIfDue(const ros::Time& now);
-    void logStateChanges(::state_machine::StateId control_state,
-                         ::state_machine::StateId health_state);
+    void dispatchOutputs(const std::vector<ControllerOutput>& outputs);
+    void publishStatusIfDue();
+    void logStateChanges();
 
+    ugv_reset_client::OwnerLoop loop_;
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
     UgvState state_;
     UnicycleUgvController controller_;
-    ugv_reset_client::ResetRosEdge reset_edge_;
-    ::state_machine::runtime::AsyncTaskExecutor<ros::NodeHandle> output_executor_;
-    ::state_machine::runtime::EventDispatcher output_dispatcher_;
+    std::unique_ptr<ugv_reset_client::ResetRosEdge> reset_edge_;
+    std::unique_ptr<CmdVelOutputConsumer> command_output_;
+    std::unique_ptr<NmpcOutputConsumer> nmpc_output_;
+    bool command_turn_{false};
     std::unique_ptr<CommandInputProducer> command_input_;
     std::unique_ptr<StateInputProducer> state_input_;
     std::unique_ptr<ReferenceInputProducer> reference_input_;
@@ -60,11 +61,8 @@ class UnicycleUgvRosNode {
     std::string pva_reference_topic_{"alg/reference/pva"};
     std::string cmd_vel_topic_{"cmd_vel"};
     std::string control_state_topic_{"custom/statustext"};
-    double status_publish_rate_hz_{5.0};
     ros::Publisher control_state_pub_;
-    ros::Time last_status_stamp_;
-    ::state_machine::StateId last_logged_control_state_{0U};
-    ::state_machine::StateId last_logged_health_state_{0U};
+    std::optional<ControlMode> last_logged_control_state_;
     std::string last_logged_reset_miss_;
 };
 

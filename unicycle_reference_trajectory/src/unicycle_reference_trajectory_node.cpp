@@ -21,16 +21,16 @@ struct RosParamSource {
 }  // namespace
 
 ReferenceTrajectoryNode::ReferenceTrajectoryNode(ros::NodeHandle& nh)
-    : nh_(nh), private_nh_("~"), output_executor_(nh_) {
+    : nh_(nh), private_nh_("~") {
+    loop_.attach(nh_);
     loadParams();
     driver_.configure(config_, default_analytic_);
-    output_dispatcher_.addConsumer(std::make_unique<ReferenceOutputConsumer>(
-        nh_, output_executor_, driver_.runtime(), status_topic_, active_analytic_topic_,
+    output_ = std::make_unique<ReferenceOutputConsumer>(
+        nh_, driver_.runtime(), status_topic_, active_analytic_topic_,
         active_polynomial_topic_, active_sampled_topic_, reference_path_topic_,
-        reference_path_sample_dt_, reference_path_preview_duration_, queue_size_));
+        reference_path_sample_dt_, reference_path_preview_duration_, queue_size_);
     input_producer_ = std::make_unique<ReferenceInputProducer>(
-        nh_, driver_, analytic_topic_, waypoint_topic_, sampled_topic_, reset_topic_, queue_size_);
-    output_executor_.start();
+        nh_, driver_, analytic_topic_, waypoint_topic_, sampled_topic_, reset_topic_, queue_size_, [this] { return loop_.now(); });
     ROS_INFO(
         "[ReferenceTrajectoryNode] Initialized: analytic=%s waypoint=%s sampled=%s "
         "status=%s active_analytic=%s active_polynomial=%s active_sampled=%s reference_path=%s",
@@ -39,29 +39,18 @@ ReferenceTrajectoryNode::ReferenceTrajectoryNode(ros::NodeHandle& nh)
         active_sampled_topic_.c_str(), reference_path_topic_.c_str());
 }
 
-ReferenceTrajectoryNode::~ReferenceTrajectoryNode() {
-    output_executor_.stop();
-}
-
-void ReferenceTrajectoryNode::run(double main_frequency_hz) {
-    const double frequency =
-        std::isfinite(main_frequency_hz) && main_frequency_hz > 0.0 ? main_frequency_hz : 100.0;
-    ROS_INFO("[ReferenceTrajectoryNode] Starting main loop at %.1f Hz", frequency);
-    ros::Rate rate(frequency);
-    while (ros::ok()) {
-        ros::spinOnce();
-        const auto update = driver_.update(ros::Time::now().toSec());
-        if (update.default_analytic == ReferenceTrajectoryDriver::Request::kRejected) {
+ReferenceTrajectoryNode::~ReferenceTrajectoryNode() = default;
+void ReferenceTrajectoryNode::run() {
+    loop_.run([this] {
+        const auto update = driver_.update(loop_.now());
+        if (update.default_analytic == ReferenceTrajectoryDriver::Request::kRejected)
             ROS_WARN_THROTTLE(1.0, "[ReferenceTrajectoryNode] Rejected default analytic reference");
-        } else if (update.default_analytic == ReferenceTrajectoryDriver::Request::kPostFailed) {
-            ROS_WARN_THROTTLE(1.0,
-                              "[ReferenceTrajectoryNode] Failed to post event from "
-                              "default_analytic_reference: %s",
-                              driver_.postError().c_str());
-        }
-        dispatchOutputEvents(update.events);
-        rate.sleep();
-    }
+        for (const auto& output : update.events) output_->handle(output);
+    }, [this] {
+        ugv_reset_client::NextWake next;
+        next.atDomain(driver_.runtime().nextDeadline());
+        return next;
+    });
 }
 
 void ReferenceTrajectoryNode::loadParams() {
@@ -91,20 +80,6 @@ void ReferenceTrajectoryNode::loadParams() {
     }
 
     loadReferenceConfig(RosParamSource{private_nh_}, config_, default_analytic_);
-}
-
-void ReferenceTrajectoryNode::dispatchOutputEvents(
-    const std::vector<::state_machine::Event>& events) {
-    const auto result = output_dispatcher_.dispatch(events);
-    for (const auto& event : result.unhandled_events) {
-        ROS_WARN("[ReferenceTrajectoryNode] Unhandled output event id: %u",
-                 static_cast<unsigned>(event.id));
-    }
-    for (const auto& failure : result.failures) {
-        ROS_WARN("[ReferenceTrajectoryNode] Output consumer '%s' failed on event %u: %s",
-                 failure.consumer_name.c_str(), static_cast<unsigned>(failure.event.id),
-                 failure.message.c_str());
-    }
 }
 
 }  // namespace unicycle_reference_trajectory

@@ -227,12 +227,6 @@ Trace nodePath() {
     double linear = 0.0, angular = 0.0;
     size_t next_command = 0;
 
-    auto post = [&](uint32_t id, double stamp, const char* source) {
-        ::state_machine::Event event(id, ::state_machine::EventTimestamp{stamp});
-        event.source = source;
-        event.category = ::state_machine::EventCategory::kInput;
-        (void)controller.postEvent(std::move(event));
-    };
 
     for (int64_t j = 0; j < kSteps; ++j) {
         const int64_t ns = kT0 + j * kControlStep;
@@ -254,7 +248,6 @@ Trace nodePath() {
             state.estimator_flags = 0;
             state.received = true;
             state.velocity_valid = true;
-            post(ugv::event_type::INPUT_STATE_UPDATED, now, "state_estimate");
         }
 
         // the generator, every 5th period (unicycle_reference_trajectory_node's main loop)
@@ -282,80 +275,76 @@ Trace nodePath() {
             const auto update = driver.update(reference_now);
             const urt::ReferenceTrajectoryRuntime& runtime = driver.runtime();
             for (const auto& event : update.events) {
-                if (event.id == urt::output_event_type::PUBLISH_STATUS) {
+                if (event.kind == urt::ReferenceOutput::Status) {
                     xgc2_ugv_reference_status p;
                     std::memset(&p, 0, sizeof p);
                     rp::toPayload(p, runtime.makeStatus(event.timestamp > 0.0 ? event.timestamp
                                                                               : reference_now));
                     run.reference.push_back({"status", ns, bytesOf(p)});
-                } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_ANALYTIC) {
+                } else if (event.kind == urt::ReferenceOutput::Analytic) {
                     const auto& m = runtime.activeAnalyticMessage();
                     auto p = std::make_unique<xgc2_ugv_analytic_reference>();
                     std::memset(p.get(), 0, sizeof *p);
                     rp::toPayload(*p, m);
                     run.reference.push_back({"active_analytic", ns, bytesOf(*p)});
-                    if (controller.referenceCache().updateAnalytic(toController(m))) {
-                        post(ugv::event_type::INPUT_REFERENCE_UPDATED, now, "active_analytic");
-                    }
-                } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_POLYNOMIAL) {
+                    controller.referenceCache().updateAnalytic(toController(m));
+                } else if (event.kind == urt::ReferenceOutput::Polynomial) {
                     const auto& m = runtime.activePolynomialMessage();
                     auto p = std::make_unique<xgc2_ugv_polynomial_reference>();
                     std::memset(p.get(), 0, sizeof *p);
                     rp::toPayload(*p, m);
                     run.reference.push_back({"active_polynomial", ns, bytesOf(*p)});
-                    if (controller.referenceCache().updatePolynomial(toController(m))) {
-                        post(ugv::event_type::INPUT_REFERENCE_UPDATED, now, "active_polynomial");
-                    }
-                } else if (event.id == urt::output_event_type::PUBLISH_ACTIVE_SAMPLED) {
+                    controller.referenceCache().updatePolynomial(toController(m));
+                } else if (event.kind == urt::ReferenceOutput::Sampled) {
                     const auto& m = runtime.activeSampledMessage();
                     auto p = std::make_unique<xgc2_ugv_sampled_reference>();
                     std::memset(p.get(), 0, sizeof *p);
                     rp::toPayload(*p, m);
                     run.reference.push_back({"active_sampled", ns, bytesOf(*p)});
-                    if (controller.referenceCache().updateSampled(toController(m))) {
-                        post(ugv::event_type::INPUT_REFERENCE_UPDATED, now, "active_sampled");
-                    }
+                    controller.referenceCache().updateSampled(toController(m));
                 }
             }
         }
 
-        // the operator
+        // The typed command consumes this owner turn directly.
+        bool commanded = false;
         while (next_command < sizeof(kCommands) / sizeof(kCommands[0]) &&
                kT0 + static_cast<int64_t>(kCommands[next_command].at * 1e9) <= ns) {
             const uint32_t kind = kCommands[next_command++].kind;
-            post(kind == XGC2_UGV_COMMAND_CUSTOM1
-                     ? ugv::event_type::CUSTOM1_REQUESTED
-                     : kind == XGC2_UGV_COMMAND_STOP ? ugv::event_type::STOP_REQUESTED
-                                                     : ugv::event_type::RESET_REQUESTED,
-                 now, "command");
+            controller.command(kind == XGC2_UGV_COMMAND_CUSTOM1
+                     ? ugv::OperatorCommand::kCustom1
+                     : kind == XGC2_UGV_COMMAND_STOP ? ugv::OperatorCommand::kStop
+                                                     : ugv::OperatorCommand::kReset,
+                               now, now, "command");
+            commanded = true;
         }
 
         // the controller's loop (UnicycleUgvRosNode::updateOnce)
-        controller.update(now);
+        if (!commanded) controller.update(now, now);
         Control control;
-        for (const auto& event : controller.stateMachine().currentOutputEvents()) {
-            if (event.id == ugv::output_event_type::REQUEST_NMPC_SOLVE) {
+        for (const auto& event : controller.outputs()) {
+            if (std::holds_alternative<ugv::SolveNmpc>(event)) {
                 control.solve_requested = true;
                 ugv::NmpcRequest request;
                 ugv::NmpcOutcome outcome;
-                if (ugv::makeNmpcRequest(controller, event, now, request)) {
+                if (ugv::makeNmpcRequest(controller, std::get<ugv::SolveNmpc>(event), now, request)) {
                     control.worker_solve = true;
                     outcome = ugv::solveNmpcRequest(backend, entered, request);
                 }
-                (void)controller.postEvent(
-                    ugv::makeNmpcResultEvent(event.correlation_id, outcome, now));
-            } else if (event.id == ugv::output_event_type::PUBLISH_CMD_VEL) {
+                controller.postCompletion(
+                    ugv::makeNmpcCompletion(std::get<ugv::SolveNmpc>(event).sequence, outcome));
+            } else if (std::holds_alternative<ugv::PublishCommand>(event)) {
                 const ugv::CmdVel twist = controller.cmdVel();
                 control.published = true;
                 control.kind = XGC2_UGV_CMD_VEL_COMMAND;
                 control.linear = twist.linear_x;
                 control.angular = twist.angular_z;
-            } else if (event.id == ugv::output_event_type::PUBLISH_ZERO_CMD_VEL) {
+            } else if (std::holds_alternative<ugv::PublishZero>(event)) {
                 control.published = true;
                 control.kind = XGC2_UGV_CMD_VEL_ZERO;
             }
         }
-        control.control_state = controller.stateMachine().currentState(ugv::region_type::CONTROL);
+        control.control_state = static_cast<uint32_t>(controller.mode());
         if (control.published) {
             linear = control.linear;
             angular = control.angular;
@@ -390,7 +379,7 @@ Trace moduleChain(const Trace& expected) {
     size_t next_command = 0;
     Plant plant;
     double linear = 0.0, angular = 0.0;
-    uint64_t wakes = 0;
+
 
     for (int64_t j = 0; j < kSteps; ++j) {
         const int64_t ns = kT0 + j * kControlStep;
@@ -465,7 +454,7 @@ Trace moduleChain(const Trace& expected) {
             }
         }
 
-        // the operator
+        // The operator inputs are delivered on this owner turn.
         while (next_command < sizeof(kCommands) / sizeof(kCommands[0]) &&
                kT0 + static_cast<int64_t>(kCommands[next_command].at * 1e9) <= ns) {
             xgc2_ugv_command command;
@@ -476,6 +465,7 @@ Trace moduleChain(const Trace& expected) {
             EXPECT_TRUE(controller.push("command", command, ns));
         }
 
+        const uint64_t wakes = controller.wakeCount();
         EXPECT_EQ(controller.step(), XGC2_OK);
         Control control;
         for (const auto& twist : controller.takeAs<xgc2_ugv_cmd_vel>("cmd_vel")) {
@@ -494,7 +484,6 @@ Trace moduleChain(const Trace& expected) {
         if (control.worker_solve) {
             EXPECT_TRUE(controller.waitWake(wakes, std::chrono::seconds(5)))
                 << "no NMPC result at step " << j;
-            wakes = controller.wakeCount();
         }
         if (control.published) {
             linear = control.linear;

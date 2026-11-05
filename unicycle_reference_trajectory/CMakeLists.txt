@@ -9,6 +9,7 @@ find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   nav_msgs
   roscpp
+  ugv_reset_client
   std_msgs
   unicycle_reference_trajectory_msgs
 )
@@ -20,7 +21,7 @@ find_package(Eigen3 REQUIRED)
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES unicycle_reference_trajectory_core
-  CATKIN_DEPENDS geometry_msgs nav_msgs roscpp std_msgs unicycle_reference_trajectory_msgs
+  CATKIN_DEPENDS geometry_msgs nav_msgs roscpp std_msgs ugv_reset_client unicycle_reference_trajectory_msgs
   CFG_EXTRAS unicycle_reference_trajectory-dependencies.cmake
 )
 
@@ -39,10 +40,6 @@ add_library(unicycle_reference_trajectory_core
   src/unicycle_reference_trajectory_runtime.cpp
   src/reference_driver.cpp
   src/default_analytic.cpp
-  src/state_machine/self_check_state.cpp
-  src/state_machine/ready_state.cpp
-  src/state_machine/planning_state.cpp
-  src/state_machine/active_state.cpp
 )
 set_target_properties(unicycle_reference_trajectory_core PROPERTIES INCLUDE_DIRECTORIES "")
 target_include_directories(unicycle_reference_trajectory_core BEFORE PUBLIC
@@ -157,7 +154,7 @@ if(CATKIN_ENABLE_TESTING)
   target_include_directories(unicycle_reference_trajectory_replay_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/test ${CMAKE_CURRENT_SOURCE_DIR}/test/replay)
   target_compile_definitions(unicycle_reference_trajectory_replay_test PRIVATE
-    REPLAY_SHA256_FILE="${CMAKE_CURRENT_SOURCE_DIR}/test/replay/reference_replay.sha256")
+    REPLAY_SHA256_FILE="${CMAKE_CURRENT_SOURCE_DIR}/test/replay/reference_absolute.sha256")
   target_link_libraries(unicycle_reference_trajectory_replay_test
     unicycle_reference_trajectory_core
   )

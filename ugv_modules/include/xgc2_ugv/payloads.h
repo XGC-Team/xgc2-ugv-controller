@@ -46,6 +46,8 @@ extern "C" {
 #define XGC2_UGV_SCHEMA_POLYNOMIAL_REFERENCE "xgc2.ugv.unicycle_reference.polynomial.v1"
 #define XGC2_UGV_SCHEMA_WAYPOINT_REQUEST "xgc2.ugv.unicycle_reference.waypoint_request.v1"
 #define XGC2_UGV_SCHEMA_REFERENCE_STATUS "xgc2.ugv.unicycle_reference.status.v1"
+#define XGC2_UGV_SCHEMA_WALL_DEADLINE "xgc2.ugv.wall_deadline.v1"
+#define XGC2_UGV_SCHEMA_WALL_WAKE "xgc2.ugv.wall_wake.v1"
 #define XGC2_UGV_SCHEMA_REFERENCE_RESET "xgc2.ugv.unicycle_reference.reset.v1"
 
 /* ------------------------------------------------------------------------------------------------
@@ -61,6 +63,12 @@ extern "C" {
 
 /* ------------------------------------------------------------------------------------------------
  */
+/* Independent monotonic-clock wake transport. These payloads explicitly use CLOCK_MONOTONIC,
+ * unlike normal host-domain stamps. A new deadline replaces the instance's old demand; <0 cancels.
+ * The edge carries no business timeout or retry policy. */
+typedef struct xgc2_ugv_wall_deadline { int64_t monotonic_deadline_ns; } xgc2_ugv_wall_deadline;
+typedef struct xgc2_ugv_wall_wake { int64_t monotonic_now_ns; } xgc2_ugv_wall_wake;
+
 /* Vehicle state (edge -> controller) */
 
 #define XGC2_UGV_STATE_SOURCE_ESTIMATE 0u /* a rigid state estimate projected to the plane */
@@ -351,6 +359,8 @@ typedef struct xgc2_ugv_reference_reset {
     _Static_assert(_Alignof(type) == 8u, #type " alignment changed")
 #endif
 
+XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_wall_deadline, 8u);
+XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_wall_wake, 8u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_planar_state, 80u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_command, 16u);
 XGC2_UGV_ASSERT_LAYOUT(xgc2_ugv_reset_target, 24u);

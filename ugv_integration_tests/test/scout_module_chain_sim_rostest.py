@@ -17,6 +17,8 @@ import rospkg
 import rospy
 import rostest
 from rosgraph_msgs.msg import Clock
+from geometry_msgs.msg import Twist
+from ugv_reset_msgs.msg import ResetResult, ResetSession
 from std_msgs.msg import String
 from unicycle_reference_trajectory_msgs.msg import AnalyticReference, ReferenceStatus
 
@@ -74,6 +76,7 @@ class ScoutModuleChainSimTest(unittest.TestCase):
         self.simulator = Simulator()
         self.plant = None
         self.host = ModuleHost(MANIFEST)
+        self.expected_errors = []
         self.control_state = ""
         self.reference_state = 0
         self.reference_type = 0
@@ -86,6 +89,7 @@ class ScoutModuleChainSimTest(unittest.TestCase):
 
     def tearDown(self):
         try:
+            self.simulator.start()  # release a test plant sleeping on a deliberately paused clock
             if self.plant is not None:
                 self.plant.stop()
         finally:
@@ -93,7 +97,8 @@ class ScoutModuleChainSimTest(unittest.TestCase):
             self.host.cleanup()
             self.simulator.stop()
         self.assertEqual(status, 0, "the host must end cleanly:\n" + "\n".join(self.host.output[-20:]))
-        errors = [l for l in self.host.output if " ERROR " in l]
+        errors = [l for l in self.host.output if " ERROR " in l and
+                  not any(expected in l for expected in self.expected_errors)]
         self.assertFalse(errors, "the host logged errors:\n" + "\n".join(errors))
 
     def _on_control(self, message):
@@ -102,6 +107,56 @@ class ScoutModuleChainSimTest(unittest.TestCase):
     def _on_reference(self, message):
         self.reference_state = message.state
         self.reference_type = message.active_type
+
+    def test_paused_external_clock_keeps_reset_wall_deadline_and_zero_cadence(self):
+        self.host.cleanup()  # replace only the unused test manifest with existing Reset parameters
+        def seed(manifest):
+            config = next(i for i in manifest["instance"] if i["name"] == "controller")["config"]
+            config.update(reset_initial_x=1.0, reset_initial_y=0.0, reset_initial_yaw=0.0)
+            config.setdefault("reset", {})["timeout"] = 0.4
+        self.host = ModuleHost(MANIFEST, edit=seed)
+        self.expected_errors.append("Reset timed out after")
+        results, sessions, zeros = [], [], []
+        self.subscribers.extend([
+            rospy.Subscriber(NS + "/reset/result", ResetResult,
+                             lambda m: results.append((time.monotonic(), m)), queue_size=10),
+            rospy.Subscriber(NS + "/reset/session", ResetSession,
+                             lambda m: sessions.append((time.monotonic(), m)), queue_size=50),
+            rospy.Subscriber(NS + "/cmd_vel", Twist,
+                             lambda m: zeros.append((time.monotonic(), m)), queue_size=100),
+        ])
+        self.host.start()
+        self.simulator.start()
+        self.assertTrue(self.host.wait_ready())
+        self.plant = KinematicScout(NS).start()
+        wait(lambda: self.control_state == "Ready" and self.command_pub.get_num_connections() > 0,
+             10.0, "ready controller and command edge")
+        self.simulator.running.clear()
+        time.sleep(0.1)  # let the last in-flight clock delivery settle, then keep it fixed
+        paused = rospy.Time.now()
+        begin = time.monotonic()
+        self.command_pub.publish(String(data="reset"))
+        wait(lambda: any(m.phase != ResetSession.PHASE_IDLE for _, m in sessions),
+             1.0, "Reset session while the domain clock is paused")
+        time.sleep(max(0.0, begin + 0.35 - time.monotonic()))
+        self.assertFalse(results, "the original 0.4 s wall deadline must not fire early")
+        wait(lambda: bool(results), 1.0, "wall timeout without a domain tick")
+        arrived, result = results[0]
+        self.assertGreaterEqual(arrived - begin, 0.4)
+        self.assertLess(arrived - begin, 0.8)
+        self.assertEqual(result.outcome, ResetResult.OUTCOME_TIMEOUT)
+        self.assertEqual(rospy.Time.now(), paused)
+        self.assertEqual(result.header.stamp, paused)
+        during = [m for t, m in zeros if begin <= t <= arrived]
+        self.assertGreaterEqual(len(during), 10, "Reset's existing 30 Hz wall output must continue")
+        self.assertTrue(all(m.linear.x == 0 and m.linear.y == 0 and m.angular.z == 0 for m in during))
+        time.sleep(0.1)
+        self.assertEqual(len(results), 1, "the accepted result is published once")
+        health = {i["name"]: i for i in self.host.client.get("/v1/health")["instances"]}
+        for name in ("reference", "controller", "edge"):
+            self.assertEqual(health[name]["period_ns"], 0)
+            self.assertEqual(health[name]["step_errors"], 0)
+            self.assertEqual(health[name]["misuse"], 0)
 
     def test_the_entity_waits_for_the_simulator_and_then_follows_a_circle_at_twice_real_time(self):
         self.host.start()
@@ -173,7 +228,9 @@ class ScoutModuleChainSimTest(unittest.TestCase):
         for name in ("reference", "controller", "edge"):
             self.assertEqual(health[name]["step_errors"], 0, name)
             self.assertNotEqual(health[name]["health"], "failed", name)
-        self.assertGreater(health["controller"]["timer_fires"], 1000)
+        self.assertEqual(health["controller"]["period_ns"], 0)
+        self.assertEqual(health["controller"]["timer_fires"], 0)
+        self.assertGreater(health["controller"]["steps"], 1000)
 
 
 if __name__ == "__main__":

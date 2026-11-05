@@ -14,10 +14,13 @@
 namespace mecanum_ugv_controller {
 namespace {
 
-bool hasOutputEvent(MecanumUgvController& controller, ::state_machine::EventId id) {
-    const auto& events = controller.stateMachine().currentOutputEvents();
-    return std::any_of(events.begin(), events.end(),
-                       [id](const ::state_machine::Event& event) { return event.id == id; });
+enum class OutputTag { Solve, Command, Zero };
+OutputTag outputTag(const ControllerOutput& output) {
+    return std::holds_alternative<PublishCommand>(output) ? OutputTag::Command : OutputTag::Zero;
+}
+bool hasOutputEvent(MecanumUgvController& controller, OutputTag tag) {
+    const auto& outputs = controller.outputs();
+    return std::any_of(outputs.begin(), outputs.end(), [tag](const auto& output) { return outputTag(output) == tag; });
 }
 
 void setPose(UgvState& state, double t, double x, double y, double yaw) {
@@ -29,24 +32,26 @@ void setPose(UgvState& state, double t, double x, double y, double yaw) {
     state.yaw = yaw;
 }
 
-void postCommand(MecanumUgvController& controller, ::state_machine::EventId id, double t) {
-    ::state_machine::Event event(id, ::state_machine::EventTimestamp{t});
-    event.source = "test";
-    event.category = ::state_machine::EventCategory::kInput;
-    const auto posted = controller.postEvent(std::move(event));
-    if (id == event_type::CUSTOM1_REQUESTED &&
-        (controller.resetExecutor().permissionPending() || controller.resetExecutor().active())) {
-        EXPECT_EQ(posted.code, ::state_machine::ErrorCode::kTransitionRejected);
+void applyCommand(MecanumUgvController& controller, OperatorCommand command, double now) {
+    const auto before = controller.mode();
+    const bool permission = controller.resetExecutor().permissionPending() || controller.resetExecutor().active();
+    const auto outcome = controller.command(command, now, monotonicSeconds(), "test");
+    if (command == OperatorCommand::kCustom1 && permission) {
+        EXPECT_EQ(outcome.code, CommandOutcome::Code::PermissionActive);
+    } else if (before == ControlMode::SelfCheck ||
+               (command == OperatorCommand::kStop && before == ControlMode::Ready) ||
+               (command == OperatorCommand::kCustom1 && before != ControlMode::Ready)) {
+        EXPECT_EQ(outcome.code, CommandOutcome::Code::Unmatched);
     } else {
-        ASSERT_TRUE(posted.ok());
+        ASSERT_TRUE(outcome.ok());
     }
 }
 
 void goReady(MecanumUgvController& controller, UgvState& state, double t) {
     setPose(state, t, 0.0, 0.0, 0.0);
-    controller.update(t);
-    controller.update(t + 0.002);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    controller.update(t, monotonicSeconds());
+    controller.update(t + 0.002, monotonicSeconds());
+    ASSERT_EQ(controller.mode(), ControlMode::Ready);
 }
 
 // FLU holonomic kinematics: body vx, vy, ω. No wheel or motor dynamics.
@@ -78,10 +83,10 @@ void enterCustom1(MecanumUgvController& controller, UgvState& state,
                   WorldVelocityReference& reference, double t) {
     goReady(controller, state, t);
     controller.setWorldReference(reference);
-    postCommand(controller, event_type::CUSTOM1_REQUESTED, t + 0.01);
+
     setPose(state, t + 0.01, state.x, state.y, state.yaw);
-    controller.update(t + 0.01);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Custom1);
+    applyCommand(controller, OperatorCommand::kCustom1, t + 0.01);
+    ASSERT_EQ(controller.mode(), ControlMode::Custom1);
 }
 
 }  // namespace
@@ -121,9 +126,9 @@ TEST(MecanumLaw, HeadingPUsesShortestAngleAcrossPi) {
 TEST(MecanumSm, SelfCheckPublishesFiveHertzZero) {
     UgvState state;
     MecanumUgvController controller(state);
-    controller.update(1.0);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
-    EXPECT_TRUE(hasOutputEvent(controller, output_event_type::PUBLISH_ZERO_CMD_VEL));
+    controller.update(1.0, monotonicSeconds());
+    EXPECT_EQ(controller.mode(), ControlMode::SelfCheck);
+    EXPECT_TRUE(hasOutputEvent(controller, OutputTag::Zero));
 }
 
 TEST(MecanumSm, FreshPoseInsideFenceMovesSelfCheckToReady) {
@@ -135,25 +140,25 @@ TEST(MecanumSm, FreshPoseInsideFenceMovesSelfCheckToReady) {
 TEST(MecanumSm, MissingPoseStaysSelfCheck) {
     UgvState state;
     MecanumUgvController controller(state);
-    controller.update(1.0);
-    controller.update(2.0);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+    controller.update(1.0, monotonicSeconds());
+    controller.update(2.0, monotonicSeconds());
+    EXPECT_EQ(controller.mode(), ControlMode::SelfCheck);
 }
 
 TEST(MecanumSm, BriefPoseDropoutKeepsReady) {
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
-    controller.update(1.3);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    controller.update(1.3, monotonicSeconds());
+    EXPECT_EQ(controller.mode(), ControlMode::Ready);
 }
 
 TEST(MecanumSm, PoseTimeoutHalfSecondGoesSelfCheck) {
     UgvState state;
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
-    controller.update(1.51);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+    controller.update(1.51, monotonicSeconds());
+    EXPECT_EQ(controller.mode(), ControlMode::SelfCheck);
 }
 
 TEST(MecanumSm, Custom1BriefPoseDropoutStaysTracking) {
@@ -164,8 +169,8 @@ TEST(MecanumSm, Custom1BriefPoseDropoutStaysTracking) {
     reference.vx = 0.2;
     reference.stamp = Time(1.0);
     enterCustom1(controller, state, reference, 1.0);
-    controller.update(1.31);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Custom1);
+    controller.update(1.31, monotonicSeconds());
+    EXPECT_EQ(controller.mode(), ControlMode::Custom1);
 }
 
 TEST(MecanumSm, Custom1PoseTimeoutGoesSelfCheck) {
@@ -176,8 +181,8 @@ TEST(MecanumSm, Custom1PoseTimeoutGoesSelfCheck) {
     reference.vx = 0.2;
     reference.stamp = Time(1.0);
     enterCustom1(controller, state, reference, 1.0);
-    controller.update(1.52);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+    controller.update(1.52, monotonicSeconds());
+    EXPECT_EQ(controller.mode(), ControlMode::SelfCheck);
 }
 
 TEST(MecanumSm, NonFinitePoseIsDirty) {
@@ -185,8 +190,8 @@ TEST(MecanumSm, NonFinitePoseIsDirty) {
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
     setPose(state, 1.05, std::nan(""), 0.0, 0.0);
-    controller.update(1.05);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+    controller.update(1.05, monotonicSeconds());
+    EXPECT_EQ(controller.mode(), ControlMode::SelfCheck);
 }
 
 TEST(MecanumSm, OutsideFenceGoesSelfCheck) {
@@ -194,18 +199,18 @@ TEST(MecanumSm, OutsideFenceGoesSelfCheck) {
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
     setPose(state, 1.05, 50.0, 0.0, 0.0);
-    controller.update(1.05);
+    controller.update(1.05, monotonicSeconds());
     EXPECT_FALSE(controller.healthReady());
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+    EXPECT_EQ(controller.mode(), ControlMode::SelfCheck);
 }
 
 TEST(MecanumSm, ReadyStopIsNotAtInitialPose) {
     UgvState state;
     MecanumUgvController controller(state);
     setPose(state, 1.0, 1.5, -0.8, 0.4);
-    controller.update(1.0);
-    controller.update(1.002);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    controller.update(1.0, monotonicSeconds());
+    controller.update(1.002, monotonicSeconds());
+    EXPECT_EQ(controller.mode(), ControlMode::Ready);
 }
 
 TEST(MecanumSm, ResetStopReturnsReady) {
@@ -216,14 +221,14 @@ TEST(MecanumSm, ResetStopReturnsReady) {
     goal.x = 3.0;
     goal.valid = true;
     controller.setResetTarget(goal);
-    postCommand(controller, event_type::RESET_REQUESTED, 1.01);
+
     setPose(state, 1.01, 0.0, 0.0, 0.0);
-    controller.update(1.01);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
-    postCommand(controller, event_type::STOP_REQUESTED, 1.02);
+    applyCommand(controller, OperatorCommand::kReset, 1.01);
+    ASSERT_EQ(controller.mode(), ControlMode::Reset);
+
     setPose(state, 1.02, 0.1, 0.0, 0.0);
-    controller.update(1.02);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    applyCommand(controller, OperatorCommand::kStop, 1.02);
+    EXPECT_EQ(controller.mode(), ControlMode::Ready);
 }
 
 TEST(MecanumSm, ResetDoesNotJumpToCustom1) {
@@ -234,14 +239,14 @@ TEST(MecanumSm, ResetDoesNotJumpToCustom1) {
     goal.x = 3.0;
     goal.valid = true;
     controller.setResetTarget(goal);
-    postCommand(controller, event_type::RESET_REQUESTED, 1.01);
+
     setPose(state, 1.01, 0.0, 0.0, 0.0);
-    controller.update(1.01);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
-    postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.02);
+    applyCommand(controller, OperatorCommand::kReset, 1.01);
+    ASSERT_EQ(controller.mode(), ControlMode::Reset);
+
     setPose(state, 1.02, 0.0, 0.0, 0.0);
-    controller.update(1.02);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
+    applyCommand(controller, OperatorCommand::kCustom1, 1.02);
+    EXPECT_EQ(controller.mode(), ControlMode::Reset);
 }
 
 TEST(MecanumSm, Custom1StopReturnsReady) {
@@ -253,14 +258,14 @@ TEST(MecanumSm, Custom1StopReturnsReady) {
     reference.vx = 0.2;
     reference.stamp = Time(1.0);
     controller.setWorldReference(reference);
-    postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.01);
+
     setPose(state, 1.01, 0.0, 0.0, 0.0);
-    controller.update(1.01);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Custom1);
-    postCommand(controller, event_type::STOP_REQUESTED, 1.02);
+    applyCommand(controller, OperatorCommand::kCustom1, 1.01);
+    ASSERT_EQ(controller.mode(), ControlMode::Custom1);
+
     setPose(state, 1.02, 0.0, 0.0, 0.0);
-    controller.update(1.02);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    applyCommand(controller, OperatorCommand::kStop, 1.02);
+    EXPECT_EQ(controller.mode(), ControlMode::Ready);
 }
 
 TEST(MecanumSm, Custom1DoesNotValidateAlgorithmTimestamp) {
@@ -273,8 +278,8 @@ TEST(MecanumSm, Custom1DoesNotValidateAlgorithmTimestamp) {
     enterCustom1(controller, state, reference, 1.0);
 
     setPose(state, 1.1, state.x, state.y, state.yaw);
-    controller.update(1.1);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Custom1);
+    controller.update(1.1, monotonicSeconds());
+    EXPECT_EQ(controller.mode(), ControlMode::Custom1);
 }
 
 TEST(MecanumSm, Custom1CanReset) {
@@ -286,18 +291,18 @@ TEST(MecanumSm, Custom1CanReset) {
     reference.vx = 0.2;
     reference.stamp = Time(1.0);
     controller.setWorldReference(reference);
-    postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.01);
+
     setPose(state, 1.01, 0.0, 0.0, 0.0);
-    controller.update(1.01);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Custom1);
+    applyCommand(controller, OperatorCommand::kCustom1, 1.01);
+    ASSERT_EQ(controller.mode(), ControlMode::Custom1);
     ResetTarget goal;
     goal.x = 1.0;
     goal.valid = true;
     controller.setResetTarget(goal);
-    postCommand(controller, event_type::RESET_REQUESTED, 1.02);
+
     setPose(state, 1.02, 0.0, 0.0, 0.0);
-    controller.update(1.02);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
+    applyCommand(controller, OperatorCommand::kReset, 1.02);
+    EXPECT_EQ(controller.mode(), ControlMode::Reset);
 }
 
 TEST(MecanumSm, ResetPoseDoesNotDriveStateMachine) {
@@ -309,8 +314,8 @@ TEST(MecanumSm, ResetPoseDoesNotDriveStateMachine) {
     goal.valid = true;
     controller.setResetTarget(goal);
     setPose(state, 1.02, 0.0, 0.0, 0.0);
-    controller.update(1.02);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    controller.update(1.02, monotonicSeconds());
+    EXPECT_EQ(controller.mode(), ControlMode::Ready);
 }
 
 TEST(MecanumSm, ResetTimeoutReturnsReady) {
@@ -324,13 +329,13 @@ TEST(MecanumSm, ResetTimeoutReturnsReady) {
     goal.x = 4.0;
     goal.valid = true;
     controller.setResetTarget(goal);
-    postCommand(controller, event_type::RESET_REQUESTED, 1.01);
+
     setPose(state, 1.01, 0.0, 0.0, 0.0);
-    controller.update(1.01);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
+    applyCommand(controller, OperatorCommand::kReset, 1.01);
+    ASSERT_EQ(controller.mode(), ControlMode::Reset);
     setPose(state, 1.08, 0.0, 0.0, 0.0);
-    controller.update(1.08);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    controller.update(1.08, monotonicSeconds());
+    EXPECT_EQ(controller.mode(), ControlMode::Ready);
 }
 
 TEST(MecanumSm, InvalidFenceStaysSelfCheck) {
@@ -341,23 +346,23 @@ TEST(MecanumSm, InvalidFenceStaysSelfCheck) {
     config.fence_x_max = -1.0;
     controller.setConfig(config);
     setPose(state, 1.0, 0.0, 0.0, 0.0);
-    controller.update(1.0);
-    controller.update(1.002);
+    controller.update(1.0, monotonicSeconds());
+    controller.update(1.002, monotonicSeconds());
     EXPECT_FALSE(controller.healthReady());
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+    EXPECT_EQ(controller.mode(), ControlMode::SelfCheck);
 }
 
 TEST(MecanumSm, SelfCheckDoesNotJumpToCustom1OrReset) {
     UgvState state;
     MecanumUgvController controller(state);
-    controller.update(1.0);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
-    postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.01);
-    controller.update(1.01);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
-    postCommand(controller, event_type::RESET_REQUESTED, 1.02);
-    controller.update(1.02);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::SelfCheck);
+    controller.update(1.0, monotonicSeconds());
+    ASSERT_EQ(controller.mode(), ControlMode::SelfCheck);
+
+    applyCommand(controller, OperatorCommand::kCustom1, 1.01);
+    EXPECT_EQ(controller.mode(), ControlMode::SelfCheck);
+
+    applyCommand(controller, OperatorCommand::kReset, 1.02);
+    EXPECT_EQ(controller.mode(), ControlMode::SelfCheck);
     EXPECT_NE(controller.lastResetAdmissionMiss().find("RESET_REQUESTED unmatched"),
               std::string::npos);
     EXPECT_NE(controller.lastResetAdmissionMiss().find("CONTROL=SelfCheck"), std::string::npos);
@@ -371,15 +376,15 @@ TEST(MecanumSm, ResetWithoutTargetStaysResetAndLogs) {
     MecanumUgvController controller(state);
     goReady(controller, state, 1.0);
     EXPECT_FALSE(controller.resetTargetReady());
-    postCommand(controller, event_type::RESET_REQUESTED, 1.01);
+
     setPose(state, 1.01, 0.0, 0.0, 0.0);
-    controller.update(1.01);
-    EXPECT_TRUE(hasOutputEvent(controller, output_event_type::PUBLISH_ZERO_CMD_VEL));
-    controller.update(1.012);
-    EXPECT_FALSE(hasOutputEvent(controller, output_event_type::PUBLISH_ZERO_CMD_VEL));
-    controller.update(1.02);
-    EXPECT_FALSE(hasOutputEvent(controller, output_event_type::PUBLISH_ZERO_CMD_VEL));
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
+    applyCommand(controller, OperatorCommand::kReset, 1.01);
+    EXPECT_TRUE(hasOutputEvent(controller, OutputTag::Zero));
+    controller.update(1.012, monotonicSeconds());
+    EXPECT_FALSE(hasOutputEvent(controller, OutputTag::Zero));
+    controller.update(1.02, monotonicSeconds());
+    EXPECT_FALSE(hasOutputEvent(controller, OutputTag::Zero));
+    EXPECT_EQ(controller.mode(), ControlMode::Reset);
     EXPECT_TRUE(controller.resetExecutor().active());
     EXPECT_NE(controller.lastResetHoldReason().find("no target"), std::string::npos);
     std::cout << controller.lastResetHoldReason() << std::endl;
@@ -399,9 +404,9 @@ TEST(MecanumLaw, IdealPlantCustom1HeadingAndWorldVelocity) {
     reference.vy = 0.0;
     reference.stamp = Time(1.0);
     controller.setWorldReference(reference);
-    postCommand(controller, event_type::CUSTOM1_REQUESTED, 1.01);
-    controller.update(1.01);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Custom1);
+
+    applyCommand(controller, OperatorCommand::kCustom1, 1.01);
+    ASSERT_EQ(controller.mode(), ControlMode::Custom1);
     double t = 1.01;
     const double dt = 0.02;
     for (int i = 0; i < 250; ++i) {
@@ -409,7 +414,7 @@ TEST(MecanumLaw, IdealPlantCustom1HeadingAndWorldVelocity) {
         reference.stamp = Time(t);
         controller.setWorldReference(reference);
         stepHolonomicPlant(state, controller.command(), dt);
-        controller.update(t);
+        controller.update(t, monotonicSeconds());
     }
     EXPECT_NEAR(wrapAngle(state.yaw), 0.0, 0.08);
     EXPECT_GT(state.x, 0.5);
@@ -438,7 +443,7 @@ TEST(MecanumLaw, IdealPlantCustom1TracksSettledWorldVelocity) {
         controller.setWorldReference(reference);
         plantWorldVelocity(state, controller.command(), vwx, vwy);
         stepHolonomicPlant(state, controller.command(), dt);
-        controller.update(t);
+        controller.update(t, monotonicSeconds());
     }
     EXPECT_NEAR(wrapAngle(state.yaw), 0.0, 1.0e-3);
     EXPECT_NEAR(vwx, 0.5, 1.0e-6);
@@ -465,7 +470,7 @@ TEST(MecanumLaw, IdealPlantCustom1TracksWorldVelocityStep) {
         reference.stamp = Time(t);
         controller.setWorldReference(reference);
         stepHolonomicPlant(state, controller.command(), dt);
-        controller.update(t);
+        controller.update(t, monotonicSeconds());
     }
     reference.vx = 0.2;
     reference.vy = 0.35;
@@ -477,7 +482,7 @@ TEST(MecanumLaw, IdealPlantCustom1TracksWorldVelocityStep) {
         controller.setWorldReference(reference);
         plantWorldVelocity(state, controller.command(), vwx, vwy);
         stepHolonomicPlant(state, controller.command(), dt);
-        controller.update(t);
+        controller.update(t, monotonicSeconds());
     }
     EXPECT_NEAR(vwx, 0.2, 1.0e-6);
     EXPECT_NEAR(vwy, 0.35, 1.0e-6);
@@ -505,7 +510,7 @@ TEST(MecanumLaw, IdealPlantCustom1TracksSlowWorldVelocitySine) {
         reference.vy = 0.4 * std::sin(0.4 * t);
         reference.stamp = Time(t);
         controller.setWorldReference(reference);
-        controller.update(t);
+        controller.update(t, monotonicSeconds());
         double vwx = 0.0;
         double vwy = 0.0;
         plantWorldVelocity(state, controller.command(), vwx, vwy);
@@ -531,7 +536,7 @@ TEST(MecanumLaw, IdealPlantCustom1TracksCircleWithHeadingDisturbance) {
     reference.stamp = Time(1.0);
     enterCustom1(controller, state, reference, 1.0);
     setPose(state, 1.01, kRadius, 0.0, 0.0);
-    controller.update(1.01);
+    controller.update(1.01, monotonicSeconds());
     double t = 1.01;
     const double dt = 0.02;
     double max_radial = 0.0;
@@ -542,7 +547,7 @@ TEST(MecanumLaw, IdealPlantCustom1TracksCircleWithHeadingDisturbance) {
         reference.vy = kRadius * kOmega * std::cos(angle);
         reference.stamp = Time(t);
         controller.setWorldReference(reference);
-        controller.update(t);
+        controller.update(t, monotonicSeconds());
         stepHolonomicPlant(state, controller.command(), dt);
         if (i % 75 == 37) {
             state.yaw = wrapAngle(state.yaw + 0.1);
@@ -571,7 +576,7 @@ TEST(MecanumLaw, IdealPlantCustom1SaturatesWorldVelocityOnFluBox) {
     t += dt;
     reference.stamp = Time(t);
     controller.setWorldReference(reference);
-    controller.update(t);
+    controller.update(t, monotonicSeconds());
     double vwx = 0.0;
     double vwy = 0.0;
     plantWorldVelocity(state, controller.command(), vwx, vwy);
@@ -624,10 +629,10 @@ void enterReset(MecanumUgvController& controller, UgvState& state, double goal_x
     goal.x = goal_x;
     goal.valid = true;
     controller.setResetTarget(goal);
-    postCommand(controller, event_type::RESET_REQUESTED, 0.51);
+
     setPose(state, 0.51, 0.0, 0.0, 0.0);
-    controller.update(0.51);
-    controller.update(0.512);
+    applyCommand(controller, OperatorCommand::kReset, 0.51);
+    controller.update(0.512, monotonicSeconds());
     // This fixture is the station/output edge: publish an exact all-axis zero and
     // collect fresh acquisition-stamped poses before offering any Go.
     ugv_reset_client::Grant brake;
@@ -639,12 +644,12 @@ void enterReset(MecanumUgvController& controller, UgvState& state, double goal_x
     controller.onResetGrant(brake);
     controller.notifyResetZeroPublished(.514, brake.request_generation, brake.grant_id);
     setPose(state, .52, 0, 0, 0);
-    controller.update(.52);
+    controller.update(.52, monotonicSeconds());
     setPose(state, .74, 0, 0, 0);
-    controller.update(.74);
+    controller.update(.74, monotonicSeconds());
     setPose(state, 1.01, 0, 0, 0);
-    controller.update(1.012);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
+    controller.update(1.012, monotonicSeconds());
+    ASSERT_EQ(controller.mode(), ControlMode::Reset);
 }
 
 // Every Reset outcome is on the log with its reason (R0): Ready alone does not say how it ended.
@@ -659,6 +664,110 @@ bool logged(const std::string& needle) {
     return std::any_of(capturedLog().begin(), capturedLog().end(), [&](const std::string& line) {
         return line.find(needle) != std::string::npos;
     });
+}
+
+TEST(MecanumCadence, MissingReferenceKeepsFiveHundredWallZerosDuringClockPause) {
+    UgvState state; setPose(state, 10.0, 0, 0, 0);
+    MecanumUgvController c(state);
+    c.setWallControlPhase(100000000000LL, true);
+    c.update(10.0, 100.0);
+    ASSERT_TRUE(c.command(OperatorCommand::kCustom1, 10.0, 100.0).ok());
+    unsigned zeros = 0;
+    for (int j = 1; j <= 800; ++j) {
+        const double steady = 100.0 + j * .00025;
+        c.update(10.0, steady);
+        for (const auto& output : c.outputs()) {
+            if (std::holds_alternative<PublishZero>(output)) {
+                ++zeros;
+                EXPECT_EQ(j % 8, 0) << "off-grid input emitted an extra zero";
+            }
+        }
+    }
+    EXPECT_EQ(zeros, 100U);
+    EXPECT_EQ(c.mode(), ControlMode::Custom1);
+}
+
+TEST(MecanumUgvControllerPriority, RetainsActualHealthAndCommandRuleOrderWithoutDeferredEdges) {
+    UgvState state; state.received = true; state.stamp = Time(1.0);
+
+    MecanumUgvController custom(state);
+    custom.update(1.0, 100.0);
+    ASSERT_TRUE(custom.command(OperatorCommand::kCustom1, 1.01, 100.01).ok());
+    // Original Custom1's actual rule order chooses HealthUnhealthy before Stop.
+    const auto stop = custom.command(OperatorCommand::kStop, 2.0, 100.02);
+    EXPECT_EQ(stop.code, CommandOutcome::Code::Unmatched);
+    EXPECT_EQ(custom.mode(), ControlMode::SelfCheck);
+    custom.update(2.002, 100.022);
+    EXPECT_EQ(custom.mode(), ControlMode::SelfCheck);
+    MecanumUgvController ready(state);
+    ready.update(1.0, 100.0);
+    ASSERT_TRUE(ready.command(OperatorCommand::kCustom1, 2.0, 100.02).ok());
+    EXPECT_EQ(ready.mode(), ControlMode::Custom1);
+    // HEALTH index zero's losing event expired in the original turn; no new deferred safety edge.
+    ready.update(2.002, 100.022);
+    EXPECT_EQ(ready.mode(), ControlMode::Custom1);
+}
+
+TEST(MecanumUgvControllerLifetime, CompletedOldRunCannotTerminateSameTurnReplacementRun) {
+    UgvState state; state.received = true; state.stamp = Time(1.0);
+
+    MecanumUgvController c(state);
+    ControllerConfig config; config.reset_timeout = .01; c.setConfig(config);
+    ResetTarget goal; goal.valid = true; goal.x = 1; c.setResetTarget(goal);
+    c.update(1.0, 100.0);
+    ASSERT_TRUE(c.command(OperatorCommand::kReset, 1.002, 100.002).ok());
+    const auto old_session = c.resetExecutor().sessionId();
+    ASSERT_TRUE(c.command(OperatorCommand::kReset, 1.020, 100.020).ok());
+    const auto new_session = c.resetExecutor().sessionId();
+    ASSERT_NE(new_session, old_session);
+    ASSERT_EQ(c.mode(), ControlMode::Reset);
+    ugv_reset_client::Result result;
+    ASSERT_TRUE(c.peekResetResult(&result));
+    EXPECT_EQ(result.session, old_session);
+    EXPECT_EQ(result.outcome, ugv_reset_client::Outcome::Timeout);
+    c.resetResultPublished();
+    c.update(1.022, 100.022);
+    EXPECT_EQ(c.mode(), ControlMode::Reset);
+    EXPECT_EQ(c.resetExecutor().sessionId(), new_session);
+    EXPECT_FALSE(c.peekResetResult(&result));
+    // Only the replacement Run's own original deadline ends it.
+    c.update(1.040, 100.040);
+    EXPECT_EQ(c.mode(), ControlMode::Ready);
+    ASSERT_TRUE(c.peekResetResult(&result));
+    EXPECT_EQ(result.session, new_session);
+    EXPECT_EQ(result.outcome, ugv_reset_client::Outcome::Timeout);
+    c.resetResultPublished();
+    EXPECT_FALSE(c.peekResetResult(&result));
+}
+
+TEST(MecanumUgvControllerPriority, ResetAndReadyKeepTheirOriginalSimultaneousHealthSelections) {
+    struct Case { ControlMode from; OperatorCommand command; ControlMode expected; };
+    const Case cases[] = {
+        {ControlMode::Ready, OperatorCommand::kReset, ControlMode::Reset},
+        {ControlMode::Custom1, OperatorCommand::kReset, ControlMode::Reset},
+        {ControlMode::Reset, OperatorCommand::kStop, ControlMode::Ready},
+        {ControlMode::Reset, OperatorCommand::kReset, ControlMode::Reset},
+    };
+    for (const auto& test : cases) {
+        UgvState state; state.received = true; state.stamp = Time(1.0);
+        
+        MecanumUgvController c(state);
+        ResetTarget goal; goal.valid = true; goal.x = 1; c.setResetTarget(goal);
+        c.update(1.0, 100.0);
+        if (test.from != ControlMode::Ready)
+            ASSERT_TRUE(c.command(test.from == ControlMode::Custom1 ? OperatorCommand::kCustom1 :
+                                  OperatorCommand::kReset, 1.01, 100.01).ok());
+        ASSERT_EQ(c.mode(), test.from);
+        EXPECT_TRUE(c.command(test.command, 2.0, 100.02).ok());
+        EXPECT_EQ(c.mode(), test.expected);
+        c.update(2.002, 100.022);
+        EXPECT_EQ(c.mode(), test.expected) << "no deferred HEALTH event in the old owner";
+    }
+    UgvState recovered; recovered.received = true; recovered.stamp = Time(1.0);
+    
+    MecanumUgvController c(recovered);
+    EXPECT_EQ(c.command(OperatorCommand::kReset, 1.0, 100.0).code, CommandOutcome::Code::Unmatched);
+    EXPECT_EQ(c.mode(), ControlMode::Ready);  // SelfCheck has only its existing health edge.
 }
 
 }  // namespace
@@ -686,21 +795,21 @@ TEST(MecanumSm, AGrantedRouteDrivesTheTwistAndAStopEndsTheSessionWithOneResult) 
     controller.onResetGrant(goFor(controller, {0, 0, 0}, {}, {1.0, 0.0, 0.0}, 1e9));
     for (int i = 0; i < 20; ++i) {
         setPose(state, 1.02 + 0.02 * i, 0.0, 0.0, 0.0);
-        controller.update(1.02 + 0.02 * i);
+        controller.update(1.02 + 0.02 * i, monotonicSeconds());
     }
     EXPECT_GT(controller.command().linear_x, 0.05);
     EXPECT_LE(controller.command().linear_x, 0.35 + 1e-9);
-    postCommand(controller, event_type::STOP_REQUESTED, 1.5);
+
     setPose(state, 1.5, 0.1, 0.0, 0.0);
-    controller.update(1.5);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    applyCommand(controller, OperatorCommand::kStop, 1.5);
+    EXPECT_EQ(controller.mode(), ControlMode::Ready);
     ugv_reset_client::Result result;
     ASSERT_TRUE(controller.takeResetResult(&result));
     EXPECT_EQ(result.outcome, ugv_reset_client::Outcome::Stopped);
     EXPECT_FALSE(controller.takeResetResult(&result));
     // A grant that arrives after the session ended never moves the vehicle.
     controller.onResetGrant(goFor(controller, {0, 0, 0}, {}, {1.0, 0.0, 0.0}, 1e9, 2U));
-    controller.update(1.51);
+    controller.update(1.51, monotonicSeconds());
     EXPECT_DOUBLE_EQ(controller.command().linear_x, 0.0);
 }
 
@@ -709,16 +818,16 @@ TEST(MecanumSm, ArrivalAtTheTargetEndsResetThroughTheCoordinatorsRoute) {
     MecanumUgvController controller(state);
     enterReset(controller, state, 0.0);
     double t = 1.02;
-    for (int i = 0; i < 100 && controller.stateMachine().currentState(region_type::CONTROL) ==
-                                   state_type::Reset;
+    for (int i = 0; i < 100 && controller.mode() ==
+                                   ControlMode::Reset;
          ++i, t += 0.02) {
         if (i % 10 == 0) {
             controller.onResetGrant(goFor(controller, {0, 0, 0}, {}, {0.0, 0.0, 0.0}, 1e9));
         }
         setPose(state, t, 0.0, 0.0, 0.0);
-        controller.update(t);
+        controller.update(t, monotonicSeconds());
     }
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    EXPECT_EQ(controller.mode(), ControlMode::Ready);
     ugv_reset_client::Result result;
     ASSERT_TRUE(controller.takeResetResult(&result));
     EXPECT_EQ(result.outcome, ugv_reset_client::Outcome::Arrived);
@@ -731,18 +840,18 @@ TEST(MecanumSm, ARejectionByTheCoordinatorReturnsReadyAndAFreshRetryGetsANewSess
     const uint32_t first = controller.resetExecutor().sessionId();
     controller.onResetGrant(rejectFor(controller, ugv_reset_client::Reason::NoRoute, "no route"));
     setPose(state, 1.014, 0.0, 0.0, 0.0);
-    controller.update(1.014);
-    controller.update(1.016);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Ready);
+    controller.update(1.014, monotonicSeconds());
+    controller.update(1.016, monotonicSeconds());
+    ASSERT_EQ(controller.mode(), ControlMode::Ready);
     EXPECT_TRUE(controller.healthReady());
     ugv_reset_client::Result result;
     ASSERT_TRUE(controller.takeResetResult(&result));
     EXPECT_EQ(result.outcome, ugv_reset_client::Outcome::Infeasible);
-    postCommand(controller, event_type::RESET_REQUESTED, 1.02);
+
     setPose(state, 1.02, 0.0, 0.0, 0.0);
-    controller.update(1.02);
-    controller.update(1.022);
-    ASSERT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
+    applyCommand(controller, OperatorCommand::kReset, 1.02);
+    controller.update(1.022, monotonicSeconds());
+    ASSERT_EQ(controller.mode(), ControlMode::Reset);
     EXPECT_GT(controller.resetExecutor().sessionId(), first);
 }
 
@@ -766,8 +875,8 @@ TEST(MecanumSm, ResetOutcomesAreLoggedWithTheirReason) {
         enterReset(controller, state, 1.0);
         controller.onResetGrant(rejectFor(controller, ugv_reset_client::Reason::GoalOccupied,
                                           "target occupied by ugv3"));
-        controller.update(1.014);
-        controller.update(1.016);
+        controller.update(1.014, monotonicSeconds());
+        controller.update(1.016, monotonicSeconds());
         EXPECT_TRUE(logged("Reset ended after"));
         EXPECT_TRUE(logged("INFEASIBLE"));
         EXPECT_TRUE(logged("target occupied by ugv3")) << "the coordinator's reason is dropped";
@@ -783,7 +892,7 @@ TEST(MecanumSm, ResetOutcomesAreLoggedWithTheirReason) {
                 controller.onResetGrant(goFor(controller, {0, 0, 0}, {}, {0.0, 0.0, 0.0}, 1e9));
             }
             setPose(state, t, 0.0, 0.0, 0.0);
-            controller.update(t);
+            controller.update(t, monotonicSeconds());
         }
         EXPECT_TRUE(logged("Reset arrived after"));
     }
@@ -792,8 +901,8 @@ TEST(MecanumSm, ResetOutcomesAreLoggedWithTheirReason) {
         UgvState state;
         MecanumUgvController controller(state);
         enterReset(controller, state, 1.0);
-        postCommand(controller, event_type::STOP_REQUESTED, 1.016);
-        controller.update(1.016);
+
+        applyCommand(controller, OperatorCommand::kStop, 1.016);
         EXPECT_TRUE(logged("Reset ended after"));
         EXPECT_TRUE(logged("stopped"));
     }
@@ -806,8 +915,8 @@ TEST(MecanumSm, ResetOutcomesAreLoggedWithTheirReason) {
         config.reset_timeout = 0.5;
         controller.setConfig(config);
         setPose(state, 2.0, 0.0, 0.0, 0.0);
-        controller.update(2.0);
-        controller.update(2.002);
+        controller.update(2.0, monotonicSeconds());
+        controller.update(2.002, monotonicSeconds());
         EXPECT_TRUE(logged("Reset timed out after"));
     }
     setLogSink(nullptr);
@@ -820,32 +929,26 @@ TEST(MecanumSm, NewResetReplacesActiveSessionWithoutRetirementOrOutcomeOverwrite
     const auto old_session = controller.resetExecutor().sessionId();
     const auto old_generation = controller.resetExecutor().requestGeneration();
     const auto old_go = goFor(controller, {0, 0, 0}, {}, {1, 0, 0}, 1e9);
-    ASSERT_TRUE(controller
-                    .postEvent(::state_machine::Event(event_type::RESET_REQUESTED,
-                                                      ::state_machine::EventTimestamp{1.02}))
+    ASSERT_TRUE(controller.command(OperatorCommand::kReset, 1.02, monotonicSeconds(), "test")
                     .ok());
     setPose(state, 1.02, 0, 0, 0);
-    controller.update(1.02);
-    EXPECT_EQ(controller.stateMachine().currentState(region_type::CONTROL), state_type::Reset);
+    controller.update(1.02, monotonicSeconds());
+    EXPECT_EQ(controller.mode(), ControlMode::Reset);
     EXPECT_NE(controller.resetExecutor().sessionId(), old_session);
     EXPECT_GT(controller.resetExecutor().requestGeneration(), old_generation);
     controller.onResetGrant(old_go);
-    EXPECT_FALSE(controller.resetExecutor().tracker().active());
+    EXPECT_FALSE((controller.resetExecutor().tracker() && controller.resetExecutor().tracker()->active()));
     EXPECT_TRUE(controller.resetExecutor().command().zero());
     ugv_reset_client::Result result;
     ASSERT_TRUE(controller.peekResetResult(&result));
     EXPECT_EQ(result.session, old_session);
     EXPECT_EQ(result.outcome, ugv_reset_client::Outcome::Stopped);
-    EXPECT_EQ(controller
-                  .postEvent(::state_machine::Event(event_type::CUSTOM1_REQUESTED,
-                                                    ::state_machine::EventTimestamp{1.03}))
+    EXPECT_EQ(controller.command(OperatorCommand::kCustom1, 1.03, monotonicSeconds(), "test")
                   .code,
-              ::state_machine::ErrorCode::kTransitionRejected);
-    EXPECT_EQ(controller
-                  .postEvent(::state_machine::Event(event_type::RESET_REQUESTED,
-                                                    ::state_machine::EventTimestamp{1.03}))
+              CommandOutcome::Code::PermissionActive);
+    EXPECT_EQ(controller.command(OperatorCommand::kReset, 1.03, monotonicSeconds(), "test")
                   .code,
-              ::state_machine::ErrorCode::kLimitReached);
+              CommandOutcome::Code::CreditUnavailable);
     ASSERT_TRUE(controller.peekResetResult(&result));
     EXPECT_EQ(result.session, old_session);
 }

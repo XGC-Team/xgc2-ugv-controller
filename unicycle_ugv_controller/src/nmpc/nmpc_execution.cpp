@@ -24,12 +24,12 @@ void unwrapReferenceYaw(std::vector<Se2Reference>& refs, double anchor_yaw) {
 
 }  // namespace
 
-bool makeNmpcRequest(const UnicycleUgvController& controller, const ::state_machine::Event& event,
+bool makeNmpcRequest(const UnicycleUgvController& controller, const SolveNmpc& event,
                      double fallback_now_sec, NmpcRequest& request) {
     const ControllerConfig config = controller.config();
     const Time now(event.timestamp > 0.0 ? event.timestamp : fallback_now_sec);
     request = NmpcRequest{};
-    request.sequence = event.correlation_id;
+    request.sequence = event.sequence;
     request.now = now;
     request.state = controller.state();
     request.config = config;
@@ -62,27 +62,15 @@ NmpcOutcome solveNmpcRequest(NmpcTrackingBackend& backend, bool& entered,
     return outcome;
 }
 
-::state_machine::Event makeNmpcResultEvent(uint64_t sequence, const NmpcOutcome& outcome,
-                                           double timestamp_sec) {
-    const bool success = outcome.success && outcome.command.valid;
-    ::state_machine::Event event(
-        success ? event_type::INPUT_NMPC_SOLVE_SUCCEEDED : event_type::INPUT_NMPC_SOLVE_FAILED,
-        ::state_machine::EventTimestamp{timestamp_sec});
-    event.source = "nmpc_output_consumer";
-    event.category = ::state_machine::EventCategory::kInput;
-    event.correlation_id = sequence;
-    if (success) {
-        event.payload["command_stamp"] = outcome.command.stamp.toSec();
-        event.payload["linear_speed"] = outcome.command.linear_speed;
-        event.payload["angular_speed"] = outcome.command.angular_speed;
-    }
-    return event;
+NmpcCompletion makeNmpcCompletion(uint64_t sequence, const NmpcOutcome& outcome) {
+    return {sequence, outcome.success && outcome.command.valid
+                          ? std::optional<ControlCommand>{outcome.command} : std::nullopt};
 }
 
-NmpcExecution::NmpcExecution(UnicycleUgvController& controller, EventSink event_sink, Clock clock,
+NmpcExecution::NmpcExecution(UnicycleUgvController& controller, CompletionSink completion_sink, Clock clock,
                              Notify notify, PredictionSink prediction)
     : controller_(controller),
-      event_sink_(std::move(event_sink)),
+      completion_sink_(std::move(completion_sink)),
       clock_(std::move(clock)),
       notify_(std::move(notify)),
       prediction_(std::move(prediction)) {
@@ -100,7 +88,7 @@ void NmpcExecution::start() {
     }
     stop_ = false;
     busy_ = false;
-    has_pending_ = false;
+    pending_.reset();
     worker_ = std::thread(&NmpcExecution::workerLoop, this);
 }
 
@@ -108,7 +96,7 @@ void NmpcExecution::stop() {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         stop_ = true;
-        has_pending_ = false;
+        pending_.reset();
     }
     condition_.notify_all();
     if (worker_.joinable()) {
@@ -117,33 +105,32 @@ void NmpcExecution::stop() {
     }
 }
 
-bool NmpcExecution::handle(const ::state_machine::Event& event) {
-    if (event.id != output_event_type::REQUEST_NMPC_SOLVE) {
-        return false;
-    }
+void NmpcExecution::handle(const SolveNmpc& event) {
     NmpcRequest request;
     if (!makeNmpcRequest(controller_, event, clock_(), request)) {
-        postResult(event.correlation_id, NmpcOutcome{});
-        return true;
+        postResult(event.sequence, NmpcOutcome{});
+        if (notify_) notify_();
+        return;
     }
     bool rejected = false;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (stop_ || busy_ || has_pending_) {
+        if (stop_ || busy_ || pending_.has_value()) {
             rejected = true;
         } else {
             pending_ = std::move(request);
-            has_pending_ = true;
+
         }
     }
     if (rejected) {
         UGV_LOG_WARN_THROTTLE(1.0, "[UgvNmpcExecution] Reject solve seq=%lu: backend busy",
-                              static_cast<unsigned long>(event.correlation_id));
-        postResult(event.correlation_id, NmpcOutcome{});
-        return true;
+                              static_cast<unsigned long>(event.sequence));
+        postResult(event.sequence, NmpcOutcome{});
+        if (notify_) notify_();
+        return;
     }
     condition_.notify_one();
-    return true;
+    return;
 }
 
 void NmpcExecution::workerLoop() {
@@ -152,12 +139,12 @@ void NmpcExecution::workerLoop() {
         NmpcRequest request;
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            condition_.wait(lock, [this] { return stop_ || has_pending_; });
+            condition_.wait(lock, [this] { return stop_ || pending_.has_value(); });
             if (stop_) {
                 return;
             }
-            request = std::move(pending_);
-            has_pending_ = false;
+            request = std::move(*pending_);
+            pending_.reset();
             busy_ = true;
         }
 
@@ -191,10 +178,10 @@ void NmpcExecution::workerLoop() {
 }
 
 void NmpcExecution::postResult(uint64_t sequence, const NmpcOutcome& outcome) {
-    if (!event_sink_) {
+    if (!completion_sink_) {
         return;
     }
-    (void)event_sink_(makeNmpcResultEvent(sequence, outcome, clock_()));
+    completion_sink_(makeNmpcCompletion(sequence, outcome));
 }
 
 }  // namespace unicycle_ugv_controller

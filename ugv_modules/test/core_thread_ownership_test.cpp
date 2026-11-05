@@ -1,12 +1,6 @@
-// What a core does when it is not called on the thread that built it, and why an instance of a
-// module has to be.
-//
-// The state machine of the cores belongs to the thread that built it and refuses every other one.
-// Nothing throws: the reference runtime drops to SelfCheck with the invalid-input flag, and the
-// controller's state machine stays where it was. The modules rely on the host to keep an instance
-// on one thread (manifest affinity "sticky") and check it; this test shows what the check protects
-// against, and fails if the library ever stops refusing, which would make the check and the host's
-// affinity unnecessary.
+// Cores have one serial owner; construction on that owner's thread is not a business gate.
+// These calls alternate live threads but never overlap. Native module affinity and concurrent
+// completion publication are tested separately at the actual transport boundary.
 
 #include <gtest/gtest.h>
 
@@ -23,7 +17,7 @@ namespace urt = unicycle_reference_trajectory;
 namespace ugv = unicycle_ugv_controller;
 using ugv_modules_test::RotatingThreads;
 
-TEST(CoreThreads, TheReferenceRuntimeRefusesAThreadThatDidNotBuildIt) {
+TEST(CoreThreads, ReferenceUsesSerialOwnerWithoutAConstructionThreadGate) {
     RotatingThreads threads(2);  // both live throughout: no two calls share an id
     std::unique_ptr<urt::ReferenceTrajectoryDriver> driver;
     threads.run([&] {  // thread 0 builds it
@@ -37,11 +31,11 @@ TEST(CoreThreads, TheReferenceRuntimeRefusesAThreadThatDidNotBuildIt) {
             (void)driver->update(now);
         }
     };
-    threads.run([&] { update_for(100); });  // thread 1: a second of refusals
-    EXPECT_EQ(driver->runtime().currentState(), urt::reference::ReferenceStatus::STATE_SELF_CHECK);
-    EXPECT_NE(driver->runtime().flags() & xgc2_math::trajectory::kFlagInvalidInput, 0u);
+    threads.run([&] { update_for(100); });  // thread 1: the serial owner now
+    EXPECT_EQ(driver->runtime().currentState(), urt::reference::ReferenceStatus::STATE_READY);
+    EXPECT_EQ(driver->runtime().flags(), 0u);
 
-    // on the thread that built it the same generator, restarted, runs
+    // The same generator can be reconfigured on the next serial owner.
     threads.run([&] {  // thread 0 again
         driver->configure(urt::ReferenceTrajectoryConfig{}, urt::DefaultAnalyticReferenceConfig{});
         update_for(100);
@@ -50,7 +44,7 @@ TEST(CoreThreads, TheReferenceRuntimeRefusesAThreadThatDidNotBuildIt) {
     EXPECT_EQ(driver->runtime().flags(), 0u);
 }
 
-TEST(CoreThreads, TheControllerStaysWhereItWasOnAThreadThatDidNotBuildIt) {
+TEST(CoreThreads, ControllerUsesSerialOwnerWithoutAConstructionThreadGate) {
     RotatingThreads threads(2);
     ugv::UgvState state;
     std::unique_ptr<ugv::UnicycleUgvController> controller;
@@ -62,15 +56,15 @@ TEST(CoreThreads, TheControllerStaysWhereItWasOnAThreadThatDidNotBuildIt) {
             state.stamp = ugv::Time(now);
             state.received = true;
             state.estimator_state = 3;  // RigidStateEstimate::STATE_RUNNING
-            controller->update(now);
+            controller->update(now, now);
         }
     };
     threads.run([&] { update_for(500); });  // thread 1: a healthy vehicle for a second
-    EXPECT_EQ(controller->stateMachine().currentState(ugv::region_type::CONTROL),
-              ugv::state_type::SelfCheck);
+    EXPECT_EQ(controller->mode(),
+              ugv::ControlMode::Ready);
     threads.run([&] { update_for(500); });  // thread 0: the builder
-    EXPECT_EQ(controller->stateMachine().currentState(ugv::region_type::CONTROL),
-              ugv::state_type::Ready);
+    EXPECT_EQ(controller->mode(),
+              ugv::ControlMode::Ready);
 }
 
 }  // namespace

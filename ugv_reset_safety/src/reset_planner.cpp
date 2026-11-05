@@ -2,6 +2,7 @@
 #include <ugv_reset_safety/reset_planner.h>
 
 #include <algorithm>
+#include <variant>
 #include <chrono>
 #include <cmath>
 #include <limits>
@@ -451,6 +452,18 @@ struct Plan {
     std::vector<EscapeCert> escape_certs;
 };
 
+struct Uncertified {};
+struct AwaitingStop { uint32_t brake_id; };
+struct Certified { uint32_t brake_id; };
+struct Unreserved {};
+struct AwaitGoReceipt {};
+struct GoReceived {};
+struct Retiring {};
+struct Reserved {
+    Plan value;
+    std::variant<AwaitGoReceipt, GoReceived, Retiring> phase{AwaitGoReceipt{}};
+};
+
 struct Body {
     double delta{0.0};  // sampling error of this body's sweeps
     double ell_hat{0.0}, ell_spread{-1.0};
@@ -470,17 +483,38 @@ struct Body {
     std::string id;
     rc::VehicleSpec spec;
     Shape shape;
-    Plan plan;
+    std::variant<Unreserved, Reserved> reservation{Unreserved{}};
+    std::variant<Uncertified, AwaitingStop, Certified> certificate{Uncertified{}};
+    bool hasPlan() const { return std::holds_alternative<Reserved>(reservation); }
+    bool retiring() const {
+        const auto* r = std::get_if<Reserved>(&reservation);
+        return r && std::holds_alternative<Retiring>(r->phase);
+    }
+    bool receivedGo() const {
+        const auto* r = std::get_if<Reserved>(&reservation);
+        return r && std::holds_alternative<GoReceived>(r->phase);
+    }
+    bool awaitingStop() const { return std::holds_alternative<AwaitingStop>(certificate); }
+    bool certified() const { return std::holds_alternative<Certified>(certificate); }
+    uint32_t barrier() const { return std::get<AwaitingStop>(certificate).brake_id; }
+    Plan& plan() { return std::get<Reserved>(reservation).value; }
+    const Plan& plan() const { return std::get<Reserved>(reservation).value; }
+    void retire() {
+        if (auto* r = std::get_if<Reserved>(&reservation)) r->phase.emplace<Retiring>();
+    }
+    void awaitReceipt() { std::get<Reserved>(reservation).phase.emplace<AwaitGoReceipt>(); }
+    void receiveGo() { std::get<Reserved>(reservation).phase.emplace<GoReceived>(); }
+    bool participates() const {
+        return phase == Phase::Requesting || phase == Phase::Waiting ||
+               phase == Phase::Moving || phase == Phase::Settling;
+    }
     uint32_t session{0};
-    uint32_t request_generation{0}, barrier_id{0}, budget_session{0};
+    uint32_t request_generation{0}, budget_session{0};
     uint32_t last_grant{0}, grants{0};
-    bool awaiting_stop{false}, certified{false}, plan_retiring{false}, go_received{false};
     Phase phase{Phase::Idle};
     bool uncontrolled{false};
     bool available{true};
-    bool participant{false};
     bool rejected{false};  // the planner ended this session
-    bool plan_active{false};
     bool emitted{false};  // whether the last decision has been handed out
     GrantState last_state{GrantState::Hold};
     Reason last_reason{Reason::None};
@@ -648,7 +682,7 @@ struct ResetPlanner::Impl {
                     if (&other == &self) {
                         continue;
                     }
-                    if (!other.plan_active) {
+                    if (!other.hasPlan()) {
                         const Sample at = poseSample(other, other.pose);
                         // A separated chunk holds the full margin at every
                         // sample and therefore lies entirely past the escape
@@ -663,7 +697,7 @@ struct ResetPlanner::Impl {
                         }
                         continue;
                     }
-                    if (soft_found && !other.plan_retiring) {
+                    if (soft_found && !other.retiring()) {
                         continue;
                     }
                     const double m_mover = cfg.pair_margin + self.delta + other.delta;
@@ -672,14 +706,14 @@ struct ResetPlanner::Impl {
                         now_bodies.push_back(&other);
                         rel_mover_now.push_back(at);
                     }
-                    for (size_t w = 0; w < other.plan.sets.size(); ++w) {
-                        const SampleSet& reserved = other.plan.sets[w];
+                    for (size_t w = 0; w < other.plan().sets.size(); ++w) {
+                        const SampleSet& reserved = other.plan().sets[w];
                         const size_t lo =
-                            other.plan.cursor[w] > kBehind ? other.plan.cursor[w] - kBehind : 0;
-                        if (other.plan.hi[w] <= lo) {
+                            other.plan().cursor[w] > kBehind ? other.plan().cursor[w] - kBehind : 0;
+                        if (other.plan().hi[w] <= lo) {
                             continue;
                         }
-                        for (size_t k = lo / kChunk; k * kChunk < other.plan.hi[w]; ++k) {
+                        for (size_t k = lo / kChunk; k * kChunk < other.plan().hi[w]; ++k) {
                             if (!separated(cb, reserved.chunks[k], m_mover)) {
                                 rel_movers.push_back({&other, w, k});
                             }
@@ -748,7 +782,7 @@ struct ResetPlanner::Impl {
                     auto reservedConflict = [&](bool retiring, std::string& who) {
                         for (size_t k = 0; k < now_bodies.size(); ++k) {
                             const Body& other = *now_bodies[k];
-                            if (other.plan_retiring != retiring) {
+                            if (other.retiring() != retiring) {
                                 continue;
                             }
                             const double m = cfg.pair_margin + self.delta + other.delta;
@@ -759,21 +793,21 @@ struct ResetPlanner::Impl {
                         }
                         for (const MoverChunk& mc : rel_movers) {
                             const Body& other = *mc.body;
-                            if (other.plan_retiring != retiring) {
+                            if (other.retiring() != retiring) {
                                 continue;
                             }
                             const double m = cfg.pair_margin + self.delta + other.delta;
-                            if (separated(q.box, other.plan.sets[mc.variant].chunks[mc.chunk], m)) {
+                            if (separated(q.box, other.plan().sets[mc.variant].chunks[mc.chunk], m)) {
                                 continue;
                             }
-                            const SampleSet& reserved = other.plan.sets[mc.variant];
+                            const SampleSet& reserved = other.plan().sets[mc.variant];
                             const size_t lo = std::max(mc.chunk * kChunk,
-                                                       other.plan.cursor[mc.variant] > kBehind
-                                                           ? other.plan.cursor[mc.variant] - kBehind
+                                                       other.plan().cursor[mc.variant] > kBehind
+                                                           ? other.plan().cursor[mc.variant] - kBehind
                                                            : size_t{0});
                             const size_t hi =
                                 std::min({(mc.chunk + 1) * kChunk, reserved.pts.size(),
-                                          other.plan.hi[mc.variant]});
+                                          other.plan().hi[mc.variant]});
                             for (size_t r = lo; r < hi; ++r) {
                                 if (!sampleClear(self, q, other, reserved.pts[r], m)) {
                                     who = other.id;
@@ -842,11 +876,11 @@ struct ResetPlanner::Impl {
             }
         };
         append(body.pose);  // the original verifier also checks the current reported footprint
-        for (size_t variant = 0; variant < body.plan.sets.size(); ++variant) {
-            const auto& set = body.plan.sets[variant];
-            const size_t hi = std::min(set.pts.size(), body.plan.hi[variant]);
+        for (size_t variant = 0; variant < body.plan().sets.size(); ++variant) {
+            const auto& set = body.plan().sets[variant];
+            const size_t hi = std::min(set.pts.size(), body.plan().hi[variant]);
             const size_t lo =
-                body.plan.cursor[variant] > kBehind ? body.plan.cursor[variant] - kBehind : 0;
+                body.plan().cursor[variant] > kBehind ? body.plan().cursor[variant] - kBehind : 0;
             if (hi <= lo) {
                 continue;  // the exact existing retained interval is empty
             }
@@ -858,8 +892,8 @@ struct ResetPlanner::Impl {
         // Four support halfspaces aligned with the frozen nominal route chord: a routing-only
         // outer rectangle with bounded visibility vertices. Every retained variant/corner is
         // projected; neither downsampling nor a last-pose/last-ack prefix substitutes for it.
-        const double angle = std::atan2(body.plan.goal.y - body.plan.route.start().y,
-                                        body.plan.goal.x - body.plan.route.start().x);
+        const double angle = std::atan2(body.plan().goal.y - body.plan().route.start().y,
+                                        body.plan().goal.x - body.plan().route.start().x);
         const Eigen::Vector2d u(std::cos(angle), std::sin(angle)), v(-u.y(), u.x());
         double xmin = kInf, xmax = -kInf, ymin = kInf, ymax = -kInf;
         for (const auto& p : points) {
@@ -916,7 +950,7 @@ struct ResetPlanner::Impl {
         std::string cert_contact;
         for (const auto& entry : bodies) {
             const Body& other = entry.second;
-            if (&other == &body || other.plan_active) {
+            if (&other == &body || other.hasPlan()) {
                 continue;
             }
             Verts va0, vb;
@@ -977,16 +1011,16 @@ struct ResetPlanner::Impl {
                     if (&other == &body) {
                         continue;
                     }
-                    if (other.plan_active && other.plan_retiring) {
+                    if (other.hasPlan() && other.retiring()) {
                         obstacles.push_back(retiringRoutingObstacle(other));
-                    } else if (other.plan_active) {
+                    } else if (other.hasPlan()) {
                         // Coarse stand-in for the remaining sweep (the exact verifier follows).
                         const SampleSet& set =
-                            other.plan.sets.size() == 3 ? other.plan.sets[1] : other.plan.sets[0];
+                            other.plan().sets.size() == 3 ? other.plan().sets[1] : other.plan().sets[0];
                         const size_t stride = static_cast<size_t>(std::ceil(1.0 / cfg.step));
-                        const size_t lo = other.plan.cursor[0];
+                        const size_t lo = other.plan().cursor[0];
                         const size_t hi = std::min(
-                            set.pts.size(), other.plan.hi[other.plan.sets.size() == 3 ? 1 : 0]);
+                            set.pts.size(), other.plan().hi[other.plan().sets.size() == 3 ? 1 : 0]);
                         for (size_t i = lo; i < hi; i += stride) {
                             obstacles.push_back(
                                 obstacleOf(other, {set.pts[i].x, set.pts[i].y, set.pts[i].yaw},
@@ -1111,23 +1145,20 @@ struct ResetPlanner::Impl {
         }
         plan.session = body.session;
         plan.request_generation = body.request_generation;
-        body.plan = std::move(plan);
-        body.plan_active = true;
-        body.plan.grant_id = allocate();
-        body.plan.cursor.assign(body.plan.sets.size(), 0);
+        body.reservation.emplace<Reserved>(Reserved{std::move(plan), AwaitGoReceipt{}});
+        body.plan().grant_id = allocate();
+        body.plan().cursor.assign(body.plan().sets.size(), 0);
         updateHi(body);
         body.hold_reason = Reason::None;
         body.blockers.clear();
         body.no_route_since = -1.0;
         body.progress_pose = body.pose;
         ++body.grants;
-        body.plan_retiring = false;
-        body.go_received = false;
         return true;
     }
 
     static void updateHi(Body& body) {
-        Plan& plan = body.plan;
+        Plan& plan = body.plan();
         plan.hi.resize(plan.sets.size());
         for (size_t w = 0; w < plan.sets.size(); ++w) {
             const auto& pts = plan.sets[w].pts;
@@ -1157,18 +1188,18 @@ struct ResetPlanner::Impl {
 
     void emitGo(Body& body) {
         PlannerDecision d = base(body, GrantState::Go);
-        d.grant_id = body.plan.grant_id;
-        d.start = body.plan.route.start();
-        d.goal = body.plan.goal;
-        d.final_move = body.plan.final_move;
-        d.ell_plan = body.plan.route.ell();
-        d.via = body.plan.via;
-        d.s_limit = body.plan.s_limit;
+        d.grant_id = body.plan().grant_id;
+        d.start = body.plan().route.start();
+        d.goal = body.plan().goal;
+        d.final_move = body.plan().final_move;
+        d.ell_plan = body.plan().route.ell();
+        d.via = body.plan().via;
+        d.s_limit = body.plan().s_limit;
         body.emitted = true;
         body.last_state = GrantState::Go;
         body.last_reason = Reason::None;
-        body.last_grant = body.plan.grant_id;
-        body.last_limit = body.plan.s_limit;
+        body.last_grant = body.plan().grant_id;
+        body.last_limit = body.plan().s_limit;
         body.last_blockers.clear();
         out.push_back(std::move(d));
     }
@@ -1200,11 +1231,8 @@ struct ResetPlanner::Impl {
         d.reason = reason;
         d.detail = detail;
         d.blockers = blockers;
-        body.awaiting_stop = true;
-        body.certified = false;
-        body.plan_retiring = body.plan_active;
-        body.go_received = false;
-        body.barrier_id = d.grant_id;
+        body.certificate.emplace<AwaitingStop>(AwaitingStop{d.grant_id});
+        body.retire();
         body.emitted = true;
         body.last_state = GrantState::Brake;
         body.last_reason = reason;
@@ -1219,8 +1247,7 @@ struct ResetPlanner::Impl {
         d.reason = reason;
         d.detail = detail;
         d.blockers = blockers;
-        body.plan_retiring = body.plan_active;
-        body.go_received = false;
+        body.retire();
         body.rejected = true;
         body.emitted = true;
         body.last_state = GrantState::Reject;
@@ -1244,10 +1271,10 @@ struct ResetPlanner::Impl {
         const Aabb box = boxOf(v);
         for (const auto& entry : bodies) {
             const Body& other = entry.second;
-            if (!other.plan_active || other.plan_retiring) {
+            if (!other.hasPlan() || other.retiring()) {
                 continue;
             }
-            const Plan& plan = other.plan;
+            const Plan& plan = other.plan();
             const double m = cfg.pair_margin + other.delta;
             for (size_t w = 0; w < plan.sets.size(); ++w) {
                 const SampleSet& s = plan.sets[w];
@@ -1287,16 +1314,14 @@ struct ResetPlanner::Impl {
             // or appearance inside one raises the same flag setWorld does;
             // drift and new bodies elsewhere do not force a recheck.
             const bool stale_quiescent =
-                (v.available || fresh) && !(body.plan_active && !body.plan_retiring) &&
+                (v.available || fresh) && !(body.hasPlan() && !body.retiring()) &&
                 (!body.proof_pose_set || !samePose(v.pose, body.proof_pose));
             if (v.available || fresh) {
                 body.pose = v.pose;
             }
             body.phase = v.phase;
             body.available = v.available;
-            body.participant = v.phase == Phase::Requesting || v.phase == Phase::Waiting ||
-                               v.phase == Phase::Moving || v.phase == Phase::Settling;
-            if (!body.plan_active && (v.available || fresh)) {
+            if (!body.hasPlan() && (v.available || fresh)) {
                 body.spec = v.spec;
                 body.shape = makeShape(v.spec);
                 setDelta(body);
@@ -1317,7 +1342,7 @@ struct ResetPlanner::Impl {
             body.ell_hat = v.ell_hat;
             body.ell_spread = v.ell_spread;
             body.uncontrolled = v.uncontrolled_moving ||
-                                (body.participant && !body.plan_active && v.phase == Phase::Moving);
+                                (body.participates() && !body.hasPlan() && v.phase == Phase::Moving);
             if (new_request) {
                 body.session = v.session;
                 body.request_generation = v.request_generation;
@@ -1339,20 +1364,18 @@ struct ResetPlanner::Impl {
             if (body.request_generation == 0) {
                 continue;  // discovery only; no authority
             }
-            if (body.plan_active && (!v.available || !body.participant) && !body.plan_retiring) {
+            if (body.hasPlan() && (!v.available || !body.participates()) && !body.retiring()) {
                 emitBrake(body, Reason::Replan,
                           "permission retained until stopping is acknowledged", {});
                 dirty = true;
             }
-            if (!new_request && v.available && body.awaiting_stop && v.stop_certified &&
-                v.acknowledged_grant_id == body.barrier_id && body.barrier_id != 0) {
+            if (!new_request && v.available && body.awaitingStop() && v.stop_certified &&
+                v.acknowledged_grant_id == body.barrier() && body.barrier() != 0) {
                 // The only reservation retirement point. The latest declaration may now replace
                 // the frozen old shape/spec; a repeated certificate cannot clear a later Plan.
-                body.plan_active = false;
-                body.plan_retiring = false;
-                body.awaiting_stop = false;
-                body.certified = true;
-                body.go_received = false;
+                const uint32_t brake = body.barrier();
+                body.reservation.emplace<Unreserved>();
+                body.certificate.emplace<Certified>(Certified{brake});
                 body.spec = v.spec;
                 body.shape = makeShape(v.spec);
                 setDelta(body);
@@ -1362,15 +1385,15 @@ struct ResetPlanner::Impl {
                     body.grants = 0;
                 }
                 body.emitted = false;
-                if (!body.participant) {
+                if (!body.participates()) {
                     emitHold(body, Reason::None, "Reset permission retired", {});
                 }
                 dirty = true;
             }
-            if (body.plan_active && !body.plan_retiring && !v.stop_certified &&
-                v.acknowledged_grant_id == body.plan.grant_id && body.plan.session == v.session &&
-                body.plan.request_generation == v.request_generation) {
-                body.go_received = true;
+            if (body.hasPlan() && !body.retiring() && !v.stop_certified &&
+                v.acknowledged_grant_id == body.plan().grant_id && body.plan().session == v.session &&
+                body.plan().request_generation == v.request_generation) {
+                body.receiveGo();
             }
         }
     }
@@ -1384,7 +1407,7 @@ struct ResetPlanner::Impl {
     // ----------------------------------------------------------------- movers
 
     static void advanceCursor(Body& body) {
-        Plan& plan = body.plan;
+        Plan& plan = body.plan();
         for (size_t w = 0; w < plan.sets.size(); ++w) {
             const auto& pts = plan.sets[w].pts;
             size_t best = plan.cursor[w];
@@ -1407,7 +1430,7 @@ struct ResetPlanner::Impl {
     }
 
     double progressOf(const Body& body) const {
-        const Plan& plan = body.plan;
+        const Plan& plan = body.plan();
         const size_t w = plan.sets.size() == 3 ? 1 : 0;
         return plan.sets[w].pts.empty()
                    ? 0.0
@@ -1420,11 +1443,11 @@ struct ResetPlanner::Impl {
         const bool extend_due = now - last_extension >= cfg.extension_period;
         for (auto& entry : bodies) {
             Body& body = entry.second;
-            if (!body.plan_active) {
+            if (!body.hasPlan()) {
                 continue;
             }
             any_mover = true;
-            if (body.plan_retiring || !body.go_received) {
+            if (body.retiring() || !body.receivedGo()) {
                 continue;
             }
             advanceCursor(body);
@@ -1447,13 +1470,13 @@ struct ResetPlanner::Impl {
         // Extension and revocation, in id order.
         for (auto& entry : bodies) {
             Body& body = entry.second;
-            if (!body.plan_active) {
+            if (!body.hasPlan()) {
                 continue;
             }
-            if (body.plan_retiring) {
+            if (body.retiring()) {
                 continue;
             }
-            const Plan& plan = body.plan;
+            const Plan& plan = body.plan();
             const bool prefix_open = plan.s_limit < plan.total - 1e-9;
             if (!prefix_open && !world_changed) {
                 continue;
@@ -1480,16 +1503,16 @@ struct ResetPlanner::Impl {
             if (violation.hard || !prefix_open) {
                 continue;
             }
-            if (!body.go_received) {
+            if (!body.receivedGo()) {
                 continue;  // safety revocation above never waits for a Go receipt
             }
             const double next =
                 violation.s == kInf ? 1e18 : std::max(plan.s_limit, violation.s - cfg.hold_margin);
             if (next > plan.s_limit + 1e-9) {
-                body.plan.s_limit = next;
+                body.plan().s_limit = next;
                 updateHi(body);
-                body.plan.grant_id = allocate();
-                body.go_received = false;
+                body.plan().grant_id = allocate();
+                body.awaitReceipt();
                 ++stats.extensions;
                 emitGo(body);
             } else {
@@ -1500,12 +1523,12 @@ struct ResetPlanner::Impl {
         // Fleet-wide stall: movers exist, none has advanced for stall_s.
         bool any = false;
         for (const auto& entry : bodies) {
-            any = any || entry.second.plan_active;
+            any = any || entry.second.hasPlan();
         }
         if (any && now - fleet_progress > cfg.stall_s) {
             for (auto& entry : bodies) {
                 Body& body = entry.second;
-                if (!body.plan_active || body.plan_retiring || body.phase != Phase::Waiting) {
+                if (!body.hasPlan() || body.retiring() || body.phase != Phase::Waiting) {
                     continue;
                 }
                 emitReject(body, Reason::Stalled, "no vehicle advanced for 10 s", body.blockers);
@@ -1546,7 +1569,7 @@ struct ResetPlanner::Impl {
         std::vector<std::string> sitting;
         for (auto& entry : bodies) {
             Body& other = entry.second;
-            if (&other == &body || other.participant) {
+            if (&other == &body || other.participates()) {
                 continue;
             }
             if (!sampleClear(body, poseSample(body, body.target), other,
@@ -1616,7 +1639,7 @@ struct ResetPlanner::Impl {
 
     bool anyMover() const {
         for (const auto& entry : bodies) {
-            if (entry.second.plan_active && !entry.second.plan_retiring) {
+            if (entry.second.hasPlan() && !entry.second.retiring()) {
                 return true;
             }
         }
@@ -1627,7 +1650,7 @@ struct ResetPlanner::Impl {
         std::vector<Body*> waiting;
         for (auto& entry : bodies) {
             Body& b = entry.second;
-            if (b.participant && b.certified && !b.awaiting_stop && !b.plan_active && !b.rejected &&
+            if (b.participates() && b.certified() && !b.awaitingStop() && !b.hasPlan() && !b.rejected &&
                 (b.phase == Phase::Requesting || b.phase == Phase::Waiting)) {
                 waiting.push_back(&b);
             }
@@ -1643,7 +1666,7 @@ struct ResetPlanner::Impl {
         {
             std::vector<Body*> all;
             for (auto& entry : bodies) {
-                if (entry.second.participant && !entry.second.rejected) {
+                if (entry.second.participates() && !entry.second.rejected) {
                     all.push_back(&entry.second);
                 }
             }
@@ -1659,7 +1682,7 @@ struct ResetPlanner::Impl {
             }
             for (auto& entry : overlaps) {
                 Body& b = bodies[entry.first];
-                if (!b.rejected && !b.plan_active) {
+                if (!b.rejected && !b.hasPlan()) {
                     emitReject(b, Reason::GoalOccupied,
                                "the target overlaps the target of " + entry.second[0],
                                entry.second);
@@ -1717,7 +1740,7 @@ struct ResetPlanner::Impl {
                 break;
             }
             for (Body* b : waiting) {
-                if (b->plan_active || b->rejected) {
+                if (b->hasPlan() || b->rejected) {
                     continue;
                 }
                 if (pass == 0) {
@@ -1766,7 +1789,7 @@ struct ResetPlanner::Impl {
         }
         // Report why the others wait.
         for (Body* b : waiting) {
-            if (b->plan_active || b->rejected) {
+            if (b->hasPlan() || b->rejected) {
                 continue;
             }
             auto f = failed.find(b->id);
@@ -1803,7 +1826,7 @@ struct ResetPlanner::Impl {
         Choice best;
         for (auto& entry : bodies) {
             Body& k = entry.second;
-            if (!k.participant || !k.certified || k.awaiting_stop || k.plan_active || k.rejected) {
+            if (!k.participates() || !k.certified() || k.awaitingStop() || k.hasPlan() || k.rejected) {
                 continue;
             }
             for (double r : {1.6, 2.4, 3.2}) {
@@ -1823,7 +1846,7 @@ struct ResetPlanner::Impl {
                         ok = sampleClear(k, poseSample(k, p), j, poseSample(j, j.pose),
                                          cfg.pair_margin);
                         // Do not park on a goal.
-                        if (ok && j.participant) {
+                        if (ok && j.participates()) {
                             ok = sampleClear(k, poseSample(k, p), j, poseSample(j, j.target),
                                              cfg.pair_margin);
                         }
@@ -1841,7 +1864,7 @@ struct ResetPlanner::Impl {
                     int score = 0;
                     for (auto& e : bodies) {
                         Body& j = e.second;
-                        if (!j.participant || j.rejected || &j == &k) {
+                        if (!j.participates() || j.rejected || &j == &k) {
                             continue;
                         }
                         if (planRoute(j, j.target, true).ok) {
@@ -1874,8 +1897,8 @@ struct ResetPlanner::Impl {
     void deadlock() {
         std::vector<std::string> stuck;
         for (const auto& entry : bodies) {
-            if (entry.second.participant && entry.second.certified && !entry.second.awaiting_stop &&
-                !entry.second.plan_active && !entry.second.rejected) {
+            if (entry.second.participates() && entry.second.certified() && !entry.second.awaitingStop() &&
+                !entry.second.hasPlan() && !entry.second.rejected) {
                 stuck.push_back(entry.first);
             }
         }
@@ -1891,8 +1914,8 @@ struct ResetPlanner::Impl {
         auto inflight_blocker = [&](const Body& b) {
             for (const std::string& id : b.blockers) {
                 const auto it = bodies.find(id);
-                if (it != bodies.end() && it->second.participant &&
-                    it->second.awaiting_stop && it->second.available &&
+                if (it != bodies.end() && it->second.participates() &&
+                    it->second.awaitingStop() && it->second.available &&
                     !it->second.uncontrolled) {
                     return true;
                 }
@@ -1944,7 +1967,7 @@ struct ResetPlanner::Impl {
         if (!admit_allowed) {
             for (auto& entry : bodies) {
                 Body& b = entry.second;
-                if (b.plan_active && !b.plan_retiring) {
+                if (b.hasPlan() && !b.retiring()) {
                     emitBrake(b, Reason::SceneUnavailable, "new admissions unavailable", {});
                 }
             }
@@ -1961,7 +1984,7 @@ struct ResetPlanner::Impl {
         for (const auto& entry : bodies) {
             const Body& b = entry.second;
             waiting = waiting ||
-                      (b.participant && b.certified && !b.awaiting_stop && !b.plan_active &&
+                      (b.participates() && b.certified() && !b.awaitingStop() && !b.hasPlan() &&
                        !b.rejected && (b.phase == Phase::Requesting || b.phase == Phase::Waiting));
         }
         dirty = false;
@@ -1978,7 +2001,7 @@ struct ResetPlanner::Impl {
             bool blocked = false;
             for (const auto& entry : bodies) {
                 const Body& b = entry.second;
-                if (b.participant && b.certified && !b.awaiting_stop && !b.plan_active &&
+                if (b.participates() && b.certified() && !b.awaitingStop() && !b.hasPlan() &&
                     !b.rejected && !b.uncontrolled &&
                     (b.phase == Phase::Requesting || b.phase == Phase::Waiting)) {
                     blocked = true;
@@ -1994,13 +2017,13 @@ struct ResetPlanner::Impl {
                 bool settling = false;
                 for (const auto& entry : bodies) {
                     const Body& b = entry.second;
-                    settling = settling || (b.participant && !b.plan_active && !b.rejected &&
+                    settling = settling || (b.participates() && !b.hasPlan() && !b.rejected &&
                                             b.occupied_since >= 0.0);
                 }
                 bool no_route_pending = false;
                 for (const auto& entry : bodies) {
                     const Body& b = entry.second;
-                    no_route_pending = no_route_pending || (b.participant && !b.plan_active &&
+                    no_route_pending = no_route_pending || (b.participates() && !b.hasPlan() &&
                                                             !b.rejected && b.no_route_since >= 0.0);
                 }
                 if (!settling && !no_route_pending) {
@@ -2067,12 +2090,12 @@ std::vector<PlannerBodyReport> ResetPlanner::report() const {
         const Body& b = entry.second;
         PlannerBodyReport r;
         r.id = b.id;
-        r.participant = b.participant;
-        r.has_route = b.plan_active;
-        if (b.plan_active) {
+        r.participant = b.participates();
+        r.has_route = b.hasPlan();
+        if (b.hasPlan()) {
             r.progress = impl_->progressOf(b);
-            r.remaining = std::max(0.0, b.plan.route.length() - r.progress);
-            r.s_limit = b.plan.s_limit;
+            r.remaining = std::max(0.0, b.plan().route.length() - r.progress);
+            r.s_limit = b.plan().s_limit;
         }
         r.state = b.emitted ? b.last_state : GrantState::Hold;
         r.reason = b.emitted ? b.last_reason : Reason::None;
@@ -2080,6 +2103,30 @@ std::vector<PlannerBodyReport> ResetPlanner::report() const {
         list.push_back(std::move(r));
     }
     return list;
+}
+
+double ResetPlanner::nextDeadline(bool admit) const {
+    const Impl& m = *impl_;
+    double next = kInf;
+    const double extension = std::nextafter(m.last_extension + m.cfg.extension_period, kInf);
+    for (const auto& item : m.bodies) {
+        const Body& b = item.second;
+        if (b.hasPlan() && !b.retiring()) {
+            if (b.plan().s_limit < b.plan().total - 1e-9 || m.world_changed)
+                next = std::min(next, extension);
+            // The original stall check runs only in an extension turn.
+            if (b.phase == Phase::Waiting)
+                next = std::min(next, std::max(extension,
+                    std::nextafter(m.fleet_progress + m.cfg.stall_s, kInf)));
+        }
+        if (admit && b.participates() && b.certified() && !b.hasPlan() && !b.rejected &&
+            (b.phase == Phase::Requesting || b.phase == Phase::Waiting)) {
+            // Occupancy settling and NoRoute's five seconds are adjudicated by this
+            // existing admission period, never by a new independent retry.
+            next = std::min(next, std::nextafter(m.last_replan + m.cfg.replan_period, kInf));
+        }
+    }
+    return next;
 }
 
 const PlannerStats& ResetPlanner::stats() const {
